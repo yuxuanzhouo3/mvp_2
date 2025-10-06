@@ -1,0 +1,22 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String   @id @default(cuid())
+  name             String?
+  email            String   @unique
+  password         String
+  subscriptionTier String   @default("free") // "free", "pro", "enterprise"
+  subscriptionId   String?  // Stripe/PayPal subscription ID
+  paymentMethod    String?  // "stripe" or "paypal"
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+
