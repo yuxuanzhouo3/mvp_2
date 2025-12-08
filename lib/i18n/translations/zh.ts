@@ -807,4 +807,78 @@ export const zh = {
       upgradeButton: "升级到 Pro",
     },
   },
+
+  // ==================== AI 推荐系统 ====================
+  recommendation: {
+    // 分类
+    categories: {
+      entertainment: {
+        title: "随机娱乐",
+        description: "发现精彩娱乐内容",
+      },
+      shopping: {
+        title: "随机购物",
+        description: "发现心仪好物",
+      },
+      food: {
+        title: "随机吃",
+        description: "探索美食世界",
+      },
+      travel: {
+        title: "随机出行",
+        description: "发现旅行目的地",
+      },
+      fitness: {
+        title: "随机健身",
+        description: "开启健康生活",
+      },
+    },
+    // 链接类型
+    linkTypes: {
+      product: "商品",
+      video: "视频",
+      book: "图书",
+      location: "地点",
+      article: "文章",
+      app: "应用",
+      music: "音乐",
+      movie: "电影",
+      game: "游戏",
+      restaurant: "餐厅",
+      recipe: "食谱",
+      hotel: "酒店",
+      course: "课程",
+    },
+    // UI 文本
+    ui: {
+      shake: "摇一摇",
+      tapForRecommendations: "点击获取 AI 个性化推荐",
+      aiPowered: "AI 智能推荐",
+      cached: "缓存推荐",
+      curated: "精选推荐",
+      viewDetails: "查看详情",
+      save: "收藏",
+      notInterested: "不感兴趣",
+      whyRecommend: "为什么推荐给你：",
+      recentHistory: "最近推荐",
+      clear: "清空",
+      categoryNotFound: "分类不存在",
+      goHome: "返回首页",
+      tapToGetRecommendations: "点击上方按钮获取推荐",
+      aiWillRecommend: "AI 将根据你的喜好推荐内容",
+      poweredByAI: "推荐内容由 AI 生成，链接来自第三方平台",
+      errorOccurred: "获取推荐失败，请重试",
+      noRecommendations: "暂无推荐",
+    },
+    // 偏好分析
+    preferences: {
+      title: "偏好分析",
+      topTags: "热门标签",
+      totalInteractions: "总互动次数",
+      favoriteCategory: "最喜欢的分类",
+      lastActive: "最后活跃",
+      clickCount: "点击次数",
+      viewCount: "浏览次数",
+    },
+  },
 } as const;

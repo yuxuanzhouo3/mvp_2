@@ -5,7 +5,14 @@
       "Bash(grep:*)",
       "Bash(cat:*)",
       "Bash(tree:*)",
-      "Bash(pnpm run build:*)"
+      "Bash(pnpm run build:*)",
+      "Bash(ls -la \"d:\\code\\mvp_2-demo\\lib\\auth\"\" && ls -la \"d:codemvp_2-democomponents\"\")",
+      "Bash(ls:*)",
+      "Bash(node check-groq-api.js:*)",
+      "Bash(node detailed-groq-test.js)",
+      "Bash(node test-zhipu-api.js:*)",
+      "Bash(curl:*)",
+      "Bash(timeout 30 npm run build:*)"
     ],
     "deny": [],
     "ask": []

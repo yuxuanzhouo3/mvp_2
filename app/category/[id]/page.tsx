@@ -1,172 +1,226 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { RecommendationCard, RecommendationList } from "@/components/RecommendationCard"
+import type { AIRecommendation, RecommendationCategory, AIRecommendResponse } from "@/lib/types/recommendation"
 
-interface Recommendation {
-  id: string
-  type: string
-  title: string
-  description?: string
-  image?: string
-  price?: string
-  calories?: number
-  reason?: string
-  duration?: string
-  weather?: string
-}
-
-const categoryConfig = {
+// 分类配置
+const categoryConfig: Record<
+  RecommendationCategory,
+  {
+    title: { zh: string; en: string }
+    icon: string
+    color: string
+    description: { zh: string; en: string }
+  }
+> = {
   entertainment: {
-    title: "随机娱乐",
+    title: { zh: "随机娱乐", en: "Random Entertainment" },
     icon: "🎲",
     color: "from-purple-400 to-pink-400",
+    description: { zh: "发现精彩娱乐内容", en: "Discover amazing entertainment" },
   },
   shopping: {
-    title: "随机购物",
+    title: { zh: "随机购物", en: "Random Shopping" },
     icon: "🛍️",
     color: "from-blue-400 to-cyan-400",
+    description: { zh: "发现心仪好物", en: "Find products you'll love" },
   },
   food: {
-    title: "随机吃",
+    title: { zh: "随机吃", en: "Random Food" },
     icon: "🍜",
     color: "from-green-400 to-teal-400",
+    description: { zh: "探索美食世界", en: "Explore culinary delights" },
   },
   travel: {
-    title: "随机出行",
+    title: { zh: "随机出行", en: "Random Travel" },
     icon: "🏞️",
     color: "from-yellow-400 to-orange-400",
+    description: { zh: "发现旅行目的地", en: "Discover travel destinations" },
   },
   fitness: {
-    title: "随机健身",
+    title: { zh: "随机健身", en: "Random Fitness" },
     icon: "💪",
     color: "from-red-400 to-pink-400",
+    description: { zh: "开启健康生活", en: "Start your fitness journey" },
   },
+}
+
+// 获取当前语言
+function getLocale(): "zh" | "en" {
+  if (typeof window !== "undefined") {
+    const saved = localStorage.getItem("locale")
+    if (saved === "en" || saved === "zh") return saved
+    return navigator.language.startsWith("zh") ? "zh" : "en"
+  }
+  return "zh"
+}
+
+// 获取用户 ID
+function getUserId(): string {
+  if (typeof window !== "undefined") {
+    // 尝试从 localStorage 获取用户信息
+    const userStr = localStorage.getItem("user")
+    if (userStr) {
+      try {
+        const user = JSON.parse(userStr)
+        return user.id || user.uid || "anonymous"
+      } catch {
+        // ignore
+      }
+    }
+  }
+  return "anonymous"
 }
 
 export default function CategoryPage({ params }: { params: { id: string } }) {
-  const [currentRecommendation, setCurrentRecommendation] = useState<Recommendation | null>(null)
-  const [history, setHistory] = useState<Recommendation[]>([])
+  const [currentRecommendations, setCurrentRecommendations] = useState<AIRecommendation[]>([])
+  const [history, setHistory] = useState<AIRecommendation[]>([])
   const [isShaking, setIsShaking] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [source, setSource] = useState<"ai" | "fallback" | "cache" | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [locale, setLocale] = useState<"zh" | "en">("zh")
 
-  const category = categoryConfig[params.id as keyof typeof categoryConfig]
+  const categoryId = params.id as RecommendationCategory
+  const category = categoryConfig[categoryId]
 
+  // 初始化语言和历史
   useEffect(() => {
-    // Load history from localStorage
-    const savedHistory = localStorage.getItem(`history_${params.id}`)
+    setLocale(getLocale())
+
+    // 从 localStorage 加载历史
+    const savedHistory = localStorage.getItem(`ai_history_${params.id}`)
     if (savedHistory) {
-      setHistory(JSON.parse(savedHistory))
+      try {
+        setHistory(JSON.parse(savedHistory))
+      } catch {
+        // ignore
+      }
     }
   }, [params.id])
 
-  const handleShake = async () => {
+  // 记录用户行为
+  const recordAction = useCallback(
+    async (recommendation: AIRecommendation, action: "view" | "click" | "save" | "dismiss") => {
+      const userId = getUserId()
+      if (userId === "anonymous") return
+
+      try {
+        await fetch("/api/recommend/record", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId,
+            category: categoryId,
+            recommendation,
+            action,
+          }),
+        })
+      } catch (err) {
+        console.error("Failed to record action:", err)
+      }
+    },
+    [categoryId]
+  )
+
+  // 获取 AI 推荐
+  const fetchRecommendations = useCallback(async () => {
     setIsShaking(true)
     setIsLoading(true)
+    setError(null)
 
     try {
-      const response = await fetch(`/api/recommend/${params.id}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ user_id: "default" }),
-      })
+      const userId = getUserId()
+      const response = await fetch(
+        `/api/recommend/ai/${categoryId}?userId=${userId}&count=3&locale=${locale}&skipCache=true`,
+        { method: "GET" }
+      )
 
-      const recommendation = await response.json()
+      const data: AIRecommendResponse = await response.json()
 
+      if (!data.success || data.recommendations.length === 0) {
+        throw new Error(data.error || "No recommendations received")
+      }
+
+      // 延迟显示结果以保持动画效果
       setTimeout(() => {
-        setCurrentRecommendation(recommendation)
+        setCurrentRecommendations(data.recommendations)
+        setSource(data.source)
 
-        // Update history
-        const newHistory = [recommendation, ...history.slice(0, 2)]
+        // 更新历史（保留最近 6 条）
+        const newHistory = [...data.recommendations, ...history].slice(0, 6)
         setHistory(newHistory)
-        localStorage.setItem(`history_${params.id}`, JSON.stringify(newHistory))
+        localStorage.setItem(`ai_history_${params.id}`, JSON.stringify(newHistory))
+
+        // 记录浏览行为
+        data.recommendations.forEach((rec) => recordAction(rec, "view"))
 
         setIsShaking(false)
         setIsLoading(false)
       }, 1500)
-    } catch (error) {
-      console.error("Error fetching recommendation:", error)
+    } catch (err) {
+      console.error("Error fetching recommendations:", err)
+      setError(err instanceof Error ? err.message : "Failed to get recommendations")
       setIsShaking(false)
       setIsLoading(false)
     }
-  }
+  }, [categoryId, locale, history, params.id, recordAction])
 
-  const renderRecommendation = (rec: Recommendation) => {
-    switch (params.id) {
-      case "entertainment":
-        return (
-          <Card className="p-6 text-center">
-            <div className="w-32 h-48 mx-auto mb-4 bg-gray-200 rounded-lg flex items-center justify-center">
-              <span className="text-4xl">
-                {rec.type === "sci-fi" ? "📚" : rec.type === "game" ? "🎮" : rec.type === "song" ? "🎵" : "🎬"}
-              </span>
-            </div>
-            <h3 className="text-xl font-semibold mb-2">{rec.title}</h3>
-            <p className="text-gray-600">{rec.description}</p>
-          </Card>
-        )
+  // 处理链接点击
+  const handleLinkClick = useCallback(
+    (recommendation: AIRecommendation) => {
+      recordAction(recommendation, "click")
+    },
+    [recordAction]
+  )
 
-      case "shopping":
-        return (
-          <Card className="p-6 text-center">
-            <div className="w-32 h-32 mx-auto mb-4 bg-gray-200 rounded-lg flex items-center justify-center">
-              <span className="text-4xl">
-                {rec.type === "fashion" ? "👕" : rec.type === "shoes" ? "👟" : rec.type === "gadget" ? "📱" : "🏠"}
-              </span>
-            </div>
-            <h3 className="text-xl font-semibold mb-2">{rec.title}</h3>
-            <p className="text-2xl font-bold text-[#FF6B6B] mb-4">{rec.price}</p>
-            <Button className="w-full bg-[#FF6B6B] hover:bg-[#FF5252]">Buy Now</Button>
-          </Card>
-        )
+  // 处理保存
+  const handleSave = useCallback(
+    (recommendation: AIRecommendation) => {
+      recordAction(recommendation, "save")
+    },
+    [recordAction]
+  )
 
-      case "food":
-        return (
-          <Card className="p-6 text-center">
-            <Badge className="mb-4 bg-[#4ECDC4] text-white">AI Recommendation</Badge>
-            <div className="w-32 h-32 mx-auto mb-4 bg-gray-200 rounded-lg flex items-center justify-center">
-              <span className="text-4xl">🍜</span>
-            </div>
-            <h3 className="text-xl font-semibold mb-2">{rec.title}</h3>
-            {rec.reason && <p className="text-sm text-gray-600 mb-2">{rec.reason}</p>}
-            {rec.calories && <p className="text-lg font-medium text-[#4ECDC4]">{rec.calories} calories</p>}
-          </Card>
-        )
+  // 处理不感兴趣
+  const handleDismiss = useCallback(
+    (recommendation: AIRecommendation) => {
+      recordAction(recommendation, "dismiss")
+      // 从当前推荐中移除
+      setCurrentRecommendations((prev) =>
+        prev.filter((r) => r.title !== recommendation.title)
+      )
+    },
+    [recordAction]
+  )
 
-      case "travel":
-      case "fitness":
-        return (
-          <Card className="p-6 text-center">
-            <div className="w-full h-32 mb-4 bg-gray-200 rounded-lg flex items-center justify-center">
-              <span className="text-4xl">{params.id === "travel" ? "🗺️" : "🏃‍♂️"}</span>
-            </div>
-            <h3 className="text-xl font-semibold mb-2">{rec.title}</h3>
-            <p className="text-gray-600 mb-2">{rec.description}</p>
-            {rec.duration && <p className="text-sm text-gray-500 mb-1">Duration: {rec.duration}</p>}
-            {rec.weather && <p className="text-sm text-gray-500">Weather: {rec.weather}</p>}
-          </Card>
-        )
-
-      default:
-        return null
-    }
-  }
-
+  // 如果分类不存在
   if (!category) {
-    return <div>Category not found</div>
+    return (
+      <div className="min-h-screen bg-[#F7F9FC] flex items-center justify-center">
+        <Card className="p-8 text-center">
+          <h2 className="text-xl font-semibold text-gray-800 mb-4">
+            {locale === "zh" ? "分类不存在" : "Category not found"}
+          </h2>
+          <Link href="/">
+            <Button>{locale === "zh" ? "返回首页" : "Go Home"}</Button>
+          </Link>
+        </Card>
+      </div>
+    )
   }
 
   return (
     <div className="min-h-screen bg-[#F7F9FC] p-4">
       <div className="max-w-md mx-auto">
-        {/* Header */}
-        <div className="flex items-center mb-8 pt-8">
+        {/* 头部 */}
+        <div className="flex items-center mb-6 pt-8">
           <Link href="/">
             <Button variant="ghost" size="sm" className="mr-4">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
@@ -180,11 +234,16 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
           </Link>
           <div className="flex items-center space-x-3">
             <span className="text-3xl">{category.icon}</span>
-            <h1 className="text-2xl font-bold text-gray-800">{category.title}</h1>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-800">
+                {category.title[locale]}
+              </h1>
+              <p className="text-sm text-gray-500">{category.description[locale]}</p>
+            </div>
           </div>
         </div>
 
-        {/* Shake Button */}
+        {/* 摇一摇按钮 */}
         <div className="text-center mb-8">
           <motion.div
             animate={
@@ -195,80 +254,160 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
                   }
                 : {}
             }
-            transition={{ duration: 0.5, repeat: isShaking ? Number.POSITIVE_INFINITY : 0 }}
+            transition={{ duration: 0.5, repeat: isShaking ? Infinity : 0 }}
           >
             <Button
-              onClick={handleShake}
+              onClick={fetchRecommendations}
               disabled={isLoading}
-              className="w-32 h-32 rounded-full bg-[#FF6B6B] hover:bg-[#FF5252] text-white text-lg font-semibold shadow-lg"
+              className={`w-32 h-32 rounded-full bg-gradient-to-r ${category.color} hover:opacity-90 text-white text-lg font-semibold shadow-lg`}
             >
               {isLoading ? (
                 <motion.div
                   animate={{ rotate: 360 }}
-                  transition={{ duration: 1, repeat: Number.POSITIVE_INFINITY, ease: "linear" }}
+                  transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
                 >
                   ⏳
                 </motion.div>
               ) : (
-                "摇一摇"
+                <div className="flex flex-col items-center">
+                  <span className="text-2xl mb-1">🎲</span>
+                  <span>{locale === "zh" ? "摇一摇" : "Shake"}</span>
+                </div>
               )}
             </Button>
           </motion.div>
-          <p className="text-gray-600 mt-4">Tap to get a random recommendation</p>
+          <p className="text-gray-600 mt-4">
+            {locale === "zh"
+              ? "点击获取 AI 个性化推荐"
+              : "Tap for AI-powered recommendations"}
+          </p>
         </div>
 
-        {/* Current Recommendation */}
+        {/* 来源标签 */}
+        {source && currentRecommendations.length > 0 && (
+          <div className="flex justify-center mb-4">
+            <Badge
+              variant={source === "ai" ? "default" : "secondary"}
+              className={
+                source === "ai"
+                  ? "bg-gradient-to-r from-purple-500 to-pink-500"
+                  : ""
+              }
+            >
+              {source === "ai" && "🤖 "}
+              {source === "ai"
+                ? locale === "zh"
+                  ? "AI 智能推荐"
+                  : "AI Powered"
+                : source === "cache"
+                ? locale === "zh"
+                  ? "缓存推荐"
+                  : "Cached"
+                : locale === "zh"
+                ? "精选推荐"
+                : "Curated"}
+            </Badge>
+          </div>
+        )}
+
+        {/* 错误提示 */}
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-4"
+          >
+            <Card className="p-4 bg-red-50 border-red-200">
+              <p className="text-red-600 text-sm text-center">{error}</p>
+            </Card>
+          </motion.div>
+        )}
+
+        {/* 当前推荐 */}
         <AnimatePresence mode="wait">
-          {currentRecommendation && (
+          {currentRecommendations.length > 0 && (
             <motion.div
-              key={currentRecommendation.id}
-              initial={{ opacity: 0, rotateY: -90 }}
-              animate={{ opacity: 1, rotateY: 0 }}
-              exit={{ opacity: 0, rotateY: 90 }}
-              transition={{ duration: 0.6 }}
+              key="recommendations"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.5 }}
               className="mb-8"
             >
-              {renderRecommendation(currentRecommendation)}
+              <RecommendationList
+                recommendations={currentRecommendations}
+                category={categoryId}
+                onLinkClick={handleLinkClick}
+                onSave={handleSave}
+                onDismiss={handleDismiss}
+                showReason={true}
+                locale={locale}
+              />
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* History */}
+        {/* 欢迎提示（首次访问时显示） */}
+        {currentRecommendations.length === 0 && !isLoading && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="text-center py-8"
+          >
+            <div className="text-6xl mb-4">{category.icon}</div>
+            <h3 className="text-lg font-medium text-gray-700 mb-2">
+              {locale === "zh"
+                ? "点击上方按钮获取推荐"
+                : "Tap the button above for recommendations"}
+            </h3>
+            <p className="text-gray-500 text-sm">
+              {locale === "zh"
+                ? "AI 将根据你的喜好推荐内容"
+                : "AI will recommend content based on your preferences"}
+            </p>
+          </motion.div>
+        )}
+
+        {/* 历史记录 */}
         {history.length > 0 && (
-          <div>
-            <h2 className="text-lg font-semibold text-gray-800 mb-4">Recent History</h2>
-            <div className="space-y-3">
-              {history.map((item, index) => (
-                <motion.div
-                  key={`${item.id}-${index}`}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: index * 0.1 }}
-                >
-                  <Card className="p-4">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-12 h-12 bg-gray-200 rounded-lg flex items-center justify-center">
-                        <span className="text-xl">
-                          {params.id === "entertainment"
-                            ? "🎭"
-                            : params.id === "shopping"
-                              ? "🛒"
-                              : params.id === "food"
-                                ? "🍽️"
-                                : "🏃‍♂️"}
-                        </span>
-                      </div>
-                      <div className="flex-1">
-                        <h4 className="font-medium text-gray-800">{item.title}</h4>
-                        <p className="text-sm text-gray-600 truncate">{item.description}</p>
-                      </div>
-                    </div>
-                  </Card>
-                </motion.div>
-              ))}
+          <div className="mt-8">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-gray-800">
+                {locale === "zh" ? "最近推荐" : "Recent History"}
+              </h2>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setHistory([])
+                  localStorage.removeItem(`ai_history_${params.id}`)
+                }}
+                className="text-gray-500 text-xs"
+              >
+                {locale === "zh" ? "清空" : "Clear"}
+              </Button>
             </div>
+            <RecommendationList
+              recommendations={history.slice(
+                currentRecommendations.length > 0 ? currentRecommendations.length : 0
+              )}
+              category={categoryId}
+              onLinkClick={handleLinkClick}
+              showReason={false}
+              compact={true}
+              locale={locale}
+            />
           </div>
         )}
+
+        {/* 底部提示 */}
+        <div className="mt-8 pb-8 text-center">
+          <p className="text-xs text-gray-400">
+            {locale === "zh"
+              ? "推荐内容由 AI 生成，链接来自第三方平台"
+              : "Recommendations powered by AI, links from third-party platforms"}
+          </p>
+        </div>
       </div>
     </div>
   )

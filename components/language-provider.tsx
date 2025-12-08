@@ -21,6 +21,7 @@ const LanguageContext = createContext<LanguageContextType | undefined>(
 );
 
 const STORAGE_KEY = "preferred-language";
+const STORAGE_REGION_KEY = "deployment-region-version";
 
 /**
  * 语言提供者组件
@@ -32,10 +33,12 @@ const STORAGE_KEY = "preferred-language";
  * 3. 根据部署区域自动设置默认语言（中国区域=中文，国际区域=英文）
  * 4. 允许用户手动切换语言偏好
  * 5. 提供语言切换功能
+ * 6. 部署区域变更时自动重置语言选择
  *
  * 优先级：
- * 1. localStorage 中的用户选择（最高优先级）
- * 2. 部署区域设置（DEPLOYMENT_REGION）
+ * 1. 检查部署区域是否变更，如有变更则重置为新区域默认语言
+ * 2. localStorage 中的用户选择（若未变更）
+ * 3. 部署区域设置（DEPLOYMENT_REGION）
  *    - 中国区域 (CN)：默认中文
  *    - 国际区域 (INTL)：默认英文
  */
@@ -48,33 +51,47 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     setMounted(true);
 
-    // 优先级1: 从 localStorage 读取用户选择
-    const saved = localStorage.getItem(STORAGE_KEY) as Language | null;
+    // 根据部署区域获取期望的默认语言
+    const isChinaRegion = isChinaDeployment();
+    const expectedLanguage: Language = isChinaRegion ? "zh" : "en";
+    const currentRegion = isChinaRegion ? "CN" : "INTL";
+
     console.log("=== LanguageProvider Init ===");
+    console.log("Current deployment region:", currentRegion);
+    console.log("Expected language:", expectedLanguage);
+
+    // 检查部署区域是否变更
+    const savedRegion = localStorage.getItem(STORAGE_REGION_KEY);
+    const regionChanged = savedRegion && savedRegion !== currentRegion;
+
+    console.log("Saved region in storage:", savedRegion);
+    console.log("Region changed:", regionChanged);
+
+    // 如果部署区域变更，重置语言为新区域的默认语言
+    if (regionChanged) {
+      console.log("Region changed from", savedRegion, "to", currentRegion, "- resetting language to", expectedLanguage);
+      setLanguageState(expectedLanguage);
+      localStorage.setItem(STORAGE_KEY, expectedLanguage);
+      localStorage.setItem(STORAGE_REGION_KEY, currentRegion);
+      return;
+    }
+
+    // 优先级1: 从 localStorage 读取用户选择（如果区域未变更）
+    const saved = localStorage.getItem(STORAGE_KEY) as Language | null;
     console.log("Saved language from localStorage:", saved);
 
     if (saved && (saved === "zh" || saved === "en")) {
       console.log("Using saved language from localStorage:", saved);
       setLanguageState(saved);
+      localStorage.setItem(STORAGE_REGION_KEY, currentRegion);
       return;
     }
 
-    // 优先级2: 根据部署区域推断默认语言
-    // 使用 deployment.config.ts 中的 DEPLOYMENT_REGION 配置
-    const isChinaRegion = isChinaDeployment();
-    console.log("Deployment region - is China:", isChinaRegion);
-
-    if (isChinaRegion) {
-      console.log("Setting language to zh (deployment region: CN)");
-      setLanguageState("zh");
-      localStorage.setItem(STORAGE_KEY, "zh");
-      return;
-    }
-
-    // 国际区域：使用英文
-    console.log("Setting language to en (deployment region: INTL)");
-    setLanguageState("en");
-    localStorage.setItem(STORAGE_KEY, "en");
+    // 优先级2: 根据部署区域推断默认语言（首次访问或存储损坏）
+    console.log("Setting language to", expectedLanguage, "(deployment region:", currentRegion, ")");
+    setLanguageState(expectedLanguage);
+    localStorage.setItem(STORAGE_KEY, expectedLanguage);
+    localStorage.setItem(STORAGE_REGION_KEY, currentRegion);
   }, []);
 
   // 设置语言（带持久化）

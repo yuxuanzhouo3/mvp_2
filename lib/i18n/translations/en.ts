@@ -824,4 +824,78 @@ export const en = {
       upgradeButton: "Upgrade to Pro",
     },
   },
+
+  // ==================== AI Recommendation System ====================
+  recommendation: {
+    // Categories
+    categories: {
+      entertainment: {
+        title: "Random Entertainment",
+        description: "Discover amazing entertainment",
+      },
+      shopping: {
+        title: "Random Shopping",
+        description: "Find products you'll love",
+      },
+      food: {
+        title: "Random Food",
+        description: "Explore culinary delights",
+      },
+      travel: {
+        title: "Random Travel",
+        description: "Discover travel destinations",
+      },
+      fitness: {
+        title: "Random Fitness",
+        description: "Start your fitness journey",
+      },
+    },
+    // Link Types
+    linkTypes: {
+      product: "Product",
+      video: "Video",
+      book: "Book",
+      location: "Location",
+      article: "Article",
+      app: "App",
+      music: "Music",
+      movie: "Movie",
+      game: "Game",
+      restaurant: "Restaurant",
+      recipe: "Recipe",
+      hotel: "Hotel",
+      course: "Course",
+    },
+    // UI Text
+    ui: {
+      shake: "Shake",
+      tapForRecommendations: "Tap for AI-powered recommendations",
+      aiPowered: "AI Powered",
+      cached: "Cached",
+      curated: "Curated",
+      viewDetails: "View Details",
+      save: "Save",
+      notInterested: "Not interested",
+      whyRecommend: "Why this recommendation: ",
+      recentHistory: "Recent History",
+      clear: "Clear",
+      categoryNotFound: "Category not found",
+      goHome: "Go Home",
+      tapToGetRecommendations: "Tap the button above for recommendations",
+      aiWillRecommend: "AI will recommend content based on your preferences",
+      poweredByAI: "Recommendations powered by AI, links from third-party platforms",
+      errorOccurred: "Failed to get recommendations, please try again",
+      noRecommendations: "No recommendations",
+    },
+    // Preference Analysis
+    preferences: {
+      title: "Preference Analysis",
+      topTags: "Top Tags",
+      totalInteractions: "Total Interactions",
+      favoriteCategory: "Favorite Category",
+      lastActive: "Last Active",
+      clickCount: "Click Count",
+      viewCount: "View Count",
+    },
+  },
 } as const;
