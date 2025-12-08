@@ -2,7 +2,7 @@
 import { ZhipuAI } from 'zhipuai';
 
 const client = new ZhipuAI({
-  apiKey: "7448af72bbb94a5286b92fa71aba4889.fk7eSWZwOYQA4mrU"   // 你的 key（建议后面改成 .env 方式）
+  apiKey: "xxxxxxxxxx"   // 你的 key（建议后面改成 .env 方式）
 });
 
 async function getAIRecommendation(userHistory, category) {
