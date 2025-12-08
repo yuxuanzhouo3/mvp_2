@@ -5,7 +5,7 @@ import Link from "next/link"
 import { Card } from "@/components/ui/card"
 import { useAuth } from "@/hooks/use-auth"
 import { Button } from "@/components/ui/button"
-import { Settings, Globe } from "lucide-react"
+import { Settings, Globe, Crown } from "lucide-react"
 import { useLanguage } from "@/components/language-provider"
 import { useTranslations } from "@/lib/i18n"
 
@@ -52,12 +52,6 @@ export default function HomePage() {
             >
               <Globe className="h-4 w-4" />
             </Button>
-            {user?.subscriptionTier === "pro" && (
-              <span className="px-2 py-1 text-xs rounded bg-green-100 text-green-700">PRO</span>
-            )}
-            {user?.subscriptionTier === "enterprise" && (
-              <span className="px-2 py-1 text-xs rounded bg-purple-100 text-purple-700 font-medium">ENTERPRISE</span>
-            )}
             {isAuthenticated ? (
               <>
                 <Link href="/settings">
@@ -65,7 +59,26 @@ export default function HomePage() {
                     <Settings className="h-4 w-4" />
                   </Button>
                 </Link>
-                <Link href="/pro" className="text-sm text-blue-600">Pro</Link>
+                {/* 订阅等级显示 */}
+                {user?.subscriptionTier === "enterprise" ? (
+                  <span className="px-2 py-1 text-xs font-medium rounded-full bg-purple-100 text-purple-700">
+                    Enterprise
+                  </span>
+                ) : user?.subscriptionTier === "pro" ? (
+                  <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-700">
+                    Pro
+                  </span>
+                ) : (
+                  <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-600">
+                    Free
+                  </span>
+                )}
+                {/* Pro页面链接 */}
+                <Link href="/pro">
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-yellow-600 hover:text-yellow-700">
+                    <Crown className="h-4 w-4" />
+                  </Button>
+                </Link>
                 <Button variant="secondary" size="sm" onClick={() => signOut()}>{t.auth.logout}</Button>
               </>
             ) : (
