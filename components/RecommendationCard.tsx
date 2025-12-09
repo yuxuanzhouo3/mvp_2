@@ -11,6 +11,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { AIRecommendation, RecommendationCategory } from "@/lib/types/recommendation";
+import { TravelRecommendationCard } from "./TravelRecommendationCard";
 
 // 图标组件
 const ExternalLinkIcon = () => (
@@ -38,7 +39,7 @@ const StarIcon = ({ filled }: { filled: boolean }) => (
   </svg>
 );
 
-const LinkTypeIcon = ({ linkType }: { linkType: string }) => {
+const LinkTypeIcon = ({ linkType, metadata }: { linkType: string; metadata?: any }) => {
   const icons: Record<string, string> = {
     product: "🛒",
     video: "🎬",
@@ -53,7 +54,13 @@ const LinkTypeIcon = ({ linkType }: { linkType: string }) => {
     recipe: "👨‍🍳",
     hotel: "🏨",
     course: "📖",
+    search: "🔍",  // 搜索引擎链接图标
   };
+
+  // 如果 metadata 标记这是一个搜索链接，显示搜索图标
+  if (metadata?.isSearchLink) {
+    return <span className="text-lg">🔍</span>;
+  }
 
   return <span className="text-lg">{icons[linkType] || "🔗"}</span>;
 };
@@ -97,6 +104,7 @@ const linkTypeLabels: Record<string, { zh: string; en: string }> = {
   recipe: { zh: "食谱", en: "Recipe" },
   hotel: { zh: "酒店", en: "Hotel" },
   course: { zh: "课程", en: "Course" },
+  search: { zh: "搜索", en: "Search" },
 };
 
 export function RecommendationCard({
@@ -117,8 +125,10 @@ export function RecommendationCard({
     description,
     link,
     linkType,
+    platform,
     metadata,
     reason,
+    tags,
   } = recommendation;
 
   const handleLinkClick = () => {
@@ -220,6 +230,24 @@ export function RecommendationCard({
       );
     }
 
+    // 旅游推荐特殊信息显示
+    if (category === 'travel' && metadata.destination) {
+      if (metadata.destination.country) {
+        items.push(
+          <span key="country" className="text-sm text-gray-500">
+            🌍 {metadata.destination.country}
+          </span>
+        );
+      }
+      if (metadata.bestSeason) {
+        items.push(
+          <span key="season" className="text-sm text-orange-500">
+            🗓️ {locale === "zh" ? "最佳季节：" : "Best Season: "}{metadata.bestSeason}
+          </span>
+        );
+      }
+    }
+
     return items.length > 0 ? (
       <div className="flex flex-wrap items-center gap-3 mt-2">
         {items}
@@ -227,14 +255,40 @@ export function RecommendationCard({
     ) : null;
   };
 
+  // 渲染旅游亮点
+  const renderTravelHighlights = () => {
+    if (category !== 'travel' || !metadata.highlights || !Array.isArray(metadata.highlights)) {
+      return null;
+    }
+
+    return (
+      <div className="mt-3 p-3 bg-blue-50 rounded-lg">
+        <h4 className="text-sm font-medium text-blue-800 mb-2">
+          {locale === "zh" ? "✨ 旅行亮点" : "✨ Highlights"}
+        </h4>
+        <div className="flex flex-wrap gap-2">
+          {metadata.highlights.map((highlight: string, index: number) => (
+            <span
+              key={index}
+              className="inline-block px-3 py-1 text-xs bg-blue-100 text-blue-700 rounded-full"
+            >
+              {highlight}
+            </span>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   // 渲染标签
   const renderTags = () => {
-    const tags = metadata.tags as string[] | undefined;
-    if (!tags || tags.length === 0) return null;
+    // 使用 tags 属性或 metadata.tags 作为后备
+    const tagList = tags || (metadata.tags as string[] | undefined);
+    if (!tagList || tagList.length === 0) return null;
 
     return (
       <div className="flex flex-wrap gap-1 mt-2">
-        {tags.slice(0, 4).map((tag, index) => (
+        {tagList.slice(0, 4).map((tag, index) => (
           <Badge
             key={index}
             variant="secondary"
@@ -259,7 +313,7 @@ export function RecommendationCard({
         >
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-              <LinkTypeIcon linkType={linkType} />
+              <LinkTypeIcon linkType={linkType} metadata={metadata} />
             </div>
             <div className="flex-1 min-w-0">
               <h4 className="font-medium text-gray-800 truncate">{title}</h4>
@@ -287,7 +341,7 @@ export function RecommendationCard({
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-2">
               <Badge className="bg-[#4ECDC4] text-white">
-                <LinkTypeIcon linkType={linkType} />
+                <LinkTypeIcon linkType={linkType} metadata={metadata} />
                 <span className="ml-1">
                   {linkTypeLabels[linkType]?.[locale] || linkType}
                 </span>
@@ -352,6 +406,7 @@ export function RecommendationCard({
 
           {renderMetadata()}
           {renderTags()}
+          {renderTravelHighlights()}
         </div>
 
         {/* 推荐理由 */}
@@ -368,11 +423,26 @@ export function RecommendationCard({
 
         {/* 操作按钮 */}
         <div className="p-4 pt-2 border-t bg-gray-50">
+          {/* 显示平台信息（仅对搜索链接） */}
+          {linkType === 'search' && platform && (
+            <div className="flex items-center gap-2 text-xs text-gray-500 mb-2 bg-gray-100 p-2 rounded">
+              <LinkTypeIcon linkType={linkType} metadata={metadata} />
+              <span>
+                {locale === "zh" ? `将在 ${platform} 中搜索` : `Search on ${platform}`}
+              </span>
+            </div>
+          )}
+
           <Button
             onClick={handleLinkClick}
             className="w-full bg-[#FF6B6B] hover:bg-[#FF5252] text-white"
           >
-            <span>{locale === "zh" ? "查看详情" : "View Details"}</span>
+            <span>
+              {linkType === 'search' && platform
+                ? (locale === "zh" ? `在 ${platform} 中搜索` : `Search on ${platform}`)
+                : (locale === "zh" ? "查看详情" : "View Details")
+              }
+            </span>
             <ExternalLinkIcon />
           </Button>
         </div>
@@ -407,19 +477,36 @@ export function RecommendationList({
 }: RecommendationListProps) {
   return (
     <div className={compact ? "space-y-2" : "space-y-4"}>
-      {recommendations.map((rec, index) => (
-        <RecommendationCard
-          key={`${rec.title}-${index}`}
-          recommendation={rec}
-          category={category}
-          onLinkClick={onLinkClick}
-          onSave={onSave}
-          onDismiss={onDismiss}
-          showReason={showReason}
-          compact={compact}
-          locale={locale}
-        />
-      ))}
+      {recommendations.map((rec, index) => {
+        // 如果是旅游类别且不是紧凑模式，使用专门的旅游卡片
+        if (category === 'travel' && !compact) {
+          return (
+            <TravelRecommendationCard
+              key={`${rec.title}-${index}`}
+              recommendation={rec}
+              onLinkClick={onLinkClick}
+              onSave={onSave}
+              onDismiss={onDismiss}
+              locale={locale}
+            />
+          );
+        }
+
+        // 其他情况使用通用卡片
+        return (
+          <RecommendationCard
+            key={`${rec.title}-${index}`}
+            recommendation={rec}
+            category={category}
+            onLinkClick={onLinkClick}
+            onSave={onSave}
+            onDismiss={onDismiss}
+            showReason={showReason}
+            compact={compact}
+            locale={locale}
+          />
+        );
+      })}
     </div>
   );
 }

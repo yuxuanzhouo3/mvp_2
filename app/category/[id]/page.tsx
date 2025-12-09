@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { RecommendationCard, RecommendationList } from "@/components/RecommendationCard"
 import type { AIRecommendation, RecommendationCategory, AIRecommendResponse } from "@/lib/types/recommendation"
+import { getClientLocale } from "@/lib/utils/locale"
 
 // 分类配置
 const categoryConfig: Record<
@@ -49,16 +50,6 @@ const categoryConfig: Record<
     color: "from-red-400 to-pink-400",
     description: { zh: "开启健康生活", en: "Start your fitness journey" },
   },
-}
-
-// 获取当前语言
-function getLocale(): "zh" | "en" {
-  if (typeof window !== "undefined") {
-    const saved = localStorage.getItem("locale")
-    if (saved === "en" || saved === "zh") return saved
-    return navigator.language.startsWith("zh") ? "zh" : "en"
-  }
-  return "zh"
 }
 
 // 获取用户 ID
@@ -119,15 +110,14 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
   const [isLoading, setIsLoading] = useState(false)
   const [source, setSource] = useState<"ai" | "fallback" | "cache" | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [locale, setLocale] = useState<"zh" | "en">("zh")
+  // 使用环境变量中的地区设置
+  const [locale] = useState<"zh" | "en">(() => getClientLocale())
 
   const categoryId = params.id as RecommendationCategory
   const category = categoryConfig[categoryId]
 
-  // 初始化语言和历史
+  // 初始化历史
   useEffect(() => {
-    setLocale(getLocale())
-
     // 从 localStorage 加载历史
     const savedHistory = localStorage.getItem(`ai_history_${params.id}`)
     if (savedHistory) {

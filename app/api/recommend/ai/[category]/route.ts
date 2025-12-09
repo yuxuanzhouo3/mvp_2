@@ -6,9 +6,9 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getAIRecommendations, isZhipuConfigured } from "@/lib/ai/zhipu-client";
-import { getFallbackRecommendations } from "@/lib/ai/fallback-data";
-import { validateLink } from "@/lib/ai/link-validator";
+import { generateRecommendations, isZhipuConfigured } from "@/lib/ai/zhipu-recommendation";
+import { generateSearchLink, selectBestPlatform } from "@/lib/search/search-engine";
+import { enhanceTravelRecommendation } from "@/lib/ai/travel-enhancer";
 import {
   getUserRecommendationHistory,
   getUserCategoryPreference,
@@ -19,6 +19,7 @@ import {
   generatePreferenceHash,
 } from "@/lib/services/recommendation-service";
 import { isValidUserId } from "@/lib/utils";
+import { getLocale } from "@/lib/utils/locale";
 import type { RecommendationCategory, AIRecommendResponse } from "@/lib/types/recommendation";
 
 // 有效的分类列表
@@ -54,7 +55,8 @@ export async function GET(
     const searchParams = request.nextUrl.searchParams;
     const userId = searchParams.get("userId") || "anonymous";
     const count = Math.min(parseInt(searchParams.get("count") || "5"), 10);
-    const locale = (searchParams.get("locale") as "zh" | "en") || "zh";
+    // 从请求参数获取locale，如果没有则使用环境变量配置
+    const locale = (searchParams.get("locale") as "zh" | "en") || getLocale();
     const skipCache = searchParams.get("skipCache") === "true";
 
     // 获取用户偏好和历史（仅当 userId 是有效 UUID 时）
@@ -101,7 +103,7 @@ export async function GET(
     // 检查 AI 是否配置
     if (!isZhipuConfigured()) {
       console.log("Zhipu API not configured, using fallback data");
-      const fallbackRecs = getFallbackRecommendations(category, locale, count);
+      const fallbackRecs = await generateFallbackRecommendations(category, locale, count);
 
       return NextResponse.json({
         success: true,
@@ -110,86 +112,72 @@ export async function GET(
       } satisfies AIRecommendResponse);
     }
 
-    // 调用 AI 获取推荐
+    // 使用新的 AI + 搜索引擎推荐系统
     try {
-      const aiRecommendations = await getAIRecommendations(
-        category,
-        userHistory,
-        userPreference,
-        locale,
-        count
-      );
+      console.log(`[AI] 用户历史记录数: ${userHistory?.length || 0}`);
 
-      // 验证推荐结果
-      const validRecommendations = aiRecommendations.filter(
-        (rec) => rec.title && rec.link && rec.link.startsWith("http")
-      );
+      // 1. 使用智谱 AI 生成推荐内容（不含链接）
+      const aiRecommendations = await generateRecommendations(userHistory || [], category, locale);
+      console.log(`[AI] 生成推荐数: ${aiRecommendations.length}`);
 
-      // ✅ 额外验证：确保每条推荐都有有效的、可点击的链接
-      const fullValidRecommendations = validRecommendations.filter((rec) => {
-        // 使用新的链接验证器
-        const linkValidation = validateLink(rec.link);
+      // 2. 为每个推荐生成搜索引擎链接
+      const finalRecommendations = aiRecommendations.map(rec => {
+        let enhancedRec = rec;
 
-        if (!linkValidation.isValid) {
-          console.warn(
-            `[Link Validation] ❌ Recommendation "${rec.title}" rejected - ${linkValidation.error}`
-          );
-          return false;
+        // 特殊处理：旅游推荐使用增强器
+        if (category === 'travel') {
+          enhancedRec = enhanceTravelRecommendation(rec, locale);
         }
 
-        console.log(`[Link Validation] ✅ Recommendation "${rec.title}" - Valid link: ${rec.link}`);
-        return true;
-      });
+        // 选择最佳平台
+        const platform = selectBestPlatform(category, enhancedRec.platform, locale);
 
-      if (fullValidRecommendations.length === 0) {
-        throw new Error(`No valid external links from AI (received ${validRecommendations.length}, valid: 0)`);
-      }
+        // 生成搜索链接
+        const searchLink = generateSearchLink(enhancedRec.title, enhancedRec.searchQuery, platform, locale, category);
 
-      if (fullValidRecommendations.length < validRecommendations.length) {
-        console.warn(
-          `[Link Validation] Filtered out ${validRecommendations.length - fullValidRecommendations.length} recommendations with invalid URLs`
-        );
-      }
+        const baseRecommendation = {
+          title: enhancedRec.title,
+          description: enhancedRec.description,
+          reason: enhancedRec.reason,
+          tags: enhancedRec.tags,
+          link: searchLink.url,           // 搜索引擎链接
+          platform: searchLink.displayName,
+          linkType: category === 'travel' ? ('location' as const) : ('search' as const),    // 旅游推荐使用 location 图标
+          category: category,             // 添加缺失的 category 属性
+          metadata: {
+            searchQuery: enhancedRec.searchQuery,
+            originalPlatform: enhancedRec.platform,
+            isSearchLink: true,          // 标记这是搜索链接
+          }
+        };
 
-      // 去重：与用户历史进行对比
-      const historicalLinks = new Set(userHistory.map((h) => h.link));
-      const uniqueRecommendations = fullValidRecommendations.filter((rec) => {
-        if (historicalLinks.has(rec.link)) {
-          console.warn(`[Dedup] Filtered recommendation already in user history: "${rec.title}"`);
-          return false;
+        // 为旅游推荐添加特殊元数据
+        if (category === 'travel') {
+          const travelEnhanced = enhancedRec as any;
+          const metadata = baseRecommendation.metadata as any;
+          if (travelEnhanced.destination) {
+            metadata.destination = travelEnhanced.destination;
+          }
+          if (travelEnhanced.highlights) {
+            metadata.highlights = travelEnhanced.highlights;
+          }
+          if (travelEnhanced.bestSeason) {
+            metadata.bestSeason = travelEnhanced.bestSeason;
+          }
+          if (travelEnhanced.travelStyle) {
+            metadata.travelStyle = travelEnhanced.travelStyle;
+          }
         }
-        return true;
+
+        return baseRecommendation;
       });
 
-      // 如果去重后数量太少，仍然返回（但记录警告）
-      if (uniqueRecommendations.length === 0) {
-        console.warn(
-          "[Dedup] All recommendations are in user history, returning original recommendations"
-        );
-        // 返回原始推荐，但标记为可能重复
-      } else if (uniqueRecommendations.length < fullValidRecommendations.length) {
-        console.log(
-          `[Dedup] Filtered ${fullValidRecommendations.length - uniqueRecommendations.length} recommendation(s) already in user history. Total valid: ${fullValidRecommendations.length} → ${uniqueRecommendations.length}`
-        );
-      }
+      console.log(`[Search] 生成搜索链接数: ${finalRecommendations.length}`);
 
-      const finalRecommendations =
-        uniqueRecommendations.length > 0 ? uniqueRecommendations : fullValidRecommendations;
-
-      // 为匿名用户随机打乱推荐以提供多样化体验
-      let recommendationsToReturn = finalRecommendations;
-      if (isAnonymous && recommendationsToReturn.length > 1) {
-        recommendationsToReturn = [...recommendationsToReturn].sort(() => Math.random() - 0.5);
-        console.log(`[Anonymous] Shuffled ${recommendationsToReturn.length} recommendations for diversity`);
-      }
-
-      console.log(`[Return] Will return ${Math.min(recommendationsToReturn.length, count)} out of ${recommendationsToReturn.length} available recommendations (requested count: ${count})`);
-
-
-      // 异步保存到历史和缓存（不阻塞响应）
-      if (isValidUserId(userId)) {
+      // 3. 保存到数据库
+      if (isValidUserId(userId) && finalRecommendations.length > 0) {
         console.log(`[Save] Recording recommendation for user ${userId.slice(0, 8)}...`);
-        saveRecommendationsToHistory(userId, recommendationsToReturn)
+        saveRecommendationsToHistory(userId, finalRecommendations)
           .then((ids) => {
             console.log(`[Save] ✓ Successfully saved ${ids.length} recommendations to history`);
           })
@@ -208,7 +196,7 @@ export async function GET(
         console.log(`[Save] Skipping history save for anonymous user`);
       }
 
-      // 缓存推荐结果（用于登录用户）
+      // 4. 缓存推荐结果（用于登录用户）
       if (!isAnonymous) {
         cacheRecommendations(category, preferenceHash, finalRecommendations, 30)
           .then(() => {
@@ -221,43 +209,20 @@ export async function GET(
 
       return NextResponse.json({
         success: true,
-        recommendations: recommendationsToReturn.slice(0, count),
+        recommendations: finalRecommendations.slice(0, count),
         source: "ai",
       } satisfies AIRecommendResponse);
     } catch (aiError) {
       console.error("AI recommendation failed:", aiError);
 
-      // 检查是否是 API 配置或权限问题
-      const errorMessage = aiError instanceof Error ? aiError.message : String(aiError);
-      const isForbiddenError = errorMessage.includes("403") || errorMessage.includes("access denied");
-      const isConfigError = errorMessage.includes("not configured") || errorMessage.includes("not properly");
-
-      if (isForbiddenError || isConfigError) {
-        console.error("Critical Zhipu API configuration issue detected", {
-          isForbidden: isForbiddenError,
-          isConfig: isConfigError,
-          error: errorMessage,
-        });
-        // 返回错误，提示用户检查 API Key
-        return NextResponse.json(
-          {
-            success: false,
-            recommendations: [],
-            source: "fallback",
-            error: "Zhipu API configuration error. Please check your ZHIPU_API_KEY.",
-          } satisfies AIRecommendResponse,
-          { status: 503 }
-        );
-      }
-
       // AI 失败，使用降级数据
-      const fallbackRecs = getFallbackRecommendations(category, locale, count);
+      const fallbackRecs = await generateFallbackRecommendations(category, locale, count);
 
       return NextResponse.json({
         success: true,
         recommendations: fallbackRecs,
         source: "fallback",
-        error: "Zhipu API temporarily unavailable, showing curated recommendations",
+        error: "AI temporarily unavailable, showing curated recommendations",
       } satisfies AIRecommendResponse);
     }
   } catch (error) {
@@ -273,6 +238,121 @@ export async function GET(
       { status: 500 }
     );
   }
+}
+
+/**
+ * 生成降级推荐（使用预定义的搜索链接）
+ */
+async function generateFallbackRecommendations(
+  category: string,
+  locale: string,
+  count: number
+) {
+  const fallbacks: Record<string, Record<string, any[]>> = {
+    zh: {
+      entertainment: [{
+        title: '热门电影推荐',
+        description: '最近上映的高分电影',
+        reason: '根据大众喜好为你推荐',
+        tags: ['电影', '热门', '高分'],
+        searchQuery: '2024 热门电影 高分',
+        platform: '豆瓣'
+      }],
+      shopping: [{
+        title: '热销数码产品',
+        description: '最受欢迎的数码好物',
+        reason: '根据销量和评价为你推荐',
+        tags: ['数码', '热销', '好评'],
+        searchQuery: '热销数码产品 好评',
+        platform: '京东'
+      }],
+      food: [{
+        title: '特色美食餐厅',
+        description: '附近高评分餐厅',
+        reason: '根据评价为你推荐',
+        tags: ['美食', '餐厅', '高评分'],
+        searchQuery: '特色餐厅 高评分',
+        platform: '大众点评'
+      }],
+      travel: [{
+        title: '热门旅游景点',
+        description: '值得一去的景点',
+        reason: '根据热度为你推荐',
+        tags: ['旅游', '景点', '热门'],
+        searchQuery: '热门旅游景点',
+        platform: '携程'
+      }],
+      fitness: [{
+        title: '健身训练课程',
+        description: '适合初学者的课程',
+        reason: '根据难度为你推荐',
+        tags: ['健身', '课程', '初学者'],
+        searchQuery: '健身训练课程 初学者',
+        platform: 'Keep'
+      }]
+    },
+    en: {
+      entertainment: [{
+        title: 'Popular Movies',
+        description: 'Latest high-rated movies',
+        reason: 'Recommended based on popular preferences',
+        tags: ['movies', 'popular', 'high-rated'],
+        searchQuery: '2024 popular movies high rated',
+        platform: 'IMDb'
+      }],
+      shopping: [{
+        title: 'Trending Electronics',
+        description: 'Most popular electronic gadgets',
+        reason: 'Recommended based on sales and reviews',
+        tags: ['electronics', 'trending', 'top-rated'],
+        searchQuery: 'trending electronics best seller',
+        platform: 'Amazon'
+      }],
+      food: [{
+        title: 'Top-Rated Restaurants',
+        description: 'Highly-rated restaurants nearby',
+        reason: 'Recommended based on reviews',
+        tags: ['food', 'restaurant', 'high-rated'],
+        searchQuery: 'top-rated restaurants',
+        platform: 'Google Maps'
+      }],
+      travel: [{
+        title: 'Popular Attractions',
+        description: 'Must-visit destinations',
+        reason: 'Recommended based on popularity',
+        tags: ['travel', 'attractions', 'popular'],
+        searchQuery: 'popular tourist attractions',
+        platform: 'TripAdvisor'
+      }],
+      fitness: [{
+        title: 'Fitness Workout Classes',
+        description: 'Beginner-friendly workout routines',
+        reason: 'Recommended based on difficulty',
+        tags: ['fitness', 'workout', 'beginner'],
+        searchQuery: 'fitness workout for beginners',
+        platform: 'YouTube'
+      }]
+    }
+  };
+
+  const baseRec = fallbacks[locale]?.[category]?.[0] || fallbacks.zh.entertainment[0];
+
+  // 生成搜索链接
+  const platform = selectBestPlatform(category, baseRec.platform, locale);
+  const searchLink = generateSearchLink(baseRec.title, baseRec.searchQuery, platform, locale, category);
+
+  return [{
+    ...baseRec,
+    link: searchLink.url,
+    platform: searchLink.displayName,
+    linkType: 'article' as const,  // 临时映射到 article 类型
+    category: category as RecommendationCategory,
+    metadata: {
+      searchQuery: baseRec.searchQuery,
+      originalPlatform: baseRec.platform,
+      isSearchLink: true          // 标记这是搜索链接
+    }
+  }];
 }
 
 // 支持 POST 请求（带有更多参数）

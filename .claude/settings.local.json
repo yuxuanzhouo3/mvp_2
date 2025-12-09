@@ -20,7 +20,13 @@
       "Bash(timeout 60 npm run build)",
       "Bash(tasklist:*)",
       "Bash(findstr:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(npx supabase db push:*)",
+      "Bash(npx ts-node:*)",
+      "Bash(node scripts/test-recommendation-links.js)",
+      "Bash(node:*)",
+      "Bash(npm run dev)",
+      "Bash(python:*)"
     ],
     "deny": [],
     "ask": []

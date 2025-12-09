@@ -33,7 +33,8 @@ export type LinkType =
   | "restaurant"
   | "recipe"
   | "hotel"
-  | "course";
+  | "course"
+  | "search"; // 搜索引擎链接
 
 /**
  * 用户行为类型
@@ -72,6 +73,8 @@ export interface AIRecommendation {
   linkType: LinkType;
   metadata: RecommendationMetadata;
   reason: string;
+  platform?: string;
+  tags?: string[];
 }
 
 /**
