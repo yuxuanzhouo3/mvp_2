@@ -3,8 +3,6 @@
  * 为旅游推荐提供特殊规则和增强体验
  */
 
-import { generateSearchLink } from '../search/search-engine';
-
 export interface TravelRecommendation {
   title: string;
   description: string;
@@ -39,14 +37,7 @@ export function enhanceTravelRecommendation(
   // 智能选择最佳平台 - 根据推荐类型选择
   let bestPlatform = selectPlatformByRecommendationType(recommendation, destination, locale);
 
-  // 生成深度相关的搜索链接
-  const searchLink = generateSearchLink(
-    recommendation.title,
-    enhancedSearchQuery,
-    bestPlatform,
-    determineSearchLocale(destination, locale),
-    'travel' // 明确指定是旅游分类
-  );
+  // 注意：不在这里生成链接，由 route.ts 处理
 
   // 生成亮点
   const highlights = generateHighlights(recommendation);
@@ -57,12 +48,8 @@ export function enhanceTravelRecommendation(
     platform: bestPlatform,
     destination,
     highlights,
-    link: searchLink.url,
-    linkType: 'search',
     metadata: {
       ...recommendation.metadata,
-      isSearchLink: true,
-      platform: bestPlatform,
       destination,
       highlights
     }
@@ -129,34 +116,41 @@ function selectPlatformByRecommendationType(
   const desc = recommendation.description?.toLowerCase() || '';
   const tags = recommendation.tags || [];
 
+  // 所有类型都优先使用 TripAdvisor
   // 景点、观光、文化遗址
   if (title.includes('寺') || title.includes('庙') || title.includes('塔') ||
       title.includes('宫') || title.includes('博物馆') || title.includes('遗址') ||
       tags.includes('历史文化') || tags.includes('文化') || tags.includes('景点')) {
-    return isInternationalDestination(recommendation.title) ? 'TripAdvisor' : '携程';
+    return 'TripAdvisor';
   }
 
   // 主题公园、娱乐
   if (title.includes('迪士尼') || title.includes('乐园') || title.includes('公园') ||
       tags.includes('主题公园') || tags.includes('娱乐')) {
-    return isInternationalDestination(recommendation.title) ? 'TripAdvisor' : '携程';
+    return 'TripAdvisor';
   }
 
   // 自然风光、海滩
-  if (title.includes('海滩') || title.includes('海岛') || title.includes('山') ||
-      title.includes('湖') || title.includes('瀑布') || title.includes('公园') ||
-      tags.includes('海岛') || tags.includes('自然') || tags.includes('海滩')) {
-    return isInternationalDestination(recommendation.title) ? 'TripAdvisor' : '马蜂窝';
+  if (title.includes('海滩') || title.includes('山') ||
+      title.includes('湖') || title.includes('瀑布') ||
+      tags.includes('自然') || tags.includes('海滩')) {
+    return 'TripAdvisor';
   }
 
   // 游船、体验
   if (title.includes('游船') || title.includes('体验') || title.includes('tour') ||
       tags.includes('游船') || tags.includes('体验')) {
-    return isInternationalDestination(recommendation.title) ? 'TripAdvisor' : '携程';
+    return 'TripAdvisor';
   }
 
-  // 默认选择
-  return isInternationalDestination(recommendation.title) ? 'TripAdvisor' : '携程';
+  // 只有明确是国际度假村才使用 Booking.com（最小化使用）
+  if (isInternationalDestination(recommendation.title) &&
+      (title.includes('度假村') || title.includes('resort'))) {
+    return 'Booking.com';
+  }
+
+  // 默认选择 TripAdvisor（主要使用）
+  return 'TripAdvisor';
 }
 
 /**

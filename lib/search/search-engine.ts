@@ -140,17 +140,25 @@ export function generateSearchLink(
   } else if (platform === '携程' || platform === '去哪儿' || platform === '马蜂窝') {
     // 中文旅游平台 - 不再添加通用关键词
   } else if (platform === 'Booking.com') {
-    // 只有在查询中没有明确的景点信息时才添加住宿关键词
-    const hasIndoorAttraction = /寺|庙|塔|宫|博物馆|馆|殿|厅/i.test(finalQuery);
-    if (!hasIndoorAttraction && !finalQuery.includes('hotel') && !finalQuery.includes('resort')) {
-      // 如果是室内景点或主题公园，搜索附近住宿
-      finalQuery = `${finalQuery} hotels`;
+    // Booking.com 主要用于住宿预订，特别是度假村
+    // 检查查询中是否包含度假村相关关键词
+    const isResortRelated = /resort|度假村|温泉|spa|hotel/i.test(finalQuery);
+
+    // 如果不是度假村相关的查询，保持原样（因为平台选择逻辑已经确保只有度假村才会使用Booking.com）
+    // 这样确保了Booking.com只搜索度假村和住宿，而不是普通景点
+    if (!isResortRelated && !finalQuery.includes('hotels')) {
+      // 对于纯粹的景点名称，不添加任何关键词，让Booking.com显示该地点的住宿选项
+      // 这里不再添加hotels，避免与查询目的冲突
     }
   } else if (platform === 'Agoda') {
     // Agoda - 住宿预订，专注亚洲
-    const hasIndoorAttraction = /寺|庙|塔|宫|博物馆|馆|殿|厅/ig.test(finalQuery);
-    if (!hasIndoorAttraction && !finalQuery.includes('hotel') && !finalQuery.includes('resort')) {
-      finalQuery = `${finalQuery} hotels`;
+    // 与 Booking.com 保持一致的逻辑
+    // 只对度假村相关的查询才添加住宿关键词
+    const isResortRelated = /resort|度假村|温泉|spa|hotel/i.test(finalQuery);
+
+    // 对于非度假村查询，保持原样，避免添加无关的住宿关键词
+    if (!isResortRelated && !finalQuery.includes('hotels')) {
+      // 保持查询精准
     }
   } else if (platform === 'Airbnb') {
     // 对于景点推荐，搜索附近的住宿

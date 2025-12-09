@@ -26,7 +26,9 @@
       "Bash(node scripts/test-recommendation-links.js)",
       "Bash(node:*)",
       "Bash(npm run dev)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(npm run build:*)",
+      "Bash(npx next dev:*)"
     ],
     "deny": [],
     "ask": []
