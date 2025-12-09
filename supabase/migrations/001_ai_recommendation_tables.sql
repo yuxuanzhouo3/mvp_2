@@ -85,6 +85,10 @@ CREATE TABLE IF NOT EXISTS recommendation_cache (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 创建唯一约束（用于 upsert 操作）
+ALTER TABLE recommendation_cache ADD CONSTRAINT recommendation_cache_category_preference_hash_key
+  UNIQUE (category, preference_hash);
+
 -- 创建索引
 CREATE INDEX IF NOT EXISTS idx_recommendation_cache_category ON recommendation_cache(category);
 CREATE INDEX IF NOT EXISTS idx_recommendation_cache_preference_hash ON recommendation_cache(preference_hash);

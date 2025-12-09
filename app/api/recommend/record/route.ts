@@ -12,6 +12,7 @@ import {
   updateUserPreferences,
   learnPreferencesFromHistory,
 } from "@/lib/services/recommendation-service";
+import { isValidUserId } from "@/lib/utils";
 import type {
   RecordActionRequest,
   RecordActionResponse,
@@ -41,6 +42,17 @@ export async function POST(request: NextRequest) {
         {
           success: false,
           error: "Missing required fields: userId, category, recommendation, action",
+        } satisfies RecordActionResponse,
+        { status: 400 }
+      );
+    }
+
+    // 验证用户 ID 是否是有效 UUID
+    if (!isValidUserId(userId)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Invalid userId format. Must be a valid UUID.",
         } satisfies RecordActionResponse,
         { status: 400 }
       );
@@ -172,6 +184,17 @@ export async function PUT(request: NextRequest) {
         {
           success: false,
           error: "Missing required fields: userId, records",
+        },
+        { status: 400 }
+      );
+    }
+
+    // 验证用户 ID 是否是有效 UUID
+    if (!isValidUserId(userId)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Invalid userId format. Must be a valid UUID.",
         },
         { status: 400 }
       );

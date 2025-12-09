@@ -423,17 +423,24 @@ export async function cacheRecommendations(
   const expiresAt = new Date();
   expiresAt.setMinutes(expiresAt.getMinutes() + expirationMinutes);
 
-  await supabase.from("recommendation_cache").upsert(
-    {
+  // 先尝试删除旧的缓存，再插入新的
+  // 这样可以避免 upsert 的约束问题
+  try {
+    await supabase
+      .from("recommendation_cache")
+      .delete()
+      .eq("category", category)
+      .eq("preference_hash", preferenceHash);
+
+    await supabase.from("recommendation_cache").insert({
       category,
       preference_hash: preferenceHash,
       recommendations,
       expires_at: expiresAt.toISOString(),
-    },
-    {
-      onConflict: "category,preference_hash",
-    }
-  );
+    });
+  } catch (error) {
+    console.error("Failed to cache recommendations:", error);
+  }
 }
 
 /**

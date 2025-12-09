@@ -11,6 +11,7 @@ import {
   getUserPreferences,
   getUserRecommendationHistory,
 } from "@/lib/services/recommendation-service";
+import { isValidUserId } from "@/lib/utils";
 import type { UserPreferencesResponse, RecommendationCategory } from "@/lib/types/recommendation";
 
 export async function GET(
@@ -20,12 +21,13 @@ export async function GET(
   try {
     const { userId } = params;
 
-    if (!userId || userId === "anonymous") {
+    // 验证用户 ID 是否是有效 UUID
+    if (!isValidUserId(userId)) {
       return NextResponse.json(
         {
           success: false,
           analysis: null,
-          error: "Valid userId is required",
+          error: "Valid userId (UUID format) is required",
         } satisfies UserPreferencesResponse,
         { status: 400 }
       );
@@ -112,11 +114,12 @@ export async function PUT(
   try {
     const { userId } = params;
 
-    if (!userId || userId === "anonymous") {
+    // 验证用户 ID 是否是有效 UUID
+    if (!isValidUserId(userId)) {
       return NextResponse.json(
         {
           success: false,
-          error: "Valid userId is required",
+          error: "Valid userId (UUID format) is required",
         },
         { status: 400 }
       );
@@ -182,11 +185,12 @@ export async function DELETE(
   try {
     const { userId } = params;
 
-    if (!userId || userId === "anonymous") {
+    // 验证用户 ID 是否是有效 UUID
+    if (!isValidUserId(userId)) {
       return NextResponse.json(
         {
           success: false,
-          error: "Valid userId is required",
+          error: "Valid userId (UUID format) is required",
         },
         { status: 400 }
       );

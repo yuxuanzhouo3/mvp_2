@@ -5,9 +5,10 @@
  * 基于用户历史和偏好，使用 AI 生成个性化推荐
  */
 
-import { type NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getAIRecommendations, isZhipuConfigured } from "@/lib/ai/zhipu-client";
 import { getFallbackRecommendations } from "@/lib/ai/fallback-data";
+import { validateLink } from "@/lib/ai/link-validator";
 import {
   getUserRecommendationHistory,
   getUserCategoryPreference,
@@ -17,6 +18,7 @@ import {
   cacheRecommendations,
   generatePreferenceHash,
 } from "@/lib/services/recommendation-service";
+import { isValidUserId } from "@/lib/utils";
 import type { RecommendationCategory, AIRecommendResponse } from "@/lib/types/recommendation";
 
 // 有效的分类列表
@@ -51,15 +53,15 @@ export async function GET(
     // 获取请求参数
     const searchParams = request.nextUrl.searchParams;
     const userId = searchParams.get("userId") || "anonymous";
-    const count = Math.min(parseInt(searchParams.get("count") || "3"), 5);
+    const count = Math.min(parseInt(searchParams.get("count") || "5"), 10);
     const locale = (searchParams.get("locale") as "zh" | "en") || "zh";
     const skipCache = searchParams.get("skipCache") === "true";
 
-    // 获取用户偏好和历史
+    // 获取用户偏好和历史（仅当 userId 是有效 UUID 时）
     let userHistory: Awaited<ReturnType<typeof getUserRecommendationHistory>> = [];
     let userPreference: Awaited<ReturnType<typeof getUserCategoryPreference>> = null;
 
-    if (userId !== "anonymous") {
+    if (isValidUserId(userId)) {
       try {
         [userHistory, userPreference] = await Promise.all([
           getUserRecommendationHistory(userId, category, 20),
@@ -71,15 +73,18 @@ export async function GET(
     }
 
     // 生成偏好哈希用于缓存
+    // 对于匿名用户，禁用缓存以确保获得多样化的推荐
     const preferenceHash = generatePreferenceHash(userPreference);
+    const isAnonymous = userId === "anonymous";
 
-    // 尝试从缓存获取
-    if (!skipCache) {
+    // 尝试从缓存获取（仅用于登录用户）
+    if (!skipCache && !isAnonymous) {
       try {
         const cachedRecommendations = await getCachedRecommendations(category, preferenceHash);
         if (cachedRecommendations && cachedRecommendations.length > 0) {
           // 从缓存中随机选择
           const shuffled = [...cachedRecommendations].sort(() => Math.random() - 0.5);
+          console.log(`[Cache Hit] Using cached recommendations for ${category} with hash ${preferenceHash}`);
           return NextResponse.json({
             success: true,
             recommendations: shuffled.slice(0, count),
@@ -89,6 +94,8 @@ export async function GET(
       } catch (cacheError) {
         console.warn("Cache lookup failed:", cacheError);
       }
+    } else if (isAnonymous) {
+      console.log(`[Anonymous User] Skipping cache for ${category} to provide diverse recommendations`);
     }
 
     // 检查 AI 是否配置
@@ -118,13 +125,35 @@ export async function GET(
         (rec) => rec.title && rec.link && rec.link.startsWith("http")
       );
 
-      if (validRecommendations.length === 0) {
-        throw new Error("No valid recommendations from AI");
+      // ✅ 额外验证：确保每条推荐都有有效的、可点击的链接
+      const fullValidRecommendations = validRecommendations.filter((rec) => {
+        // 使用新的链接验证器
+        const linkValidation = validateLink(rec.link);
+
+        if (!linkValidation.isValid) {
+          console.warn(
+            `[Link Validation] ❌ Recommendation "${rec.title}" rejected - ${linkValidation.error}`
+          );
+          return false;
+        }
+
+        console.log(`[Link Validation] ✅ Recommendation "${rec.title}" - Valid link: ${rec.link}`);
+        return true;
+      });
+
+      if (fullValidRecommendations.length === 0) {
+        throw new Error(`No valid external links from AI (received ${validRecommendations.length}, valid: 0)`);
+      }
+
+      if (fullValidRecommendations.length < validRecommendations.length) {
+        console.warn(
+          `[Link Validation] Filtered out ${validRecommendations.length - fullValidRecommendations.length} recommendations with invalid URLs`
+        );
       }
 
       // 去重：与用户历史进行对比
       const historicalLinks = new Set(userHistory.map((h) => h.link));
-      const uniqueRecommendations = validRecommendations.filter((rec) => {
+      const uniqueRecommendations = fullValidRecommendations.filter((rec) => {
         if (historicalLinks.has(rec.link)) {
           console.warn(`[Dedup] Filtered recommendation already in user history: "${rec.title}"`);
           return false;
@@ -138,34 +167,61 @@ export async function GET(
           "[Dedup] All recommendations are in user history, returning original recommendations"
         );
         // 返回原始推荐，但标记为可能重复
-      } else if (uniqueRecommendations.length < validRecommendations.length) {
+      } else if (uniqueRecommendations.length < fullValidRecommendations.length) {
         console.log(
-          `[Dedup] Filtered ${validRecommendations.length - uniqueRecommendations.length} recommendation(s) already in user history`
+          `[Dedup] Filtered ${fullValidRecommendations.length - uniqueRecommendations.length} recommendation(s) already in user history. Total valid: ${fullValidRecommendations.length} → ${uniqueRecommendations.length}`
         );
       }
 
       const finalRecommendations =
-        uniqueRecommendations.length > 0 ? uniqueRecommendations : validRecommendations;
+        uniqueRecommendations.length > 0 ? uniqueRecommendations : fullValidRecommendations;
 
-      // 异步保存到历史和缓存（不阻塞响应）
-      if (userId !== "anonymous") {
-        saveRecommendationsToHistory(userId, finalRecommendations).catch((err) =>
-          console.error("Failed to save to history:", err)
-        );
-
-        updateUserPreferences(userId, category, { incrementView: true }).catch((err) =>
-          console.error("Failed to update preferences:", err)
-        );
+      // 为匿名用户随机打乱推荐以提供多样化体验
+      let recommendationsToReturn = finalRecommendations;
+      if (isAnonymous && recommendationsToReturn.length > 1) {
+        recommendationsToReturn = [...recommendationsToReturn].sort(() => Math.random() - 0.5);
+        console.log(`[Anonymous] Shuffled ${recommendationsToReturn.length} recommendations for diversity`);
       }
 
-      // 缓存推荐结果
-      cacheRecommendations(category, preferenceHash, finalRecommendations, 30).catch((err) =>
-        console.error("Failed to cache recommendations:", err)
-      );
+      console.log(`[Return] Will return ${Math.min(recommendationsToReturn.length, count)} out of ${recommendationsToReturn.length} available recommendations (requested count: ${count})`);
+
+
+      // 异步保存到历史和缓存（不阻塞响应）
+      if (isValidUserId(userId)) {
+        console.log(`[Save] Recording recommendation for user ${userId.slice(0, 8)}...`);
+        saveRecommendationsToHistory(userId, recommendationsToReturn)
+          .then((ids) => {
+            console.log(`[Save] ✓ Successfully saved ${ids.length} recommendations to history`);
+          })
+          .catch((err) => {
+            console.error(`[Save] ✗ Failed to save to history:`, err);
+          });
+
+        updateUserPreferences(userId, category, { incrementView: true })
+          .then(() => {
+            console.log(`[Preferences] ✓ Updated user preferences for ${category}`);
+          })
+          .catch((err) => {
+            console.error(`[Preferences] ✗ Failed to update preferences:`, err);
+          });
+      } else {
+        console.log(`[Save] Skipping history save for anonymous user`);
+      }
+
+      // 缓存推荐结果（用于登录用户）
+      if (!isAnonymous) {
+        cacheRecommendations(category, preferenceHash, finalRecommendations, 30)
+          .then(() => {
+            console.log(`[Cache] ✓ Cached ${finalRecommendations.length} recommendations for ${category}`);
+          })
+          .catch((err) => {
+            console.error("[Cache] ✗ Failed to cache recommendations:", err);
+          });
+      }
 
       return NextResponse.json({
         success: true,
-        recommendations: finalRecommendations,
+        recommendations: recommendationsToReturn.slice(0, count),
         source: "ai",
       } satisfies AIRecommendResponse);
     } catch (aiError) {
@@ -253,12 +309,12 @@ export async function POST(
     // 构建 URL 并调用 GET 处理器
     const url = new URL(request.url);
     url.searchParams.set("userId", userId);
-    url.searchParams.set("count", String(Math.min(count, 5)));
+    url.searchParams.set("count", String(Math.min(count, 10)));
     url.searchParams.set("locale", locale);
     url.searchParams.set("skipCache", String(skipCache));
 
     // 如果提供了用户标签，先更新偏好
-    if (userTags.length > 0 && userId !== "anonymous") {
+    if (userTags.length > 0 && isValidUserId(userId)) {
       try {
         await updateUserPreferences(userId, category, { tags: userTags });
       } catch (err) {

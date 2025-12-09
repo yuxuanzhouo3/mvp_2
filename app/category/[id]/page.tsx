@@ -64,18 +64,52 @@ function getLocale(): "zh" | "en" {
 // 获取用户 ID
 function getUserId(): string {
   if (typeof window !== "undefined") {
-    // 尝试从 localStorage 获取用户信息
-    const userStr = localStorage.getItem("user")
-    if (userStr) {
-      try {
-        const user = JSON.parse(userStr)
-        return user.id || user.uid || "anonymous"
-      } catch {
-        // ignore
+    // 尝试 Supabase 国际版缓存 (新方式)
+    try {
+      const supabaseCache = localStorage.getItem("supabase-user-cache");
+      if (supabaseCache) {
+        const cache = JSON.parse(supabaseCache);
+        if (cache?.user?.id) {
+          console.log(`[Auth] Got userId from Supabase cache: ${cache.user.id.slice(0, 8)}...`);
+          return cache.user.id;
+        }
       }
+    } catch (error) {
+      console.warn("[Auth] Failed to parse Supabase cache:", error);
+    }
+
+    // 尝试 CloudBase 中国版缓存 (备选)
+    try {
+      const cloudbaseCache = localStorage.getItem("auth-state");
+      if (cloudbaseCache) {
+        const state = JSON.parse(cloudbaseCache);
+        if (state?.user?.id) {
+          console.log(`[Auth] Got userId from CloudBase cache: ${state.user.id.slice(0, 8)}...`);
+          return state.user.id;
+        }
+      }
+    } catch (error) {
+      console.warn("[Auth] Failed to parse CloudBase cache:", error);
+    }
+
+    // 备选：旧的用户缓存 key
+    try {
+      const userStr = localStorage.getItem("user");
+      if (userStr) {
+        const user = JSON.parse(userStr);
+        if (user?.id || user?.uid) {
+          const userId = user.id || user.uid;
+          console.log(`[Auth] Got userId from legacy cache: ${userId.slice(0, 8)}...`);
+          return userId;
+        }
+      }
+    } catch (error) {
+      console.warn("[Auth] Failed to parse legacy user cache:", error);
     }
   }
-  return "anonymous"
+
+  console.warn("[Auth] No authenticated user found, using anonymous");
+  return "anonymous";
 }
 
 export default function CategoryPage({ params }: { params: { id: string } }) {
@@ -138,7 +172,7 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
     try {
       const userId = getUserId()
       const response = await fetch(
-        `/api/recommend/ai/${categoryId}?userId=${userId}&count=3&locale=${locale}&skipCache=true`,
+        `/api/recommend/ai/${categoryId}?userId=${userId}&count=5&locale=${locale}&skipCache=true`,
         { method: "GET" }
       )
 

@@ -12,7 +12,15 @@
       "Bash(node detailed-groq-test.js)",
       "Bash(node test-zhipu-api.js:*)",
       "Bash(curl:*)",
-      "Bash(timeout 30 npm run build:*)"
+      "Bash(timeout 30 npm run build:*)",
+      "Bash(dir:*)",
+      "Bash(npx tsx:*)",
+      "Bash(npx supabase status)",
+      "Bash(node --loader ts-node/esm:*)",
+      "Bash(timeout 60 npm run build)",
+      "Bash(tasklist:*)",
+      "Bash(findstr:*)",
+      "Bash(npx tsc:*)"
     ],
     "deny": [],
     "ask": []
