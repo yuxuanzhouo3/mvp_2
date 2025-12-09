@@ -1,8 +1,7 @@
 /**
  * 智谱 AI 客户端
- * 用于生成个性化推荐
+ * 采用「AI 生成 → 强前缀校验 → 数据库兜底」三层防护
  */
-
 import type {
   AIRecommendation,
   RecommendationCategory,
@@ -12,7 +11,7 @@ import type {
 
 // 智谱 API 配置
 const ZHIPU_API_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions";
-const ZHIPU_MODEL = "glm-4-flash";
+const ZHIPU_MODEL = "glm-4.5-flash";
 
 interface ZhipuMessage {
   role: "system" | "user" | "assistant";
@@ -173,7 +172,7 @@ const VERIFIED_LINKS_DATABASE = {
         { name: "Apple中国", url: "https://www.apple.com.cn/", type: "product", description: "苹果官方商城，高端数码体验", tags: ["数码", "苹果", "高端"], rating: 9.2 },
         { name: "京东数码", url: "https://channel.jd.com/digital.html", type: "product", description: "京东数码频道，正品保障快速配送", tags: ["数码", "电商", "正品"], rating: 8.5 },
         { name: "天猫电器城", url: "https://dianqi.tmall.com/", type: "product", description: "天猫家电数码，品牌旗舰店聚集", tags: ["家电", "数码", "电商"], rating: 8.3 },
-        { name: "苏���易购", url: "https://www.suning.com/", type: "product", description: "家电3C购物平台", tags: ["家电", "数码", "电商"], rating: 8.0 },
+        { name: "苏宁易购", url: "https://www.suning.com/", type: "product", description: "家电3C购物平台", tags: ["家电", "数码", "电商"], rating: 8.0 },
         { name: "DJI大疆", url: "https://www.dji.com/cn", type: "product", description: "全球领先的无人机品牌", tags: ["无人机", "数码", "高端"], rating: 9.0 },
         { name: "索尼中国", url: "https://www.sony.com.cn/", type: "product", description: "索尼官方商城，影音娱乐专家", tags: ["数码", "影音", "日本"], rating: 8.8 },
       ],
@@ -333,6 +332,92 @@ const VERIFIED_LINKS_DATABASE = {
 // 保持向后兼容的别名
 const CATEGORY_LINK_CONFIG = VERIFIED_LINKS_DATABASE;
 
+// ==================== 合法 URL 前缀白名单（极速校验）===================
+const VALID_URL_PREFIXES = new Set<string>([
+  // 娱乐 - 国内
+  "https://book.douban.com/subject/", "https://movie.douban.com/subject/",
+  "https://ys.mihoyo.com/", "https://pvp.qq.com/", "https://gp.qq.com/",
+  "https://sr.mihoyo.com/", "https://zzz.mihoyo.com/", "https://www.naraka.com/",
+  "https://id5.163.com/", "https://yys.163.com/", "https://music.163.com/",
+  "https://www.bilibili.com/", "https://www.douyin.com/", "https://www.youku.com/",
+  "https://v.qq.com/", "https://www.iqiyi.com/",
+
+  // 娱乐 - 国际
+  "https://www.amazon.com/dp/", "https://store.steampowered.com/app/",
+  "https://www.nintendo.com/", "https://www.imdb.com/title/",
+  "https://open.spotify.com/artist/", "https://www.youtube.com/",
+  "https://www.netflix.com/", "https://www.disneyplus.com/", "https://www.twitch.tv/",
+  "https://www.crunchyroll.com/", "https://www.max.com/",
+
+  // 购物
+  "https://www.uniqlo.cn/", "https://www.zara.cn/", "https://www.hm.com/cn/",
+  "https://nvzhuang.tmall.com/", "https://www.nike.com.cn/", "https://www.adidas.com.cn/",
+  "https://www.lining.com/", "https://www.anta.com/", "https://www.mi.com/",
+  "https://www.vmall.com/", "https://www.apple.com.cn/", "https://channel.jd.com/",
+  "https://dianqi.tmall.com/", "https://www.suning.com/", "https://www.dji.com/cn",
+  "https://www.sony.com.cn/", "https://www.ikea.cn/", "https://www.muji.com.cn/",
+  "https://you.163.com/", "https://jiaju.jd.com/", "https://jiazhuang.tmall.com/",
+  "https://www.macalline.com/", "https://linshijiaju.tmall.com/",
+
+  // 国际购物
+  "https://www.uniqlo.com/", "https://www.zara.com/", "https://www.hm.com/",
+  "https://www.amazon.com/", "https://www.asos.com/", "https://www.nike.com/",
+  "https://www.adidas.com/", "https://www.nordstrom.com/", "https://www.apple.com/store",
+  "https://www.bestbuy.com/", "https://www.newegg.com/", "https://www.bhphotovideo.com/",
+  "https://www.microcenter.com/", "https://www.samsung.com/", "https://www.ikea.com/",
+  "https://www.wayfair.com/", "https://www.target.com/", "https://www.westelm.com/",
+  "https://www.cb2.com/", "https://www.potterybarn.com/",
+
+  // 美食、旅行、健身等全部合法域名（覆盖你数据库中所有链接）
+  "https://www.dianping.com/", "https://www.meituan.com/", "https://www.ele.me/",
+  "https://www.xiachufang.com/", "https://www.meishij.net/", "https://www.xiangha.com/",
+  "https://www.douguo.com/", "https://www.dpm.org.cn/", "https://www.mafengwo.cn/",
+  "https://www.qyer.com/", "https://vacations.ctrip.com/", "https://www.fliggy.com/",
+  "https://www.ly.com/", "https://hotels.ctrip.com/", "https://hotel.fliggy.com/",
+  "https://hotel.meituan.com/", "https://hotel.qunar.com/", "https://www.tujia.com/",
+  "https://www.airbnb.cn/", "https://www.gotokeep.com/", "https://www.codoon.com/",
+  "https://www.thejoyrun.com/", "https://www.boohee.com/",
+
+  // intl 美食/旅行/健身
+  "https://www.yelp.com/", "https://www.tripadvisor.com/", "https://www.opentable.com/",
+  "https://www.google.com/maps/", "https://www.doordash.com/", "https://www.ubereats.com/",
+  "https://www.allrecipes.com/", "https://tasty.co/", "https://www.bbcgoodfood.com/",
+  "https://www.foodnetwork.com/", "https://www.seriouseats.com/", "https://www.epicurious.com/",
+  "https://cooking.nytimes.com/", "https://www.booking.com/", "https://www.airbnb.com/",
+  "https://www.hotels.com/", "https://www.expedia.com/", "https://www.kayak.com/",
+  "https://www.hostelworld.com/", "https://www.vrbo.com/", "https://www.nike.com/ntc-app",
+  "https://www.onepeloton.com/", "https://www.fitnessblender.com/", "https://darebee.com/",
+  "https://www.blogilates.com/", "https://www.strava.com/", "https://www.myfitnesspal.com/",
+  "https://classpass.com/", "https://www.planetfitness.com/", "https://www.equinox.com/",
+]);
+
+// ==================== 数据库兜底函数 ====================
+function getFallbackRecommendations(
+  category: RecommendationCategory,
+  locale: "zh" | "en",
+  count: number
+): AIRecommendation[] {
+  const region = locale === "zh" ? "cn" : "intl";
+  const pool: any[] = [];
+
+  const subCategories = VERIFIED_LINKS_DATABASE[category]?.[region] || {};
+  Object.values(subCategories).forEach((items: any) => pool.push(...items));
+
+  const sorted = pool
+    .sort((a: any, b: any) => (b.rating || 0) - (a.rating || 0))
+    .map((item: any) => ({
+      title: item.name,
+      description: item.description,
+      category,
+      link: item.url,
+      linkType: item.type,
+      metadata: { rating: item.rating ?? null },
+      reason: locale === "zh" ? "热门高分推荐，用户喜爱" : "Popular high-rated recommendation",
+    }));
+
+  return sorted.slice(0, count);
+}
+
 /**
  * 生成推荐 Prompt
  */
@@ -351,10 +436,10 @@ function generatePrompt(
   const preferencesTags = userPreferences?.tags?.join(", ") || "";
   const preferencesWeights = userPreferences?.preferences
     ? Object.entries(userPreferences.preferences)
-        .sort(([, a], [, b]) => (b as number) - (a as number))
-        .slice(0, 5)
-        .map(([tag]) => tag)
-        .join(", ")
+      .sort(([, a], [, b]) => (b as number) - (a as number))
+      .slice(0, 5)
+      .map(([tag]) => tag)
+      .join(", ")
     : "";
 
   // 链接示例
@@ -689,29 +774,67 @@ function parseAIResponse(content: string): AIRecommendation[] {
  */
 export async function getAIRecommendations(
   category: RecommendationCategory,
-  userHistory: RecommendationHistory[],
-  userPreferences: UserPreference | null,
+  userHistory: RecommendationHistory[] = [],
+  userPreferences: UserPreference | null = null,
   locale: "zh" | "en" = "zh",
   count: number = 3
 ): Promise<AIRecommendation[]> {
-  const prompt = generatePrompt(category, userHistory, userPreferences, locale, count);
+  try {
+    const prompt = generatePrompt(category, userHistory, userPreferences, locale, count);
 
-  const messages: ZhipuMessage[] = [
-    {
-      role: "system",
-      content:
-        locale === "zh"
+    const messages: ZhipuMessage[] = [
+      {
+        role: "system",
+        content: locale === "zh"
           ? "你是一个智能推荐助手，只返回 JSON 格式的推荐结果，不要有任何其他文字。"
           : "You are a smart recommendation assistant. Return ONLY JSON-formatted recommendations, no other text.",
-    },
-    {
-      role: "user",
-      content: prompt,
-    },
-  ];
+      },
+      { role: "user", content: prompt },
+    ];
 
-  const response = await callZhipuAPI(messages);
-  return parseAIResponse(response);
+    const response = await callZhipuAPI(messages);
+    const rawRecommendations = parseAIResponse(response);
+
+    // ==================== 第一层：强前缀校验 ====================
+    const validRecommendations: AIRecommendation[] = [];
+    const invalidTitles: string[] = [];
+
+    for (const rec of rawRecommendations) {
+      const link = rec.link?.trim();
+      const isValidLink =
+        link &&
+        link.startsWith("https://") &&
+        !link.includes("..") &&
+        !link.includes("example.com") &&
+        Array.from(VALID_URL_PREFIXES).some((prefix: string) => link.startsWith(prefix));
+
+      if (isValidLink) {
+        validRecommendations.push(rec);
+      } else {
+        console.warn(`[404拦截] 非法链接 → ${rec.title} : ${link}`);
+        invalidTitles.push(rec.title);
+      }
+    }
+
+    console.log(
+      `[推荐结果] AI原始${rawRecommendations.length}条 → 有效${validRecommendations.length}条 → 被拦截${invalidTitles.length}条`
+    );
+
+    // ==================== 第二层：数量不足时兜底 ====================
+    if (validRecommendations.length < count) {
+      const need = count - validRecommendations.length;
+      console.log(`[兜底补齐] 还差 ${need} 条，启动数据库热门兜底`);
+      const fallback = getFallbackRecommendations(category, locale, need);
+      validRecommendations.push(...fallback);
+    }
+
+    return validRecommendations.slice(0, count);
+
+  } catch (error) {
+    // ==================== 第三层：整条链路崩溃也保证返回结果 ====================
+    console.error("[AI推荐彻底失败] 降级返回数据库兜底", error);
+    return getFallbackRecommendations(category, locale, count);
+  }
 }
 
 /**
@@ -726,3 +849,5 @@ export function isZhipuConfigured(): boolean {
 }
 
 export { CATEGORY_LINK_CONFIG };
+
+

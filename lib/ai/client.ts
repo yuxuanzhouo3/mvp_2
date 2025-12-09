@@ -47,7 +47,7 @@ async function callZhipuAPI(request: AIRequest, retryCount: number = 0): Promise
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "glm-4-flash",
+        model: "glm-4.5-flash",
         messages: request.messages,
         temperature: request.temperature ?? 0.7,
         max_tokens: request.maxTokens ?? 2000,
