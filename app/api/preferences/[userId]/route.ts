@@ -59,7 +59,9 @@ export async function GET(
         // 如果需要历史记录
         let history: Awaited<ReturnType<typeof getUserRecommendationHistory>> = [];
         if (includeHistory) {
-          history = await getUserRecommendationHistory(userId, category, 10);
+          // 从请求参数获取历史记录限制，默认为 20
+          const historyLimit = Math.min(Math.max(parseInt(new URL(request.url).searchParams.get("historyLimit") || "20"), 1), 100);
+          history = await getUserRecommendationHistory(userId, category, historyLimit);
         }
 
         return NextResponse.json({

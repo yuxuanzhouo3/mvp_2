@@ -62,13 +62,15 @@ export async function GET(
     const skipCache = searchParams.get("skipCache") === "true";
 
     // 获取用户偏好和历史（仅当 userId 是有效 UUID 时）
+    // 从请求参数获取历史记录限制，默认为 50
+    const historyLimit = Math.min(Math.max(parseInt(searchParams.get("historyLimit") || "50"), 1), 100);
     let userHistory: Awaited<ReturnType<typeof getUserRecommendationHistory>> = [];
     let userPreference: Awaited<ReturnType<typeof getUserCategoryPreference>> = null;
 
     if (isValidUserId(userId)) {
       try {
         [userHistory, userPreference] = await Promise.all([
-          getUserRecommendationHistory(userId, category, 20),
+          getUserRecommendationHistory(userId, category, historyLimit),
           getUserCategoryPreference(userId, category),
         ]);
       } catch (dbError) {
