@@ -18,6 +18,7 @@ interface RecommendationItem {
   tags: string[];
   searchQuery: string;  // 用于搜索引擎的查询词
   platform: string;      // 推荐的平台
+  entertainmentType?: 'video' | 'game' | 'music' | 'review';  // 娱乐类型（仅娱乐分类）
 }
 
 /**
@@ -33,11 +34,14 @@ export async function generateRecommendations(
   const categoryConfig = {
     entertainment: {
       platforms: locale === 'zh'
-        ? ['豆瓣', 'B站', '网易云音乐', 'Steam', '爱奇艺']
-        : ['IMDb', 'YouTube', 'Spotify', 'Steam', 'Netflix'],
+        ? ['豆瓣', 'B站', '网易云音乐', 'Steam', '爱奇艺', '腾讯视频', '优酷']
+        : ['IMDb', 'YouTube', 'Spotify', 'Steam', 'Netflix', 'Rotten Tomatoes', 'Twitch'],
       examples: locale === 'zh'
-        ? '电影、游戏、音乐、小说'
-        : 'movies, games, music, books'
+        ? '电影、电视剧、游戏、音乐、综艺、动漫'
+        : 'movies, TV shows, games, music, variety shows, anime',
+      types: locale === 'zh'
+        ? ['视频', '游戏', '音乐', '影评/资讯']
+        : ['video', 'game', 'music', 'review/news']
     },
     shopping: {
       platforms: locale === 'zh'
@@ -73,7 +77,7 @@ export async function generateRecommendations(
     }
   };
 
-  const config = categoryConfig[category] || categoryConfig.entertainment;
+  const config = categoryConfig[category as keyof typeof categoryConfig] || categoryConfig.entertainment;
 
   const prompt = locale === 'zh' ? `
 你是一个专业的推荐系统分析师。
@@ -96,6 +100,19 @@ ${JSON.stringify(userHistory.slice(0, 20), null, 2)}
    - 平台：推荐在哪个平台查找（从：${config.platforms.join('、')} 中选择）
 
 **特别说明**：
+- 如果是娱乐分类(entertainment)，必须确保推荐包含以下4种类型：
+  * 视频类：电影、电视剧、综艺、动漫等
+  * 游戏类：PC游戏、手机游戏、主机游戏等
+  * 音乐类：歌曲、专辑、演唱会等
+  * 影评/资讯类：影评、娱乐新闻、明星资讯等
+  * 每个推荐必须明确标注属于哪种类型
+  * 确保生成的3个推荐涵盖至少3种不同的娱乐类型
+  * 推荐内容必须是真实存在的作品或内容，使用准确的作品名称
+  * 搜索关键词必须精确匹配作品名称，例如：
+    - 视频："流浪地球2 豆瓣评分"、"三体 电视剧 观看"
+    - 游戏："艾尔登法环 Steam"、"原神 下载"
+    - 音乐："周杰伦 新歌 2024"、"霉霉 Taylor Swift 巡演"
+    - 影评："奥本海默 影评解析"、"2024年电影排行榜"
 - 如果是美食分类(food)，请推荐具体的餐厅名称、菜品或美食店，而不是文章或食谱
 - 推荐应该包含真实的餐厅名、特色菜品、菜系类型等
 - 如果是旅游分类(travel)，请推荐具体的旅游景点、城市或目的地，要求：
@@ -133,7 +150,8 @@ ${JSON.stringify(userHistory.slice(0, 20), null, 2)}
     "reason": "为什么推荐给这个用户",
     "tags": ["标签1", "标签2", "标签3"],
     "searchQuery": "用于搜索的关键词",
-    "platform": "淘宝|京东|豆瓣|B站|..."
+    "platform": "淘宝|京东|豆瓣|B站|...",
+    "entertainmentType": "video|game|music|review"
   }
 ]` : `
 You are a professional recommendation system analyst.
@@ -156,6 +174,19 @@ Requirements:
    - platform: which platform to search (from: ${config.platforms.join(', ')})
 
 **Special Instructions**:
+- For entertainment category, must ensure recommendations include all 4 types:
+  * Video: movies, TV shows, variety shows, anime, etc.
+  * Game: PC games, mobile games, console games, etc.
+  * Music: songs, albums, concerts, etc.
+  * Review/News: movie reviews, entertainment news, celebrity news, etc.
+  * Each recommendation must clearly indicate which type it belongs to
+  * Ensure the 3 generated recommendations cover at least 3 different entertainment types
+  * Recommended content must be real existing works or content, use accurate titles
+  * Search keywords must precisely match work titles, for example:
+    - Video: "Oppenheimer 2023 review", "The Boys season 4 watch"
+    - Game: "Baldur's Gate 3 Steam", "Genshin Impact download"
+    - Music: "Taylor Swift new album 2024", "Bruno Mars concert"
+    - Review: "Dune Part Two review", "2024 Oscar predictions"
 - For food category, recommend specific restaurants, dishes, or food establishments with real names
 - Include cuisine type, specialty dishes, or restaurant names
 - Do not recommend articles or recipes about food
@@ -195,7 +226,8 @@ Return JSON format (strictly, no extra text):
     "reason": "Why recommend to this user",
     "tags": ["tag1", "tag2", "tag3"],
     "searchQuery": "Search keywords",
-    "platform": "Amazon|eBay|IMDb|YouTube|..."
+    "platform": "Amazon|eBay|IMDb|YouTube|...",
+    "entertainmentType": "video|game|music|review"
   }
 ]`;
 

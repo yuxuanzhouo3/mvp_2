@@ -16,7 +16,8 @@ export function generateSearchLink(
   searchQuery: string,
   platform: string,
   locale: string = 'zh',
-  category?: string
+  category?: string,
+  entertainmentType?: 'video' | 'game' | 'music' | 'review'
 ): SearchLink {
 
   // 平台映射：生成对应平台的搜索链接
@@ -116,8 +117,52 @@ export function generateSearchLink(
   // 优先使用 searchQuery，如果为空或太短，则使用标题
   let finalQuery = searchQuery && searchQuery.trim().length > 0 ? searchQuery.trim() : title;
 
+  // 娱乐推荐的特殊处理
+  if (category === 'entertainment' && entertainmentType) {
+    // 确保搜索词与作品名称高度匹配
+    switch (entertainmentType) {
+      case 'video':
+        // 视频类：添加平台相关关键词
+        if (platform === '豆瓣' && !finalQuery.includes('豆瓣评分')) {
+          finalQuery = `${finalQuery} 豆瓣评分`;
+        } else if (platform === 'B站' && !finalQuery.includes('观看') && !finalQuery.includes('全集')) {
+          finalQuery = `${finalQuery} 观看 全集`;
+        } else if ((platform === '爱奇艺' || platform === '腾讯视频' || platform === '优酷') && !finalQuery.includes('在线观看')) {
+          finalQuery = `${finalQuery} 在线观看`;
+        } else if (platform === 'Netflix' && !finalQuery.includes('Netflix')) {
+          finalQuery = `${finalQuery} Netflix`;
+        }
+        break;
+
+      case 'game':
+        // 游戏类：确保搜索到游戏下载/购买页面
+        if (platform === 'Steam' && !finalQuery.includes('Steam')) {
+          finalQuery = `${finalQuery} Steam`;
+        } else if ((platform === '淘宝' || platform === '京东') && !finalQuery.includes('购买') && !finalQuery.includes('下载')) {
+          finalQuery = `${finalQuery} 购买 下载`;
+        }
+        break;
+
+      case 'music':
+        // 音乐类：搜索歌曲或专辑
+        if (platform === '网易云音乐' && !finalQuery.includes('网易云音乐')) {
+          finalQuery = `${finalQuery} 网易云音乐`;
+        } else if (platform === 'Spotify' && !finalQuery.includes('Spotify')) {
+          finalQuery = `${finalQuery} Spotify`;
+        }
+        break;
+
+      case 'review':
+        // 影评/资讯类：添加评论或资讯相关词
+        if (!finalQuery.includes('影评') && !finalQuery.includes('解析') && !finalQuery.includes('评测')) {
+          finalQuery = `${finalQuery} 影评 解析`;
+        }
+        break;
+    }
+  }
+
   // 根据平台和分类调整搜索查询
-  if (category !== 'travel') {
+  if (category !== 'travel' && !(category === 'entertainment' && entertainmentType)) {
     // 非旅游推荐使用原有的关键词逻辑
     if (platform === 'Google Maps' || platform === 'Yelp' || platform === 'Zomato') {
       // 对于点评平台，根据类别添加相关关键词
@@ -228,19 +273,36 @@ export function generateSearchLink(
 export function selectBestPlatform(
   category: string,
   suggestedPlatform?: string,
-  locale: string = 'zh'
+  locale: string = 'zh',
+  entertainmentType?: 'video' | 'game' | 'music' | 'review'
 ): string {
+
+  // 针对娱乐类型的详细平台映射
+  const entertainmentPlatformMap: Record<string, Record<string, string[]>> = {
+    zh: {
+      video: ['豆瓣', 'B站', '爱奇艺', '腾讯视频', '优酷'],
+      game: ['Steam', 'B站', '淘宝', '京东'],
+      music: ['网易云音乐', 'B站', '豆瓣'],
+      review: ['豆瓣', 'B站']
+    },
+    en: {
+      video: ['IMDb', 'YouTube', 'Netflix', 'Rotten Tomatoes'],
+      game: ['Steam', 'YouTube', 'Twitch', 'IGN'],
+      music: ['Spotify', 'YouTube', 'IMDb'],
+      review: ['IMDb', 'Rotten Tomatoes', 'YouTube']
+    }
+  };
 
   const categoryPlatforms: Record<string, Record<string, string[]>> = {
     zh: {
-      entertainment: ['豆瓣', 'B站', '爱奇艺'],
+      entertainment: entertainmentPlatformMap.zh[entertainmentType || 'video'] || ['豆瓣', 'B站', '爱奇艺'],
       shopping: ['京东', '淘宝', '天猫'],
       food: ['大众点评', '美团', '百度美食'],
       travel: ['Booking.com', 'Agoda', 'TripAdvisor', '携程', '马蜂窝'],
       fitness: ['Keep', 'B站', '小红书']
     },
     en: {
-      entertainment: ['IMDb', 'YouTube', 'Netflix'],
+      entertainment: entertainmentPlatformMap.en[entertainmentType || 'video'] || ['IMDb', 'YouTube', 'Netflix'],
       shopping: ['Amazon', 'eBay', 'Walmart'],
       food: ['大众点评', 'OpenTable', 'TripAdvisor'],
       travel: ['Booking.com', 'Agoda', 'TripAdvisor', 'Expedia', 'Klook', 'Airbnb'],

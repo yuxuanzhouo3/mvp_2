@@ -28,7 +28,8 @@
       "Bash(npm run dev)",
       "Bash(python:*)",
       "Bash(npm run build:*)",
-      "Bash(npx next dev:*)"
+      "Bash(npx next dev:*)",
+      "Bash(timeout 60 npm run dev:*)"
     ],
     "deny": [],
     "ask": []

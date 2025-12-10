@@ -9,6 +9,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { generateRecommendations, isZhipuConfigured } from "@/lib/ai/zhipu-recommendation";
 import { generateSearchLink, selectBestPlatform } from "@/lib/search/search-engine";
 import { enhanceTravelRecommendation } from "@/lib/ai/travel-enhancer";
+import { validateAndFixPlatforms } from "@/lib/search/platform-validator";
+import { generateDiverseRecommendations, analyzeEntertainmentDiversity, supplementEntertainmentTypes } from "@/lib/ai/entertainment-diversity-checker";
 import {
   getUserRecommendationHistory,
   getUserCategoryPreference,
@@ -120,8 +122,29 @@ export async function GET(
       const aiRecommendations = await generateRecommendations(userHistory || [], category, locale);
       console.log(`[AI] 生成推荐数: ${aiRecommendations.length}`);
 
-      // 2. 为每个推荐生成搜索引擎链接
-      const finalRecommendations = aiRecommendations.map(rec => {
+      // 2. 处理娱乐推荐的多样性
+      let processedRecommendations = aiRecommendations;
+
+      if (category === 'entertainment') {
+        // 分析类型分布
+        const diversity = analyzeEntertainmentDiversity(aiRecommendations);
+        console.log(`[Entertainment] Type distribution:`, diversity.distribution);
+
+        // 如果不够多样，尝试补充
+        if (!diversity.isDiverse && diversity.missingTypes.length > 0) {
+          console.log(`[Entertainment] Missing types:`, diversity.missingTypes);
+          const supplements = await supplementEntertainmentTypes(
+            aiRecommendations,
+            diversity.missingTypes.slice(0, 2), // 最多补充2种类型
+            userHistory || [],
+            locale
+          );
+          processedRecommendations = [...aiRecommendations, ...supplements];
+        }
+      }
+
+      // 3. 为每个推荐生成搜索引擎链接
+      const finalRecommendations = processedRecommendations.map(rec => {
         let enhancedRec = rec;
 
         // 特殊处理：旅游推荐使用增强器
@@ -129,11 +152,18 @@ export async function GET(
           enhancedRec = enhanceTravelRecommendation(rec, locale);
         }
 
-        // 选择最佳平台
-        const platform = selectBestPlatform(category, enhancedRec.platform, locale);
+        // 选择最佳平台（传递娱乐类型）
+        const platform = selectBestPlatform(category, enhancedRec.platform, locale, enhancedRec.entertainmentType);
 
-        // 生成搜索链接
-        const searchLink = generateSearchLink(enhancedRec.title, enhancedRec.searchQuery, platform, locale, category);
+        // 生成搜索链接（传递娱乐类型）
+        const searchLink = generateSearchLink(
+          enhancedRec.title,
+          enhancedRec.searchQuery,
+          platform,
+          locale,
+          category,
+          enhancedRec.entertainmentType
+        );
 
         // 根据类别和平台确定 linkType
         let linkType: string = 'search'; // 默认值
@@ -213,12 +243,16 @@ export async function GET(
         return baseRecommendation;
       });
 
-      console.log(`[Search] 生成搜索链接数: ${finalRecommendations.length}`);
+      // 4. 验证平台可靠性
+      const validatedRecommendations = validateAndFixPlatforms(finalRecommendations, locale);
+      console.log(`[Platform] 验证平台可靠性完成`);
 
-      // 3. 保存到数据库
-      if (isValidUserId(userId) && finalRecommendations.length > 0) {
+      console.log(`[Search] 生成搜索链接数: ${validatedRecommendations.length}`);
+
+      // 5. 保存到数据库
+      if (isValidUserId(userId) && validatedRecommendations.length > 0) {
         console.log(`[Save] Recording recommendation for user ${userId.slice(0, 8)}...`);
-        saveRecommendationsToHistory(userId, finalRecommendations)
+        saveRecommendationsToHistory(userId, validatedRecommendations)
           .then((ids) => {
             console.log(`[Save] ✓ Successfully saved ${ids.length} recommendations to history`);
           })
@@ -237,11 +271,11 @@ export async function GET(
         console.log(`[Save] Skipping history save for anonymous user`);
       }
 
-      // 4. 缓存推荐结果（用于登录用户）
+      // 6. 缓存推荐结果（用于登录用户）
       if (!isAnonymous) {
-        cacheRecommendations(category, preferenceHash, finalRecommendations, 30)
+        cacheRecommendations(category, preferenceHash, validatedRecommendations, 30)
           .then(() => {
-            console.log(`[Cache] ✓ Cached ${finalRecommendations.length} recommendations for ${category}`);
+            console.log(`[Cache] ✓ Cached ${validatedRecommendations.length} recommendations for ${category}`);
           })
           .catch((err) => {
             console.error("[Cache] ✗ Failed to cache recommendations:", err);
@@ -250,7 +284,7 @@ export async function GET(
 
       return NextResponse.json({
         success: true,
-        recommendations: finalRecommendations.slice(0, count),
+        recommendations: validatedRecommendations.slice(0, count),
         source: "ai",
       } satisfies AIRecommendResponse);
     } catch (aiError) {
