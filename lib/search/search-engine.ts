@@ -79,11 +79,11 @@ export function generateSearchLink(
 
       // Food platforms
       '大众点评': (q) => `https://www.dianping.com/search/keyword/1/0_${encodeURIComponent(q)}`,
-      'TripAdvisor': (q) => `https://www.tripadvisor.com/Search?q=${encodeURIComponent(q)}`,
+      'TripAdvisor': (q) => `https://www.tripadvisor.com/search?q=${encodeURIComponent(q)} restaurants`,
       'OpenTable': (q) => `https://www.opentable.com/search?q=${encodeURIComponent(q)}`,
-      'Google Maps': (q) => `https://www.google.com/maps/search/${encodeURIComponent(q)} restaurants`,
-      'Yelp': (q) => `https://www.yelp.com/search?find_desc=${encodeURIComponent(q)}`,
+      'Google Maps': (q) => `https://www.google.com/maps/search/${encodeURIComponent(q)}+restaurants+near+me`,
       'Zomato': (q) => `https://www.zomato.com/search?q=${encodeURIComponent(q)}`,
+      'Allrecipes': (q) => `https://www.allrecipes.com/search?q=${encodeURIComponent(q)}`,
 
       // Travel platforms
       'TripAdvisor Travel': (q) => `https://www.tripadvisor.com/Search?q=${encodeURIComponent(q)}`,
@@ -103,7 +103,6 @@ export function generateSearchLink(
       'YouTube Fitness': (q) => `https://www.youtube.com/results?search_query=${encodeURIComponent(q)} fitness`,
       'MyFitnessPal': (q) => `https://www.myfitnesspal.com/food/search?q=${encodeURIComponent(q)}`,
       'Peloton': (q) => `https://www.onepeloton.com/search?q=${encodeURIComponent(q)}`,
-      'Google Maps': (q) => `https://www.google.com/maps/search/${encodeURIComponent(q)} gym fitness`,
 
       // General search (fallback)
       'Google': (q) => `https://www.google.com/search?q=${encodeURIComponent(q)}`
@@ -164,11 +163,18 @@ export function generateSearchLink(
   // 根据平台和分类调整搜索查询
   if (category !== 'travel' && !(category === 'entertainment' && entertainmentType)) {
     // 非旅游推荐使用原有的关键词逻辑
-    if (platform === 'Google Maps' || platform === 'Yelp' || platform === 'Zomato') {
-      // 对于点评平台，根据类别添加相关关键词
+    if (platform === 'Google Maps' || platform === 'TripAdvisor') {
+      // 对于点评和地图平台，根据类别添加相关关键词
       if (category === 'food') {
-        if (!finalQuery.includes('restaurant') && !finalQuery.includes('餐厅') && !finalQuery.includes('美食')) {
-          finalQuery = `${finalQuery} restaurant`;
+        // Google Maps 特殊处理：搜索菜系类型时保持简洁
+        if (platform === 'Google Maps') {
+          // 保持原始查询，让 Google Maps 基于位置搜索附近相关菜系
+          // 不需要额外添加关键词，确保搜索菜系类型
+        } else {
+          // TripAdvisor 添加餐厅关键词
+          if (!finalQuery.includes('restaurant') && !finalQuery.includes('餐厅') && !finalQuery.includes('美食')) {
+            finalQuery = `${finalQuery} restaurant`;
+          }
         }
       } else if (category === 'fitness') {
         // 健身相关：添加健身房或瑜伽馆等关键词
@@ -196,9 +202,20 @@ export function generateSearchLink(
           finalQuery = `${finalQuery} 健身房 瑜伽`;
         }
       }
+    } else if (platform === 'Allrecipes') {
+      // Allrecipes 专注于食谱搜索
+      if (category === 'food') {
+        // Allrecipes 搜索优化：保持菜名简洁，不添加额外关键词
+        // 让用户看到纯净的食谱搜索结果
+      }
     } else if (platform === 'OpenTable') {
-      // OpenTable 是预订平台
-      finalQuery = `${finalQuery} reservation`;
+      // OpenTable 专注于餐厅预订
+      if (category === 'food') {
+        // OpenTable 搜索优化：确保包含预订相关信息
+        if (!finalQuery.includes('reservation') && !finalQuery.includes('booking') && !finalQuery.includes('table')) {
+          finalQuery = `${finalQuery} reservation`;
+        }
+      }
     } else if (category === 'fitness' && (platform === 'B站' || platform === 'YouTube Fitness')) {
       // 健身视频平台，确保搜索词包含视频相关关键词
       if (!finalQuery.includes('教程') && !finalQuery.includes('教学') && !finalQuery.includes('tutorial') && !finalQuery.includes('workout')) {
@@ -304,7 +321,7 @@ export function selectBestPlatform(
     en: {
       entertainment: entertainmentPlatformMap.en[entertainmentType || 'video'] || ['IMDb', 'YouTube', 'Netflix'],
       shopping: ['Amazon', 'eBay', 'Walmart'],
-      food: ['大众点评', 'OpenTable', 'TripAdvisor'],
+      food: ['Allrecipes', 'Google Maps', 'OpenTable'],
       travel: ['Booking.com', 'Agoda', 'TripAdvisor', 'Expedia', 'Klook', 'Airbnb'],
       fitness: ['YouTube Fitness', 'MyFitnessPal', 'Peloton']
     }
@@ -320,4 +337,34 @@ export function selectBestPlatform(
 
   // 否则返回第一个默认平台
   return availablePlatforms[0];
+}
+
+/**
+ * 为食物推荐轮换选择平台，确保推荐多样性
+ * 用于英文环境 (INTL) 的食物推荐
+ */
+export function selectFoodPlatformWithRotation(
+  index: number,
+  suggestedPlatform?: string,
+  locale: string = 'zh'
+): string {
+  // 对于中文环境，保持原有逻辑
+  if (locale === 'zh') {
+    const cnPlatforms = ['大众点评', '美团', '百度美食'];
+    if (suggestedPlatform && cnPlatforms.includes(suggestedPlatform)) {
+      return suggestedPlatform;
+    }
+    return cnPlatforms[index % cnPlatforms.length];
+  }
+
+  // 英文环境的食物平台轮换
+  const enFoodPlatforms = ['Allrecipes', 'Google Maps', 'OpenTable'];
+
+  // 如果 AI 建议的平台在可用列表中，使用它
+  if (suggestedPlatform && enFoodPlatforms.includes(suggestedPlatform)) {
+    return suggestedPlatform;
+  }
+
+  // 否则按照索引轮换，确保三个平台都会被使用
+  return enFoodPlatforms[index % enFoodPlatforms.length];
 }

@@ -11,7 +11,7 @@ interface UserHistory {
   metadata?: any;
 }
 
-interface RecommendationItem {
+export interface RecommendationItem {
   title: string;
   description: string;
   reason: string;
@@ -54,7 +54,7 @@ export async function generateRecommendations(
     food: {
       platforms: locale === 'zh'
         ? ['大众点评', '美团', '下厨房']
-        : ['大众点评', 'TripAdvisor', 'OpenTable'],
+        : ['Allrecipes', 'Google Maps', 'OpenTable'],
       examples: locale === 'zh'
         ? '餐厅、菜谱、美食'
         : 'restaurants, recipes, food'
@@ -113,8 +113,28 @@ ${JSON.stringify(userHistory.slice(0, 20), null, 2)}
     - 游戏："艾尔登法环 Steam"、"原神 下载"
     - 音乐："周杰伦 新歌 2024"、"霉霉 Taylor Swift 巡演"
     - 影评："奥本海默 影评解析"、"2024年电影排行榜"
-- 如果是美食分类(food)，请推荐具体的餐厅名称、菜品或美食店，而不是文章或食谱
-- 推荐应该包含真实的餐厅名、特色菜品、菜系类型等
+- 如果是美食分类(food)，**必须严格按照以下三种推荐类型生成内容**：
+
+  **推荐类型要求**：
+  * **食谱类（Allrecipes）**：
+    - 推荐：具体的菜谱名称（如"麻婆豆腐"、"红烧肉"、"意大利面"）
+    - 内容：详细描述菜品特色、所需食材、烹饪难度、适合人群
+    - 搜索词：纯菜名，如"麻婆豆腐"、"红烧肉"、"chocolate cake"
+    - 标签：菜系、难度、口味（如"川菜、简单、麻辣"）
+
+  * **菜系类（Google Maps）**：
+    - 推荐：菜系类型（如"川菜"、"粤菜"、"意大利菜"、"日料"）
+    - 内容：介绍该菜系特点、代表菜品、适合场合、价格区间
+    - 搜索词：菜系名称，如"川菜餐厅"、"意大利菜"、"Japanese restaurants"
+    - 标签：菜系类型、特色、消费水平
+
+  * **特殊场合餐厅（OpenTable）**：
+    - 推荐：特定场合的餐厅选择（如"商务午餐"、"浪漫约会"、"家庭聚餐"）
+    - 内容：说明场合特点、适合餐厅类型、人均消费、预订注意事项
+    - 搜索词：场合 + 菜系，如"商务午餐 中餐"、"romantic dinner Italian"
+    - 标签：场合类型、菜系、价格区间
+
+  **关键要求：推荐内容必须与对应平台页面完全匹配！**
 - 如果是旅游分类(travel)，请推荐具体的旅游景点、城市或目的地，要求：
   * 必须使用真实存在的国家、城市和景点名称（如：日本东京、泰国普吉岛、法国巴黎、印度尼西亚巴厘岛等）
   * 推荐理由：详细说明为什么这个地方值得去（特色、体验、最佳季节等）
@@ -187,9 +207,28 @@ Requirements:
     - Game: "Baldur's Gate 3 Steam", "Genshin Impact download"
     - Music: "Taylor Swift new album 2024", "Bruno Mars concert"
     - Review: "Dune Part Two review", "2024 Oscar predictions"
-- For food category, recommend specific restaurants, dishes, or food establishments with real names
-- Include cuisine type, specialty dishes, or restaurant names
-- Do not recommend articles or recipes about food
+- For food category, **MUST follow these three recommendation types strictly**:
+
+  **Recommendation Type Requirements**:
+  * **Recipe Type (Allrecipes)**:
+    - Recommend: Specific recipe names (e.g., "Chocolate Chip Cookies", "Spaghetti Carbonara", "Chicken Stir Fry")
+    - Content: Describe dish characteristics, required ingredients, difficulty level, suitable for
+    - Search terms: Pure recipe name, like "Chocolate Chip Cookies", "pasta carbonara"
+    - Tags: Cuisine type, difficulty, flavor profile (e.g., "Italian, easy, creamy")
+
+  * **Cuisine Type (Google Maps)**:
+    - Recommend: Cuisine categories (e.g., "Italian cuisine", "Chinese food", "Japanese restaurants", "Mexican")
+    - Content: Introduce cuisine features, signature dishes, suitable occasions, price range
+    - Search terms: Cuisine name, like "Italian restaurants", "Chinese food near me"
+    - Tags: Cuisine type, characteristics, price level
+
+  * **Special Occasion Restaurants (OpenTable)**:
+    - Recommend: Restaurants for specific occasions (e.g., "business lunch", "romantic dinner", "family gathering")
+    - Content: Explain occasion features, suitable restaurant types, average cost, booking tips
+    - Search terms: Occasion + cuisine, like "business lunch Italian", "romantic dinner French"
+    - Tags: Occasion type, cuisine, price range
+
+  **CRITICAL: Content must perfectly match the target platform page!**
 - For travel category, recommend specific tourist destinations, cities, or attractions:
   * Requirements:
     - Must use real existing countries, cities and attractions (e.g., Tokyo Japan, Phuket Thailand, Paris France, Bali Indonesia)

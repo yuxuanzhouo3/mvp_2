@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { generateRecommendations, isZhipuConfigured } from "@/lib/ai/zhipu-recommendation";
-import { generateSearchLink, selectBestPlatform } from "@/lib/search/search-engine";
+import { generateSearchLink, selectBestPlatform, selectFoodPlatformWithRotation } from "@/lib/search/search-engine";
 import { enhanceTravelRecommendation } from "@/lib/ai/travel-enhancer";
 import { validateAndFixPlatforms } from "@/lib/search/platform-validator";
 import { generateDiverseRecommendations, analyzeEntertainmentDiversity, supplementEntertainmentTypes } from "@/lib/ai/entertainment-diversity-checker";
@@ -144,7 +144,7 @@ export async function GET(
       }
 
       // 3. 为每个推荐生成搜索引擎链接
-      const finalRecommendations = processedRecommendations.map(rec => {
+      const finalRecommendations = processedRecommendations.map((rec, index) => {
         let enhancedRec = rec;
 
         // 特殊处理：旅游推荐使用增强器
@@ -153,7 +153,13 @@ export async function GET(
         }
 
         // 选择最佳平台（传递娱乐类型）
-        const platform = selectBestPlatform(category, enhancedRec.platform, locale, enhancedRec.entertainmentType);
+        // 对于 food 分类，使用轮换函数确保平台多样性
+        let platform: string;
+        if (category === 'food') {
+          platform = selectFoodPlatformWithRotation(index, enhancedRec.platform, locale);
+        } else {
+          platform = selectBestPlatform(category, enhancedRec.platform, locale, enhancedRec.entertainmentType);
+        }
 
         // 生成搜索链接（传递娱乐类型）
         const searchLink = generateSearchLink(
@@ -197,9 +203,9 @@ export async function GET(
           linkType = 'product';
         } else if (category === 'food') {
           // 美食分类根据平台设置
-          if (platform === '大众点评' || platform === '美团' || platform === 'Yelp' || platform === 'OpenTable' || platform === '百度地图' || platform === 'Google Maps') {
+          if (platform === '大众点评' || platform === '美团' || platform === 'TripAdvisor' || platform === 'OpenTable' || platform === '百度地图' || platform === 'Google Maps') {
             linkType = 'restaurant';
-          } else if (platform === '下厨房') {
+          } else if (platform === '下厨房' || platform === 'Allrecipes') {
             linkType = 'recipe';
           } else {
             linkType = 'article';
@@ -221,6 +227,11 @@ export async function GET(
             isSearchLink: true,          // 标记这是搜索链接
           }
         };
+
+        // 为娱乐推荐添加 entertainmentType 字段
+        if (category === 'entertainment' && enhancedRec.entertainmentType) {
+          (baseRecommendation as any).entertainmentType = enhancedRec.entertainmentType;
+        }
 
         // 为旅游推荐添加特殊元数据
         if (category === 'travel') {
@@ -449,8 +460,14 @@ async function generateFallbackRecommendations(
   const recs = fallbacks[locale]?.[category] || fallbacks.zh.entertainment;
 
   // 为每个推荐生成搜索链接
-  return recs.map(rec => {
-    const platform = selectBestPlatform(category, rec.platform, locale);
+  return recs.map((rec, index) => {
+    // 对于 food 分类，使用轮换函数确保平台多样性
+    let platform: string;
+    if (category === 'food') {
+      platform = selectFoodPlatformWithRotation(index, rec.platform, locale);
+    } else {
+      platform = selectBestPlatform(category, rec.platform, locale);
+    }
     const searchLink = generateSearchLink(rec.title, rec.searchQuery, platform, locale, category);
 
     // 根据类别和平台确定linkType
