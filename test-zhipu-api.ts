@@ -43,7 +43,7 @@ interface ZhipuResponse {
 async function callZhipuAPI(messages: Array<{ role: string; content: string }>): Promise<string> {
   return new Promise((resolve, reject) => {
     const data = JSON.stringify({
-      model: "glm-4-flash",
+      model: "glm-4.5-flash",
       messages,
       temperature: 0.7,
       max_tokens: 500,
