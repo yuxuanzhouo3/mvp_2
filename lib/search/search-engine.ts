@@ -57,6 +57,7 @@ export function generateSearchLink(
       // 健身平台
       'Keep': (q) => `https://www.gotokeep.com/search?keyword=${encodeURIComponent(q)}`,
       '小红书': (q) => `https://www.xiaohongshu.com/search_result?keyword=${encodeURIComponent(q)}`,
+      '百度地图': (q) => `https://map.baidu.com/s?wd=${encodeURIComponent(q)} 健身房`,
 
       // 通用搜索（降级）
       '百度': (q) => `https://www.baidu.com/s?wd=${encodeURIComponent(q)}`
@@ -101,6 +102,7 @@ export function generateSearchLink(
       'YouTube Fitness': (q) => `https://www.youtube.com/results?search_query=${encodeURIComponent(q)} fitness`,
       'MyFitnessPal': (q) => `https://www.myfitnesspal.com/food/search?q=${encodeURIComponent(q)}`,
       'Peloton': (q) => `https://www.onepeloton.com/search?q=${encodeURIComponent(q)}`,
+      'Google Maps': (q) => `https://www.google.com/maps/search/${encodeURIComponent(q)} gym fitness`,
 
       // General search (fallback)
       'Google': (q) => `https://www.google.com/search?q=${encodeURIComponent(q)}`
@@ -118,18 +120,50 @@ export function generateSearchLink(
   if (category !== 'travel') {
     // 非旅游推荐使用原有的关键词逻辑
     if (platform === 'Google Maps' || platform === 'Yelp' || platform === 'Zomato') {
-      // 对于美食点评平台，添加餐厅相关关键词
-      if (!finalQuery.includes('restaurant') && !finalQuery.includes('餐厅') && !finalQuery.includes('美食')) {
-        finalQuery = `${finalQuery} restaurant`;
+      // 对于点评平台，根据类别添加相关关键词
+      if (category === 'food') {
+        if (!finalQuery.includes('restaurant') && !finalQuery.includes('餐厅') && !finalQuery.includes('美食')) {
+          finalQuery = `${finalQuery} restaurant`;
+        }
+      } else if (category === 'fitness') {
+        // 健身相关：添加健身房或瑜伽馆等关键词
+        if (!finalQuery.includes('gym') && !finalQuery.includes('fitness') && !finalQuery.includes('健身房') && !finalQuery.includes('瑜伽馆')) {
+          finalQuery = `${finalQuery} gym fitness center`;
+        }
+      }
+    } else if (platform === '百度地图') {
+      // 百度地图处理
+      if (category === 'fitness') {
+        // 如果已经是寻找健身房，不再额外添加关键词
+        if (!finalQuery.includes('健身房') && !finalQuery.includes('瑜伽馆') && !finalQuery.includes('体育馆')) {
+          finalQuery = `${finalQuery} 健身房`;
+        }
       }
     } else if (platform === '大众点评') {
       // 大众点评专注于美食和服务
-      if (!finalQuery.includes('餐厅') && !finalQuery.includes('美食')) {
-        finalQuery = `${finalQuery} 美食`;
+      if (category === 'food') {
+        if (!finalQuery.includes('餐厅') && !finalQuery.includes('美食')) {
+          finalQuery = `${finalQuery} 美食`;
+        }
+      } else if (category === 'fitness') {
+        // 大众点评也有健身场馆
+        if (!finalQuery.includes('健身房') && !finalQuery.includes('瑜伽') && !finalQuery.includes('健身')) {
+          finalQuery = `${finalQuery} 健身房 瑜伽`;
+        }
       }
     } else if (platform === 'OpenTable') {
       // OpenTable 是预订平台
       finalQuery = `${finalQuery} reservation`;
+    } else if (category === 'fitness' && (platform === 'B站' || platform === 'YouTube Fitness')) {
+      // 健身视频平台，确保搜索词包含视频相关关键词
+      if (!finalQuery.includes('教程') && !finalQuery.includes('教学') && !finalQuery.includes('tutorial') && !finalQuery.includes('workout')) {
+        finalQuery = `${finalQuery} 教程 训练`;
+      }
+    } else if (category === 'fitness' && (platform === '淘宝' || platform === '京东' || platform === 'Amazon')) {
+      // 健身器材购物平台
+      if (!finalQuery.includes('购买') && !finalQuery.includes('buy') && !finalQuery.includes('健身器材')) {
+        finalQuery = `${finalQuery} 健身器材`;
+      }
     }
   }
 

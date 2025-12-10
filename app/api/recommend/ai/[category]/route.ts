@@ -135,6 +135,47 @@ export async function GET(
         // 生成搜索链接
         const searchLink = generateSearchLink(enhancedRec.title, enhancedRec.searchQuery, platform, locale, category);
 
+        // 根据类别和平台确定 linkType
+        let linkType: string = 'search'; // 默认值
+
+        if (category === 'travel') {
+          linkType = 'location';
+        } else if (category === 'fitness') {
+          // 健身分类根据平台类型设置不同的 linkType
+          if (platform === 'B站' || platform === 'YouTube Fitness') {
+            linkType = 'video';
+          } else if (platform === '百度地图' || platform === 'Google Maps' || platform === '大众点评' || platform === 'Yelp') {
+            linkType = 'location';
+          } else if (platform === '淘宝' || platform === '京东' || platform === 'Amazon' || platform === '天猫' || platform === '拼多多') {
+            linkType = 'product';
+          } else if (platform === 'Keep' || platform === 'MyFitnessPal' || platform === 'Peloton') {
+            linkType = 'app';
+          }
+        } else if (category === 'entertainment') {
+          // 娱乐分类根据平台设置 linkType
+          if (platform === 'B站' || platform === 'YouTube' || platform === '爱奇艺' || platform === '腾讯视频' || platform === 'Netflix') {
+            linkType = 'video';
+          } else if (platform === 'Steam') {
+            linkType = 'game';
+          } else if (platform === '网易云音乐' || platform === 'Spotify') {
+            linkType = 'music';
+          } else if (platform === '豆瓣' || platform === 'IMDb') {
+            linkType = 'article';
+          }
+        } else if (category === 'shopping') {
+          // 购物分类统一设置为 product
+          linkType = 'product';
+        } else if (category === 'food') {
+          // 美食分类根据平台设置
+          if (platform === '大众点评' || platform === '美团' || platform === 'Yelp' || platform === 'OpenTable' || platform === '百度地图' || platform === 'Google Maps') {
+            linkType = 'restaurant';
+          } else if (platform === '下厨房') {
+            linkType = 'recipe';
+          } else {
+            linkType = 'article';
+          }
+        }
+
         const baseRecommendation = {
           title: enhancedRec.title,
           description: enhancedRec.description,
@@ -142,7 +183,7 @@ export async function GET(
           tags: enhancedRec.tags,
           link: searchLink.url,           // 搜索引擎链接
           platform: searchLink.displayName,
-          linkType: category === 'travel' ? ('location' as const) : ('search' as const),    // 旅游推荐使用 location 图标
+          linkType: linkType as const,     // 根据类别和平台设置合适的类型
           category: category,             // 添加缺失的 category 属性
           metadata: {
             searchQuery: enhancedRec.searchQuery,
@@ -282,14 +323,32 @@ async function generateFallbackRecommendations(
         searchQuery: '热门旅游景点',
         platform: '携程'
       }],
-      fitness: [{
-        title: '健身训练课程',
-        description: '适合初学者的课程',
-        reason: '根据难度为你推荐',
-        tags: ['健身', '课程', '初学者'],
-        searchQuery: '健身训练课程 初学者',
-        platform: 'Keep'
-      }]
+      fitness: [
+        {
+          title: '30分钟瑜伽入门教程',
+          description: '适合初学者的瑜伽基础练习',
+          reason: '帮助你轻松开始瑜伽之旅',
+          tags: ['瑜伽', '初学者', '拉伸'],
+          searchQuery: '瑜伽入门教程 30分钟',
+          platform: 'B站'
+        },
+        {
+          title: '附近健身房推荐',
+          description: '查找你身边的优质健身场所',
+          reason: '方便你随时开始健身训练',
+          tags: ['健身房', '训练', '器械'],
+          searchQuery: '附近健身房 健身中心',
+          platform: '百度地图'
+        },
+        {
+          title: '家用哑铃套装',
+          description: '适合在家锻炼的哑铃套装',
+          reason: '让你在家也能进行力量训练',
+          tags: ['哑铃', '力量训练', '健身器材'],
+          searchQuery: '哑铃套装 家用',
+          platform: '京东'
+        }
+      ]
     },
     en: {
       entertainment: [{
@@ -324,35 +383,69 @@ async function generateFallbackRecommendations(
         searchQuery: 'popular tourist attractions',
         platform: 'TripAdvisor'
       }],
-      fitness: [{
-        title: 'Fitness Workout Classes',
-        description: 'Beginner-friendly workout routines',
-        reason: 'Recommended based on difficulty',
-        tags: ['fitness', 'workout', 'beginner'],
-        searchQuery: 'fitness workout for beginners',
-        platform: 'YouTube'
-      }]
+      fitness: [
+        {
+          title: '30-Minute Yoga for Beginners',
+          description: 'Basic yoga practice perfect for beginners',
+          reason: 'Help you start your yoga journey easily',
+          tags: ['yoga', 'beginner', 'stretching'],
+          searchQuery: 'yoga for beginners 30 minutes',
+          platform: 'YouTube Fitness'
+        },
+        {
+          title: 'Gyms Near Me',
+          description: 'Find quality fitness centers nearby',
+          reason: 'Make it convenient to start your training',
+          tags: ['gym', 'fitness', 'workout'],
+          searchQuery: 'gyms near me fitness center',
+          platform: 'Google Maps'
+        },
+        {
+          title: 'Home Dumbbell Set',
+          description: 'Dumbbell set for home workouts',
+          reason: 'Allow you to do strength training at home',
+          tags: ['dumbbell', 'strength training', 'fitness equipment'],
+          searchQuery: 'dumbbell set home gym',
+          platform: 'Amazon'
+        }
+      ]
     }
   };
 
-  const baseRec = fallbacks[locale]?.[category]?.[0] || fallbacks.zh.entertainment[0];
+  const recs = fallbacks[locale]?.[category] || fallbacks.zh.entertainment;
 
-  // 生成搜索链接
-  const platform = selectBestPlatform(category, baseRec.platform, locale);
-  const searchLink = generateSearchLink(baseRec.title, baseRec.searchQuery, platform, locale, category);
+  // 为每个推荐生成搜索链接
+  return recs.map(rec => {
+    const platform = selectBestPlatform(category, rec.platform, locale);
+    const searchLink = generateSearchLink(rec.title, rec.searchQuery, platform, locale, category);
 
-  return [{
-    ...baseRec,
-    link: searchLink.url,
-    platform: searchLink.displayName,
-    linkType: 'article' as const,  // 临时映射到 article 类型
-    category: category as RecommendationCategory,
-    metadata: {
-      searchQuery: baseRec.searchQuery,
-      originalPlatform: baseRec.platform,
-      isSearchLink: true          // 标记这是搜索链接
+    // 根据类别和平台确定linkType
+    let linkType = 'search' as const;
+    if (category === 'fitness') {
+      if (platform === 'B站' || platform === 'YouTube Fitness') {
+        linkType = 'video' as const;
+      } else if (platform === '百度地图' || platform === 'Google Maps') {
+        linkType = 'location' as const;
+      } else if (platform === '淘宝' || platform === '京东' || platform === 'Amazon') {
+        linkType = 'product' as const;
+      } else if (platform === 'Keep' || platform === 'MyFitnessPal') {
+        linkType = 'app' as const;
+      }
     }
-  }];
+
+    return {
+      ...rec,
+      link: searchLink.url,
+      platform: searchLink.displayName,
+      linkType: linkType,
+      category: category as RecommendationCategory,
+      metadata: {
+        searchQuery: rec.searchQuery,
+        originalPlatform: rec.platform,
+        isSearchLink: true          // 标记这是搜索链接
+      }
+    };
+  });
 }
 
 // 支持 POST 请求（带有更多参数）

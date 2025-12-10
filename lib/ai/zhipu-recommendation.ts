@@ -65,11 +65,11 @@ export async function generateRecommendations(
     },
     fitness: {
       platforms: locale === 'zh'
-        ? ['Keep', 'B站', '小红书']
-        : ['YouTube Fitness', 'MyFitnessPal', 'Peloton'],
+        ? ['B站', 'Keep', '小红书', '淘宝', '京东', '百度地图', '大众点评']
+        : ['YouTube Fitness', 'MyFitnessPal', 'Peloton', 'Google Maps', 'Amazon', 'Yelp'],
       examples: locale === 'zh'
-        ? '健身课程、运动教程'
-        : 'fitness classes, workout tutorials'
+        ? '健身课程、健身房、健身器材、运动装备'
+        : 'fitness classes, gyms, fitness equipment, workout gear'
     }
   };
 
@@ -109,6 +109,20 @@ ${JSON.stringify(userHistory.slice(0, 20), null, 2)}
     - "日本 · 京都" - 古老的寺庙和传统文化，春季樱花盛开
     - "法国 · 巴黎" - 浪漫之都，埃菲尔铁塔和卢浮宫的故乡
   * 重要：不要生成虚构的地名，确保所有地名都是真实存在的！
+- 如果是健身分类(fitness)，请推荐多样化的健身方式，要求：
+  * 推荐类型应包括：健身视频教程、健身房、健身器材、运动装备等
+  * 每个推荐要明确具体：
+    - 视频教程：如"30分钟瑜伽入门"、"HIIT燃脂训练"
+    - 健身房：如"附近健身房推荐"、"瑜伽馆"
+    - 器材装备：如"哑铃套装"、"瑜伽垫"、"跑步机"
+  * 根据推荐类型选择合适的平台：
+    - 视频教程：选择B站、YouTube Fitness等
+    - 健身房：选择百度地图、Google Maps、大众点评等
+    - 器材购物：选择淘宝、京东、Amazon等
+  * 搜索词要与推荐内容精确匹配，例如：
+    - 视频教程："瑜伽入门教程"、"HIIT训练视频"
+    - 健身房："附近健身房"、"瑜伽馆"
+    - 器材装备："哑铃套装购买"、"瑜伽垫推荐"
 - **重要：不要生成任何链接URL，只需要推荐内容！**
 
 返回 JSON 格式（严格遵守，不要有任何额外文字）：
@@ -157,6 +171,20 @@ Requirements:
     - "Japan · Kyoto" - Ancient temples and traditional culture, cherry blossoms in spring
     - "France · Paris" - The city of romance, home to the Eiffel Tower and Louvre Museum
   * Important: Do not generate fictional place names, ensure all locations are real and exist!
+- For fitness category, recommend diverse fitness approaches:
+  * Recommend various types: fitness video tutorials, gyms, fitness equipment, workout gear
+  * Be specific for each recommendation:
+    - Video tutorials: e.g., "30-minute Yoga for Beginners", "HIIT Fat Burning Workout"
+    - Gyms: e.g., "Nearby Gym", "Yoga Studio"
+    - Equipment: e.g., "Dumbbell Set", "Yoga Mat", "Treadmill"
+  * Choose appropriate platform based on recommendation type:
+    - Video tutorials: YouTube Fitness, B站
+    - Gyms: Google Maps, 百度地图, Yelp
+    - Equipment shopping: Amazon, 淘宝, 京东
+  * Search queries must match content precisely, e.g.:
+    - Video tutorials: "yoga for beginners", "HIIT workout video"
+    - Gyms: "gyms near me", "yoga studio"
+    - Equipment: "dumbbell set buy", "best yoga mat"
 - **Important: Do not generate any URLs, only recommend content!**
 
 Return JSON format (strictly, no extra text):

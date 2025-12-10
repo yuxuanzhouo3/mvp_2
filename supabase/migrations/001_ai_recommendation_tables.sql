@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS recommendation_history (
   title TEXT NOT NULL,
   description TEXT,
   link TEXT NOT NULL,  -- 外部链接 (必填)
-  link_type TEXT CHECK (link_type IN ('product', 'video', 'book', 'location', 'article', 'app', 'music', 'movie', 'game', 'restaurant', 'recipe', 'hotel', 'course')),
+  link_type TEXT CHECK (link_type IN ('product', 'video', 'book', 'location', 'article', 'app', 'music', 'movie', 'game', 'restaurant', 'recipe', 'hotel', 'course', 'search')),
   metadata JSONB DEFAULT '{}',  -- 额外信息: {price, rating, duration, calories, etc.}
   reason TEXT,  -- AI 推荐理由
   clicked BOOLEAN DEFAULT FALSE,
