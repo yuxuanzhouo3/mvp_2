@@ -59,6 +59,8 @@ export function generateSearchLink(
       'Keep': (q) => `https://www.gotokeep.com/search?keyword=${encodeURIComponent(q)}`,
       '小红书': (q) => `https://www.xiaohongshu.com/search_result?keyword=${encodeURIComponent(q)}`,
       '百度地图': (q) => `https://map.baidu.com/s?wd=${encodeURIComponent(q)} 健身房`,
+      'FitnessVolt': (q) => `https://fitnessvolt.com/?s=${encodeURIComponent(q)}`,
+      'GarageGymReviews': (q) => `https://www.garagegymreviews.com/?s=${encodeURIComponent(q)}`,
 
       // 通用搜索（降级）
       '百度': (q) => `https://www.baidu.com/s?wd=${encodeURIComponent(q)}`
@@ -103,6 +105,10 @@ export function generateSearchLink(
       'YouTube Fitness': (q) => `https://www.youtube.com/results?search_query=${encodeURIComponent(q)} fitness`,
       'MyFitnessPal': (q) => `https://www.myfitnesspal.com/food/search?q=${encodeURIComponent(q)}`,
       'Peloton': (q) => `https://www.onepeloton.com/search?q=${encodeURIComponent(q)}`,
+      'FitnessVolt': (q) => `https://fitnessvolt.com/?s=${encodeURIComponent(q)}`,
+      'GarageGymReviews': (q) => `https://www.garagegymreviews.com/?s=${encodeURIComponent(q)}`,
+      'Muscle & Strength': (q) => `https://www.muscleandstrength.com/?s=${encodeURIComponent(q)}`,
+      'Best Buy': (q) => `https://www.bestbuy.com/site/searchpage.jsp?st=${encodeURIComponent(q)}`,
 
       // General search (fallback)
       'Google': (q) => `https://www.google.com/search?q=${encodeURIComponent(q)}`
@@ -177,31 +183,21 @@ export function generateSearchLink(
           }
         }
       } else if (category === 'fitness') {
-        // 健身相关：添加健身房或瑜伽馆等关键词
-        if (!finalQuery.includes('gym') && !finalQuery.includes('fitness') && !finalQuery.includes('健身房') && !finalQuery.includes('瑜伽馆')) {
-          finalQuery = `${finalQuery} gym fitness center`;
-        }
+        // 健身平台的特殊处理已由 optimizeFitnessSearchQuery 完成，这里不再添加通用关键词
       }
     } else if (platform === '百度地图') {
-      // 百度地图处理
-      if (category === 'fitness') {
-        // 如果已经是寻找健身房，不再额外添加关键词
-        if (!finalQuery.includes('健身房') && !finalQuery.includes('瑜伽馆') && !finalQuery.includes('体育馆')) {
-          finalQuery = `${finalQuery} 健身房`;
-        }
-      }
+      // 百度地图处理 - 不再用于健身，注释保留以备参考
+      // if (category === 'fitness') {
+      //   健身相关搜索改用 FitnessVolt 等专用平台
+      // }
     } else if (platform === '大众点评') {
       // 大众点评专注于美食和服务
       if (category === 'food') {
         if (!finalQuery.includes('餐厅') && !finalQuery.includes('美食')) {
           finalQuery = `${finalQuery} 美食`;
         }
-      } else if (category === 'fitness') {
-        // 大众点评也有健身场馆
-        if (!finalQuery.includes('健身房') && !finalQuery.includes('瑜伽') && !finalQuery.includes('健身')) {
-          finalQuery = `${finalQuery} 健身房 瑜伽`;
-        }
       }
+      // 健身相关已改用 GarageGymReviews 和 FitnessVolt
     } else if (platform === 'Allrecipes') {
       // Allrecipes 专注于食谱搜索
       if (category === 'food') {
@@ -216,14 +212,17 @@ export function generateSearchLink(
           finalQuery = `${finalQuery} reservation`;
         }
       }
-    } else if (category === 'fitness' && (platform === 'B站' || platform === 'YouTube Fitness')) {
-      // 健身视频平台，确保搜索词包含视频相关关键词
-      if (!finalQuery.includes('教程') && !finalQuery.includes('教学') && !finalQuery.includes('tutorial') && !finalQuery.includes('workout')) {
-        finalQuery = `${finalQuery} 教程 训练`;
-      }
+    } else if (category === 'fitness' && (platform === 'B站' || platform === 'YouTube Fitness' || platform === 'YouTube')) {
+      // 健身视频平台处理 - 搜索词已由 optimizeFitnessSearchQuery 优化
+      // 这里不再进行额外处理
+    } else if (category === 'fitness' && (platform === 'FitnessVolt' || platform === 'Muscle & Strength')) {
+      // 健身计划文章平台 - 搜索词已优化，不需要额外处理
+    } else if (category === 'fitness' && (platform === 'GarageGymReviews' || platform === 'Best Buy')) {
+      // 健身器材评测平台 - 搜索词已优化，不需要额外处理
     } else if (category === 'fitness' && (platform === '淘宝' || platform === '京东' || platform === 'Amazon')) {
-      // 健身器材购物平台
-      if (!finalQuery.includes('购买') && !finalQuery.includes('buy') && !finalQuery.includes('健身器材')) {
+      // 不再使用购物平台用于健身推荐，已改用专业平台
+      // 保留此逻辑作为备选方案
+      if (!finalQuery.includes('购买') && !finalQuery.includes('buy')) {
         finalQuery = `${finalQuery} 健身器材`;
       }
     }
@@ -316,14 +315,14 @@ export function selectBestPlatform(
       shopping: ['京东', '淘宝', '天猫'],
       food: ['大众点评', '美团', '百度美食'],
       travel: ['Booking.com', 'Agoda', 'TripAdvisor', '携程', '马蜂窝'],
-      fitness: ['Keep', 'B站', '小红书']
+      fitness: ['YouTube', 'GarageGymReviews', 'FitnessVolt']
     },
     en: {
       entertainment: entertainmentPlatformMap.en[entertainmentType || 'video'] || ['IMDb', 'YouTube', 'Netflix'],
       shopping: ['Amazon', 'eBay', 'Walmart'],
       food: ['Allrecipes', 'Google Maps', 'OpenTable'],
       travel: ['Booking.com', 'Agoda', 'TripAdvisor', 'Expedia', 'Klook', 'Airbnb'],
-      fitness: ['YouTube Fitness', 'MyFitnessPal', 'Peloton']
+      fitness: ['YouTube', 'GarageGymReviews', 'FitnessVolt']
     }
   };
 

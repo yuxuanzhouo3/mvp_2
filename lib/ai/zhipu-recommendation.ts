@@ -147,19 +147,25 @@ ${JSON.stringify(userHistory.slice(0, 20), null, 2)}
     - "法国 · 巴黎" - 浪漫之都，埃菲尔铁塔和卢浮宫的故乡
   * 重要：不要生成虚构的地名，确保所有地名都是真实存在的！
 - 如果是健身分类(fitness)，请推荐多样化的健身方式，要求：
-  * 推荐类型应包括：健身视频教程、健身房、健身器材、运动装备等
-  * 每个推荐要明确具体：
-    - 视频教程：如"30分钟瑜伽入门"、"HIIT燃脂训练"
-    - 健身房：如"附近健身房推荐"、"瑜伽馆"
-    - 器材装备：如"哑铃套装"、"瑜伽垫"、"跑步机"
+  * 推荐类型应包括：健身视频教程、健身房位置、健身器材使用教程等
+  * 每个推荐要明确具体并指向正确的内容：
+    - 视频教程：如"30分钟瑜伽入门"、"HIIT燃脂训练"（链接到B站、YouTube的教程）
+    - 健身房：如"附近瑜伽馆推荐"、"24小时健身房"（链接到Google Maps、百度地图等位置服务）
+    - 器材使用教程：如"哑铃训练教程"、"跑步机正确使用方法"（链接到B站、YouTube的教程视频，不是购物链接）
   * 根据推荐类型选择合适的平台：
-    - 视频教程：选择B站、YouTube Fitness等
-    - 健身房：选择百度地图、Google Maps、大众点评等
-    - 器材购物：选择淘宝、京东、Amazon等
+    - 健身视频教程：选择B站、YouTube Fitness等
+    - 健身房位置：选择百度地图、Google Maps、大众点评等
+    - 器材使用教程：选择B站、YouTube Fitness等（教程视频，不是购物）
+  * 生成3个推荐时必须满足以下要求：
+    - 第一个必须是健身视频教程（video type）
+    - 第二个必须是健身房地点推荐（location type）
+    - 第三个必须是器材使用教程（equipment type）
+    - 这三种类型缺一不可！
+  * 重要：器材推荐的searchQuery应该是"XX器材+使用教程/训练方法"而不是"XX器材+购买"
   * 搜索词要与推荐内容精确匹配，例如：
     - 视频教程："瑜伽入门教程"、"HIIT训练视频"
-    - 健身房："附近健身房"、"瑜伽馆"
-    - 器材装备："哑铃套装购买"、"瑜伽垫推荐"
+    - 健身房："附近瑜伽馆"、"24小时健身房"
+    - 器材教程："哑铃训练教程"、"跑步机使用方法"、"瑜伽垫基础动作"
 - **重要：不要生成任何链接URL，只需要推荐内容！**
 
 返回 JSON 格式（严格遵守，不要有任何额外文字）：
@@ -241,20 +247,36 @@ Requirements:
     - "Japan · Kyoto" - Ancient temples and traditional culture, cherry blossoms in spring
     - "France · Paris" - The city of romance, home to the Eiffel Tower and Louvre Museum
   * Important: Do not generate fictional place names, ensure all locations are real and exist!
-- For fitness category, recommend diverse fitness approaches:
-  * Recommend various types: fitness video tutorials, gyms, fitness equipment, workout gear
-  * Be specific for each recommendation:
-    - Video tutorials: e.g., "30-minute Yoga for Beginners", "HIIT Fat Burning Workout"
-    - Gyms: e.g., "Nearby Gym", "Yoga Studio"
-    - Equipment: e.g., "Dumbbell Set", "Yoga Mat", "Treadmill"
-  * Choose appropriate platform based on recommendation type:
-    - Video tutorials: YouTube Fitness, B站
-    - Gyms: Google Maps, 百度地图, Yelp
-    - Equipment shopping: Amazon, 淘宝, 京东
-  * Search queries must match content precisely, e.g.:
-    - Video tutorials: "yoga for beginners", "HIIT workout video"
-    - Gyms: "gyms near me", "yoga studio"
-    - Equipment: "dumbbell set buy", "best yoga mat"
+- For fitness category, recommend three distinct types of fitness content:
+  * **Fitness Video Course (YouTube)**: Professional video tutorials and classes
+    - Examples: "30-minute Yoga Video Course", "HIIT Fat Burning Workout", "Pilates Basics"
+    - Platform: YouTube (video courses)
+    - Search: "yoga for beginners video", "HIIT workout tutorial"
+    - Tags: Should include exercise type, duration, difficulty
+  
+  * **Fitness Equipment Reviews (GarageGymReviews)**: Equipment reviews and purchasing guides
+    - Examples: "Dumbbell Reviews and Buying Guide", "Best Home Treadmill 2024", "Adjustable Dumbbells Comparison"
+    - Platform: GarageGymReviews (equipment reviews)
+    - Search: "dumbbell reviews recommendation", "home gym equipment guide"
+    - Tags: Should include equipment type, use case, price range
+  
+  * **Fitness Training Plans (FitnessVolt)**: Complete training programs and fitness plans
+    - Examples: "12-Week Muscle Building Program", "Fat Loss Training Plan", "Beginner Workout Routine"
+    - Platform: FitnessVolt (fitness plans)
+    - Search: "muscle building training program", "weight loss fitness plan"
+    - Tags: Should include goal, duration, difficulty level
+
+  * CRITICAL REQUIREMENTS:
+    - Each recommendation must be a different type (video, equipment, plan)
+    - Video recommendations ONLY link to YouTube (video courses)
+    - Equipment recommendations ONLY link to GarageGymReviews (reviews, NOT shopping sites)
+    - Plan recommendations ONLY link to FitnessVolt (article, NOT video platforms)
+    - Search queries must match the platform content precisely:
+      * Video: "exercise name video tutorial"
+      * Equipment: "equipment name review recommendation" 
+      * Plan: "goal name training program"
+    - All three types are REQUIRED for fitness recommendations!
+  * Important: Do NOT recommend shopping platforms like Amazon for fitness equipment - use GarageGymReviews instead
 - **Important: Do not generate any URLs, only recommend content!**
 
 Return JSON format (strictly, no extra text):
@@ -290,6 +312,10 @@ Return JSON format (strictly, no extra text):
     });
 
     const content = response.choices[0].message.content;
+    if (!content) {
+      console.error('智谱 API 返回空内容');
+      return getFallbackRecommendations(category, locale);
+    }
     const cleanContent = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
 
     const result = JSON.parse(cleanContent);
