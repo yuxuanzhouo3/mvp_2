@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { AIRecommendation, RecommendationCategory } from "@/lib/types/recommendation";
 import { TravelRecommendationCard } from "./TravelRecommendationCard";
+import { getIconForLinkType, getLabelForLinkType } from "@/lib/utils/icon-mapping";
 
 // 图标组件
 const ExternalLinkIcon = () => (
@@ -40,29 +41,8 @@ const StarIcon = ({ filled }: { filled: boolean }) => (
 );
 
 const LinkTypeIcon = ({ linkType, metadata }: { linkType: string; metadata?: any }) => {
-  const icons: Record<string, string> = {
-    product: "🛒",
-    video: "🎬",
-    book: "📚",
-    location: "📍",
-    article: "📄",
-    app: "📱",
-    music: "🎵",
-    movie: "🎥",
-    game: "🎮",
-    restaurant: "🍽️",
-    recipe: "👨‍🍳",
-    hotel: "🏨",
-    course: "📖",
-    search: "🔍",  // 搜索引擎链接图标
-  };
-
-  // 如果 metadata 标记这是一个搜索链接，显示搜索图标
-  if (metadata?.isSearchLink) {
-    return <span className="text-lg">🔍</span>;
-  }
-
-  return <span className="text-lg">{icons[linkType] || "🔗"}</span>;
+  const icon = getIconForLinkType(linkType, metadata);
+  return <span className="text-lg">{icon}</span>;
 };
 
 interface RecommendationCardProps {
@@ -232,17 +212,19 @@ export function RecommendationCard({
 
     // 旅游推荐特殊信息显示
     if (category === 'travel' && metadata.destination) {
-      if (metadata.destination.country) {
+      const destination = metadata.destination as any;
+      if (destination.country) {
         items.push(
           <span key="country" className="text-sm text-gray-500">
-            🌍 {metadata.destination.country}
+            🌍 {destination.country}
           </span>
         );
       }
       if (metadata.bestSeason) {
+        const bestSeason = metadata.bestSeason as any;
         items.push(
           <span key="season" className="text-sm text-orange-500">
-            🗓️ {locale === "zh" ? "最佳季节：" : "Best Season: "}{metadata.bestSeason}
+            🗓️ {locale === "zh" ? "最佳季节：" : "Best Season: "}{bestSeason}
           </span>
         );
       }
@@ -355,11 +337,10 @@ export function RecommendationCard({
             <div className="flex items-center gap-1">
               <button
                 onClick={handleSave}
-                className={`p-1.5 rounded-full transition-colors ${
-                  isSaved
+                className={`p-1.5 rounded-full transition-colors ${isSaved
                     ? "bg-red-100 text-red-500"
                     : "bg-gray-100 text-gray-400 hover:text-red-500"
-                }`}
+                  }`}
                 title={locale === "zh" ? "收藏" : "Save"}
               >
                 <svg

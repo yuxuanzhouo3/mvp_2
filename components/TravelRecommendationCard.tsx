@@ -11,6 +11,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { AIRecommendation, RecommendationCategory } from "@/lib/types/recommendation";
+import { getIconForLinkType } from "@/lib/utils/icon-mapping";
 
 // 图标组件
 const ExternalLinkIcon = () => (
@@ -59,6 +60,11 @@ const StarIcon = ({ filled }: { filled: boolean }) => (
     <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
   </svg>
 );
+
+const LinkTypeIcon = ({ linkType, metadata }: { linkType: string; metadata?: any }) => {
+  const icon = getIconForLinkType(linkType, metadata);
+  return <span className="text-lg">{icon}</span>;
+};
 
 interface TravelRecommendationCardProps {
   recommendation: AIRecommendation;
@@ -130,7 +136,7 @@ export function TravelRecommendationCard({
     return null;
   };
 
-  const country = metadata.destination?.country || extractCountryFromTitle(title);
+  const country = (metadata.destination as any)?.country || extractCountryFromTitle(title);
 
   // 获取国家对应的国旗 emoji
   const getCountryFlag = (countryName: string | null): string => {
@@ -240,11 +246,10 @@ export function TravelRecommendationCard({
             <div className="flex items-center gap-1">
               <button
                 onClick={handleSave}
-                className={`p-2 rounded-full transition-colors ${
-                  isSaved
+                className={`p-2 rounded-full transition-colors ${isSaved
                     ? "bg-red-100 text-red-500"
                     : "bg-gray-100 text-gray-400 hover:text-red-500"
-                }`}
+                  }`}
                 title={locale === "zh" ? "收藏" : "Save"}
               >
                 <svg
@@ -294,9 +299,9 @@ export function TravelRecommendationCard({
                 {metadata.price}
               </span>
             )}
-            {metadata.bestSeason && (
+            {(metadata.bestSeason as any) && (
               <span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded">
-                🗓️ {locale === "zh" ? "最佳季节" : "Best Season"}: {metadata.bestSeason}
+                🗓️ {locale === "zh" ? "最佳季节" : "Best Season"}: {(metadata.bestSeason as any)}
               </span>
             )}
           </div>
