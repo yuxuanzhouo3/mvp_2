@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { ArrowLeft, CreditCard, User, Crown } from "lucide-react"
+import { ArrowLeft, CreditCard, User, Crown, History } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useLanguage } from "@/components/language-provider"
 import { useTranslations } from "@/lib/i18n"
@@ -293,6 +293,30 @@ export default function SettingsPage() {
             </Card>
           </TabsContent>
         </Tabs>
+
+        {/* 历史记录链接 */}
+        <div className="mt-8 p-4 bg-blue-50 rounded-lg border border-blue-200">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <History className="h-5 w-5 text-blue-600" />
+              <div>
+                <h3 className="font-semibold text-gray-800">
+                  {language === "zh" ? "推荐历史" : "Recommendation History"}
+                </h3>
+                <p className="text-sm text-gray-600">
+                  {language === "zh"
+                    ? "查看所有推荐记录，管理你的推荐历史"
+                    : "View all recommendations and manage your history"}
+                </p>
+              </div>
+            </div>
+            <Link href="/history">
+              <Button variant="outline">
+                {language === "zh" ? "查看" : "View"}
+              </Button>
+            </Link>
+          </div>
+        </div>
       </div>
     </div>
   )

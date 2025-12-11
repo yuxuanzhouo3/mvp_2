@@ -5,7 +5,7 @@ import Link from "next/link"
 import { Card } from "@/components/ui/card"
 import { useAuth } from "@/hooks/use-auth"
 import { Button } from "@/components/ui/button"
-import { Settings, Globe, Crown } from "lucide-react"
+import { Settings, Globe, Crown, History } from "lucide-react"
 import { useLanguage } from "@/components/language-provider"
 import { useTranslations } from "@/lib/i18n"
 
@@ -54,6 +54,11 @@ export default function HomePage() {
             </Button>
             {isAuthenticated ? (
               <>
+                <Link href="/history">
+                  <Button variant="ghost" size="icon" className="h-8 w-8">
+                    <History className="h-4 w-4" />
+                  </Button>
+                </Link>
                 <Link href="/settings">
                   <Button variant="ghost" size="icon" className="h-8 w-8">
                     <Settings className="h-4 w-4" />
