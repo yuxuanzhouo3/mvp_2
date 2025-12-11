@@ -285,9 +285,9 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
             animate={
               isShaking
                 ? {
-                    rotate: [0, -10, 10, -10, 10, 0],
-                    scale: [1, 1.1, 1, 1.1, 1],
-                  }
+                  rotate: [0, -10, 10, -10, 10, 0],
+                  scale: [1, 1.1, 1, 1.1, 1],
+                }
                 : {}
             }
             transition={{ duration: 0.5, repeat: isShaking ? Infinity : 0 }}
@@ -336,12 +336,12 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
                   ? "AI 智能推荐"
                   : "AI Powered"
                 : source === "cache"
-                ? locale === "zh"
-                  ? "缓存推荐"
-                  : "Cached"
-                : locale === "zh"
-                ? "精选推荐"
-                : "Curated"}
+                  ? locale === "zh"
+                    ? "缓存推荐"
+                    : "Cached"
+                  : locale === "zh"
+                    ? "精选推荐"
+                    : "Curated"}
             </Badge>
           </div>
         )}
