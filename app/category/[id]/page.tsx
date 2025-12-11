@@ -122,12 +122,24 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
     const savedHistory = localStorage.getItem(`ai_history_${params.id}`)
     if (savedHistory) {
       try {
-        setHistory(JSON.parse(savedHistory))
+        const parsedHistory = JSON.parse(savedHistory)
+        // 限制最多 10 条历史记录
+        setHistory(parsedHistory.slice(0, 10))
       } catch {
         // ignore
       }
     }
   }, [params.id])
+
+  // 删除单条历史记录
+  const deleteHistoryItem = useCallback(
+    (index: number) => {
+      const newHistory = history.filter((_, i) => i !== index)
+      setHistory(newHistory)
+      localStorage.setItem(`ai_history_${params.id}`, JSON.stringify(newHistory))
+    },
+    [history, params.id]
+  )
 
   // 记录用户行为
   const recordAction = useCallback(
@@ -177,8 +189,8 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
         setCurrentRecommendations(data.recommendations)
         setSource(data.source)
 
-        // 更新历史（保留最近 6 条）
-        const newHistory = [...data.recommendations, ...history].slice(0, 6)
+        // 更新历史（保留最近 10 条）
+        const newHistory = [...data.recommendations, ...history].slice(0, 10)
         setHistory(newHistory)
         localStorage.setItem(`ai_history_${params.id}`, JSON.stringify(newHistory))
 
@@ -408,19 +420,48 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
                 }}
                 className="text-gray-500 text-xs"
               >
-                {locale === "zh" ? "清空" : "Clear"}
+                {locale === "zh" ? "清空全部" : "Clear All"}
               </Button>
             </div>
-            <RecommendationList
-              recommendations={history.slice(
-                currentRecommendations.length > 0 ? currentRecommendations.length : 0
-              )}
-              category={categoryId}
-              onLinkClick={handleLinkClick}
-              showReason={false}
-              compact={true}
-              locale={locale}
-            />
+            {/* 可滚动的历史记录容器 */}
+            <div className="flex flex-col gap-2 max-h-96 overflow-y-auto pr-2">
+              {history.map((item, index) => (
+                <motion.div
+                  key={`${item.title}-${index}`}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 20 }}
+                  transition={{ duration: 0.3 }}
+                  className="flex items-start gap-3 p-3 bg-white rounded-lg border border-gray-100 hover:border-gray-300 transition-colors group"
+                >
+                  <div className="flex-1 min-w-0">
+                    <RecommendationCard
+                      recommendation={item}
+                      category={categoryId}
+                      onLinkClick={() => handleLinkClick(item)}
+                      showReason={false}
+                      compact={true}
+                      locale={locale}
+                    />
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => deleteHistoryItem(index)}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 text-gray-400 hover:text-red-500"
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z" />
+                    </svg>
+                  </Button>
+                </motion.div>
+              ))}
+            </div>
+            <p className="text-xs text-gray-400 mt-3">
+              {locale === "zh"
+                ? `显示最近 ${history.length}/10 条推荐`
+                : `Showing ${history.length}/10 recent recommendations`}
+            </p>
           </div>
         )}
 
