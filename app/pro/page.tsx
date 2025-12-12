@@ -28,7 +28,7 @@ export default function PricingPage() {
 
   const currentTier = user?.subscriptionTier || "free"
 
-  const handleSubscribe = async (tier: Tier) => {
+  const handleSubscribe = async (tier: Tier, billingCycle: "monthly" | "yearly" = "monthly") => {
     if (!isAuthenticated) {
       router.push("/login")
       return
@@ -45,36 +45,62 @@ export default function PricingPage() {
     setIsProcessing(true)
 
     try {
-      const endpoint = selectedPayment === "stripe"
-        ? "/api/stripe/create-checkout"
-        : "/api/paypal/create-subscription"
+      // 获取定价信息
+      const pricing = {
+        pro: { monthly: 9.99, yearly: 99.99 },
+        enterprise: { monthly: 49.99, yearly: 499.99 },
+      }
 
-      const response = await fetch(endpoint, {
+      const amount = pricing[tier][billingCycle]
+
+      const { fetchWithAuth } = await import("@/lib/auth/fetch-with-auth");
+
+      const response = await fetchWithAuth("/api/payment/create", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tier }),
+        body: JSON.stringify({
+          method: selectedPayment,
+          amount,
+          currency: "USD",
+          planType: tier,
+          billingCycle,
+          description: `${billingCycle === "monthly" ? "1 Month" : "1 Year"} ${tier.charAt(0).toUpperCase() + tier.slice(1)} Membership`,
+        }),
       })
 
       const data = await response.json()
 
-      if (data.url || data.approvalUrl) {
-        // Simulate payment success for demo
-        toast({
-          title: `${selectedPayment === "stripe" ? "Stripe" : "PayPal"} Checkout`,
-          description: data.message || t.pricing.toast.redirecting,
-        })
+      if (!response.ok) {
+        throw new Error(data.error || "Payment creation failed")
+      }
 
-        // In production, redirect to actual payment URL
-        // window.location.href = data.url || data.approvalUrl
+      if (selectedPayment === "paypal" && data.paymentUrl) {
+        // 重定向到 PayPal 支付页面
+        window.location.href = data.paymentUrl
+      } else if (selectedPayment === "stripe" && data.clientSecret) {
+        // 处理 Stripe 支付（通常在前端使用 Elements）
+        toast({
+          title: "Stripe Payment",
+          description: "Redirecting to secure payment...",
+        })
+        // 这里可以集成 Stripe Elements 或重定向到专门的 Stripe 支付页面
+        setTimeout(() => {
+          router.push("/settings")
+        }, 2000)
+      } else {
+        toast({
+          title: t.pricing.toast.success,
+          description: t.pricing.toast.paymentCompleted,
+        })
 
         setTimeout(() => {
           router.push("/settings")
         }, 2000)
       }
-    } catch (error) {
+    } catch (error: any) {
+      console.error("Subscription error:", error)
       toast({
         title: t.pricing.toast.error,
-        description: t.pricing.toast.paymentFailed,
+        description: error.message || t.pricing.toast.paymentFailed,
         variant: "destructive",
       })
     } finally {
@@ -223,24 +249,56 @@ export default function PricingPage() {
                   </ul>
                 </CardContent>
                 <CardFooter>
-                  <Button
-                    onClick={() => handleSubscribe(plan.id)}
-                    disabled={isProcessing || isCurrentPlan}
-                    className={`w-full ${
-                      plan.popular
-                        ? "bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
-                        : ""
-                    }`}
-                    variant={plan.id === "free" ? "outline" : "default"}
-                  >
-                    {isCurrentPlan
-                      ? t.pricing.currentPlan
-                      : isProcessing
-                      ? t.pricing.processing
-                      : plan.id === "free"
-                      ? t.pricing.currentFreePlan
-                      : t.pricing.subscribeWith.replace("{method}", selectedPayment === "stripe" ? "Stripe" : "PayPal")}
-                  </Button>
+                  <div className="space-y-2">
+                    {plan.id !== "free" && (
+                      <div className="flex gap-2">
+                        <Button
+                          onClick={() => handleSubscribe(plan.id, "monthly")}
+                          disabled={isProcessing || isCurrentPlan}
+                          className={`flex-1 text-sm ${
+                            plan.popular
+                              ? "bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+                              : ""
+                          }`}
+                          variant="outline"
+                          size="sm"
+                        >
+                          月付 ${plan.id === "pro" ? "9.99" : "49.99"}
+                        </Button>
+                        <Button
+                          onClick={() => handleSubscribe(plan.id, "yearly")}
+                          disabled={isProcessing || isCurrentPlan}
+                          className={`flex-1 text-sm ${
+                            plan.popular
+                              ? "bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+                              : ""
+                          }`}
+                          size="sm"
+                        >
+                          年付 ${plan.id === "pro" ? "99.99" : "499.99"}
+                          <Badge variant="secondary" className="ml-1 text-xs">省20%</Badge>
+                        </Button>
+                      </div>
+                    )}
+                    <Button
+                      onClick={() => handleSubscribe(plan.id, "monthly")}
+                      disabled={isProcessing || isCurrentPlan}
+                      className={`w-full ${
+                        plan.popular
+                          ? "bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+                          : ""
+                      }`}
+                      variant={plan.id === "free" ? "outline" : "default"}
+                    >
+                      {isCurrentPlan
+                        ? t.pricing.currentPlan
+                        : isProcessing
+                        ? t.pricing.processing
+                        : plan.id === "free"
+                        ? t.pricing.currentFreePlan
+                        : t.pricing.subscribeWith.replace("{method}", selectedPayment === "stripe" ? "Stripe" : "PayPal")}
+                    </Button>
+                  </div>
                 </CardFooter>
               </Card>
             )

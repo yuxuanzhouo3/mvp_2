@@ -14,9 +14,11 @@ import { ArrowLeft, CreditCard, User, Crown, History } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useLanguage } from "@/components/language-provider"
 import { useTranslations } from "@/lib/i18n"
+import { BillingHistory } from "@/components/payment/billing-history"
+import { fetchWithAuth } from "@/lib/auth/fetch-with-auth"
 
 export default function SettingsPage() {
-  const { user, isAuthenticated, isLoading } = useAuth()
+  const { user, isAuthenticated, isLoading, refresh } = useAuth()
   const router = useRouter()
   const { toast } = useToast()
   const { language } = useLanguage()
@@ -27,6 +29,7 @@ export default function SettingsPage() {
   const [expiryDate, setExpiryDate] = useState("")
   const [cvv, setCvv] = useState("")
   const [isSaving, setIsSaving] = useState(false)
+  const [isRefreshing, setIsRefreshing] = useState(false)
 
   if (isLoading) {
     return (
@@ -54,6 +57,62 @@ export default function SettingsPage() {
     })
 
     setIsSaving(false)
+  }
+
+  const handleRefreshSubscription = async () => {
+    setIsRefreshing(true)
+
+    try {
+      const response = await fetchWithAuth("/api/auth/refresh-subscription", {
+        method: "POST",
+      })
+
+      // Check if the response is actually JSON
+      const contentType = response.headers.get("content-type")
+      if (!contentType || !contentType.includes("application/json")) {
+        throw new Error(`Server returned non-JSON response (${response.status}): ${await response.text()}`)
+      }
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        // 刷新用户认证状态
+        await refresh()
+
+        toast({
+          title: language === "zh" ? "订阅已更新" : "Subscription Updated",
+          description: language === "zh"
+            ? `您的订阅状态已更新为：${data.subscriptionPlan === "free" ? "免费版" : "专业版"}`
+            : `Your subscription has been updated to: ${data.subscriptionPlan}`,
+        })
+      } else {
+        toast({
+          title: language === "zh" ? "更新失败" : "Update Failed",
+          description: data.error || (language === "zh" ? "无法更新订阅状态" : "Failed to update subscription"),
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      console.error("Refresh subscription error:", error)
+
+      // Provide more specific error messages
+      let errorMessage = language === "zh" ? "网络错误，请重试" : "Network error, please try again"
+      if (error instanceof Error) {
+        if (error.message.includes("502")) {
+          errorMessage = language === "zh" ? "服务器暂时不可用，请稍后重试" : "Server temporarily unavailable, please try again later"
+        } else if (error.message.includes("non-JSON")) {
+          errorMessage = language === "zh" ? "服务器响应异常，请联系技术支持" : "Server response error, please contact support"
+        }
+      }
+
+      toast({
+        title: language === "zh" ? "更新失败" : "Update Failed",
+        description: errorMessage,
+        variant: "destructive",
+      })
+    } finally {
+      setIsRefreshing(false)
+    }
   }
 
   const formatCardNumber = (value: string) => {
@@ -130,7 +189,20 @@ export default function SettingsPage() {
                   <Input value={user?.email || ""} disabled />
                 </div>
                 <div className="space-y-2">
-                  <Label>{t.settingsPage.account.subscriptionTier}</Label>
+                  <div className="flex items-center justify-between">
+                    <Label>{t.settingsPage.account.subscriptionTier}</Label>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleRefreshSubscription}
+                      disabled={isRefreshing}
+                    >
+                      {isRefreshing
+                        ? (language === "zh" ? "刷新中..." : "Refreshing...")
+                        : (language === "zh" ? "刷新状态" : "Refresh Status")
+                      }
+                    </Button>
+                  </div>
                   <div className="flex items-center gap-2">
                     {user?.subscriptionTier === "enterprise" && (
                       <span className="px-3 py-1 text-sm rounded-full bg-purple-100 text-purple-700 font-medium">
@@ -230,7 +302,7 @@ export default function SettingsPage() {
           </TabsContent>
 
           {/* Subscription Tab */}
-          <TabsContent value="subscription" className="mt-6">
+          <TabsContent value="subscription" className="mt-6 space-y-6">
             <Card>
               <CardHeader>
                 <CardTitle>{t.settingsPage.subscription.title}</CardTitle>
@@ -248,6 +320,25 @@ export default function SettingsPage() {
                     <p className="text-gray-600 mb-4">
                       {t.settingsPage.subscription.proDescription}
                     </p>
+                    <div className="mt-6 p-4 bg-blue-50 rounded-lg">
+                      <p className="text-sm text-blue-800 mb-3">
+                        {language === "zh"
+                          ? "如果刚刚完成支付但订阅状态未更新，请点击下方按钮刷新。"
+                          : "If you've just completed payment but your subscription hasn't updated, click below to refresh."
+                        }
+                      </p>
+                      <Button
+                        variant="outline"
+                        onClick={handleRefreshSubscription}
+                        disabled={isRefreshing}
+                        className="w-full"
+                      >
+                        {isRefreshing
+                          ? (language === "zh" ? "刷新中..." : "Refreshing...")
+                          : (language === "zh" ? "刷新订阅状态" : "Refresh Subscription Status")
+                        }
+                      </Button>
+                    </div>
                   </div>
                 ) : (
                   <>
@@ -291,6 +382,9 @@ export default function SettingsPage() {
                 )}
               </CardContent>
             </Card>
+
+            {/* Billing History */}
+            <BillingHistory />
           </TabsContent>
         </Tabs>
 

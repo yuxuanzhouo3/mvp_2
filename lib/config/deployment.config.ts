@@ -112,8 +112,8 @@ function generateConfig(region: DeploymentRegion): DeploymentConfig {
  * - "INTL": 国际区域（使用 Supabase）
  *
  * 环境变量 NEXT_PUBLIC_DEPLOYMENT_REGION：
- * - 未设置或其他值：默认为国际版 (INTL)
  * - "CN"：中国版
+ * - 其他值或未设置：国际版 (INTL)
  */
 const DEPLOYMENT_REGION: DeploymentRegion =
   process.env.NEXT_PUBLIC_DEPLOYMENT_REGION === "CN" ? "CN" : "INTL";

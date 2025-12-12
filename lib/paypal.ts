@@ -5,8 +5,19 @@ function environment() {
   const clientId = process.env.PAYPAL_CLIENT_ID || 'demo_client_id'
   const clientSecret = process.env.PAYPAL_CLIENT_SECRET || 'demo_client_secret'
 
-  // Use sandbox for demo
-  return new paypal.core.SandboxEnvironment(clientId, clientSecret)
+  // Determine environment based on NODE_ENV or explicit PAYPAL_ENVIRONMENT
+  const paypalEnv = process.env.PAYPAL_ENVIRONMENT || (process.env.NODE_ENV === 'production' ? 'production' : 'sandbox')
+
+  // Validate credentials in non-demo mode
+  if (clientId === 'demo_client_id' || clientSecret === 'demo_client_secret') {
+    console.warn('PayPal is using demo credentials. Please configure PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET environment variables.')
+  }
+
+  if (paypalEnv === 'production') {
+    return new paypal.core.LiveEnvironment(clientId, clientSecret)
+  } else {
+    return new paypal.core.SandboxEnvironment(clientId, clientSecret)
+  }
 }
 
 export const paypalClient = new paypal.core.PayPalHttpClient(environment())

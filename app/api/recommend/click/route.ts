@@ -1,16 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
-import { cookies } from 'next/headers';
+import { supabase } from "@/lib/integrations/supabase";
+import { requireAuth } from "@/lib/auth/auth";
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = createRouteHandlerClient({ cookies });
-    const { recommendationId, action = 'click' } = await request.json();
-
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
+    // 验证用户认证
+    const authResult = await requireAuth(request);
+    if (!authResult) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
     }
+
+    const { user } = authResult;
+    const { recommendationId, action = 'click' } = await request.json();
 
     // 记录点击
     await supabase.from('recommendation_clicks').insert({
