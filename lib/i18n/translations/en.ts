@@ -700,6 +700,10 @@ export const en = {
     currentFreePlan: "Current Free Plan",
     alreadyOnFree: "Already on free tier",
     alreadyOnFreeDesc: "You're currently using the free plan.",
+    billing: {
+      monthly: "Monthly",
+      yearly: "Yearly",
+    },
     paymentMethod: {
       title: "Payment Method",
       subtitle: "Choose how you'd like to pay",
@@ -761,9 +765,11 @@ export const en = {
       },
     },
     toast: {
+      success: "Success",
       redirecting: "Redirecting to payment...",
       error: "Error",
       paymentFailed: "Failed to initiate payment. Please try again.",
+      paymentCompleted: "Payment completed",
     },
   },
 

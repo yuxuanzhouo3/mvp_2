@@ -151,8 +151,33 @@ export async function POST(request: NextRequest) {
       const { user_id, metadata } = paymentRecord;
       const days = metadata?.billingCycle === "yearly" ? 365 : 30;
 
-      const subscriptionEnd = new Date();
-      subscriptionEnd.setDate(subscriptionEnd.getDate() + days);
+      // 检查用户是否已有活跃订阅
+      const { data: existingSubscription, error: fetchError } = await supabaseAdmin
+        .from("user_subscriptions")
+        .select("*")
+        .eq("user_id", user_id)
+        .eq("status", "active")
+        .gte("subscription_end", new Date().toISOString())
+        .single();
+
+      let subscriptionEnd: Date;
+
+      if (fetchError && fetchError.code !== 'PGRST116') {
+        console.error("Error checking existing subscription:", fetchError);
+      }
+
+      if (existingSubscription) {
+        // 用户已有活跃订阅，叠加时间
+        console.log(`User ${user_id} has existing subscription ending at: ${existingSubscription.subscription_end}`);
+        subscriptionEnd = new Date(existingSubscription.subscription_end);
+        subscriptionEnd.setDate(subscriptionEnd.getDate() + days);
+        console.log(`Extended subscription to: ${subscriptionEnd.toISOString()}`);
+      } else {
+        // 用户没有活跃订阅，创建新订阅
+        subscriptionEnd = new Date();
+        subscriptionEnd.setDate(subscriptionEnd.getDate() + days);
+        console.log(`Created new subscription for user ${user_id} ending at: ${subscriptionEnd.toISOString()}`);
+      }
 
       const { error: subscriptionError } = await supabaseAdmin
         .from("user_subscriptions")

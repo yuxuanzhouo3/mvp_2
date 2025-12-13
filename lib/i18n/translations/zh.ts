@@ -683,6 +683,10 @@ export const zh = {
     currentFreePlan: "当前免费计划",
     alreadyOnFree: "已在免费版",
     alreadyOnFreeDesc: "您当前正在使用免费计划。",
+    billing: {
+      monthly: "月付",
+      yearly: "年付",
+    },
     paymentMethod: {
       title: "支付方式",
       subtitle: "选择您的支付方式",
@@ -744,9 +748,11 @@ export const zh = {
       },
     },
     toast: {
+      success: "成功",
       redirecting: "正在跳转到支付页面...",
       error: "错误",
       paymentFailed: "发起支付失败，请重试。",
+      paymentCompleted: "支付完成",
     },
   },
 

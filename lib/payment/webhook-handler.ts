@@ -326,19 +326,51 @@ async function handleStripePaymentFailed(data: any) {
 }
 
 /**
- * 更新用户订阅状态
+ * 更新用户订阅状态 - 支持叠加订阅时间
  */
 async function updateUserSubscription(userId: string, amount: number, currency: string, metadata?: any) {
   try {
     // 从元数据或金额判断订阅类型
     const billingCycle = metadata?.billingCycle || (amount >= 99 ? "yearly" : "monthly");
     const planType = metadata?.planType || (amount >= 199 ? "enterprise" : "pro");
-    const days = billingCycle === "yearly" ? 365 : 30;
+    const daysToAdd = billingCycle === "yearly" ? 365 : 30;
 
-    const subscriptionEnd = new Date();
-    subscriptionEnd.setDate(subscriptionEnd.getDate() + days);
+    // 首先检查用户是否已有活跃订阅
+    const { data: existingSubscription, error: fetchError } = await supabaseAdmin
+      .from("user_subscriptions")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("status", "active")
+      .gte("subscription_end", new Date().toISOString())
+      .single();
 
-    // 更新用户订阅状态
+    let subscriptionEnd: Date;
+    let isNewSubscription = false;
+
+    if (fetchError && fetchError.code !== 'PGRST116') {
+      console.error("Error checking existing subscription:", fetchError);
+      throw fetchError;
+    }
+
+    if (existingSubscription) {
+      // 用户已有活跃订阅，叠加时间
+      console.log(`User ${userId} has existing subscription ending at: ${existingSubscription.subscription_end}`);
+
+      // 从现有订阅的结束时间开始叠加
+      subscriptionEnd = new Date(existingSubscription.subscription_end);
+      subscriptionEnd.setDate(subscriptionEnd.getDate() + daysToAdd);
+
+      console.log(`Extended subscription to: ${subscriptionEnd.toISOString()}`);
+    } else {
+      // 用户没有活跃订阅，创建新订阅
+      isNewSubscription = true;
+      subscriptionEnd = new Date();
+      subscriptionEnd.setDate(subscriptionEnd.getDate() + daysToAdd);
+
+      console.log(`Created new subscription for user ${userId} ending at: ${subscriptionEnd.toISOString()}`);
+    }
+
+    // 更新或创建订阅记录
     const { error } = await supabaseAdmin
       .from("user_subscriptions")
       .upsert({
@@ -348,6 +380,12 @@ async function updateUserSubscription(userId: string, amount: number, currency: 
         plan_type: billingCycle === "yearly" ? "yearly" : "monthly",
         currency,
         updated_at: new Date().toISOString(),
+        // 只在创建新订阅时设置 created_at
+        ...(isNewSubscription && { created_at: new Date().toISOString() })
+      }, {
+        // 使用 onConflict 参数来处理重复键
+        onConflict: 'user_id',
+        ignoreDuplicates: false
       });
 
     if (error) {
@@ -372,10 +410,7 @@ async function updateUserSubscription(userId: string, amount: number, currency: 
       // 不抛出错误，因为订阅已经成功更新
     }
 
-    // 注意：在服务端（webhook处理）中，window 对象不存在
-    // 前端的刷新将由 payment-success 页面处理
-
-    console.log(`Updated subscription for user ${userId}: ${planType} plan for ${days} days`);
+    console.log(`${isNewSubscription ? 'Created' : 'Extended'} subscription for user ${userId}: ${planType} plan ${daysToAdd} days, expires at ${subscriptionEnd.toISOString()}`);
   } catch (error) {
     console.error("Error in updateUserSubscription:", error);
     throw error;

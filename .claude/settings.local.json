@@ -31,7 +31,8 @@
       "Bash(npx next dev:*)",
       "Bash(timeout 60 npm run dev:*)",
       "Bash(timeout:*)",
-      "Bash(del:*)"
+      "Bash(del:*)",
+      "Bash(set:*)"
     ],
     "deny": [],
     "ask": []
