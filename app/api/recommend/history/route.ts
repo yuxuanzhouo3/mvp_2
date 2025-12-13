@@ -2,24 +2,15 @@
  * 推荐历史管理 API
  * GET /api/recommend/history - 获取历史记录
  * DELETE /api/recommend/history - 删除历史记录
+ * PUT /api/recommend/history - 批量更新历史记录
+ * 
+ * 支持双环境架构：INTL (Supabase) 和 CN (CloudBase)
  */
 
 import { type NextRequest, NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
 import { isValidUserId } from "@/lib/utils"
-import type { RecommendationHistory } from "@/lib/types/recommendation"
-
-// 创建服务端 Supabase 客户端
-function getServiceClient() {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-    if (!supabaseUrl || !supabaseServiceKey) {
-        throw new Error("Missing Supabase environment variables")
-    }
-
-    return createClient(supabaseUrl, supabaseServiceKey)
-}
+import { getRecommendationAdapter } from "@/lib/database"
+import type { RecommendationCategory, UserAction } from "@/lib/database/types"
 
 /**
  * 获取用户推荐历史记录
@@ -29,8 +20,9 @@ export async function GET(request: NextRequest) {
     try {
         const searchParams = request.nextUrl.searchParams
         const userId = searchParams.get("userId")
-        const category = searchParams.get("category")
+        const category = searchParams.get("category") as RecommendationCategory | null
         const limit = Math.min(Math.max(parseInt(searchParams.get("limit") || "100"), 1), 500)
+        const offset = parseInt(searchParams.get("offset") || "0")
 
         if (!userId || !isValidUserId(userId)) {
             return NextResponse.json(
@@ -39,33 +31,26 @@ export async function GET(request: NextRequest) {
             )
         }
 
-        const supabase = getServiceClient()
+        const adapter = await getRecommendationAdapter()
+        const result = await adapter.getRecommendationHistory(userId, category || undefined, {
+            limit,
+            offset,
+            orderBy: 'created_at',
+            ascending: false,
+        })
 
-        let query = supabase
-            .from("recommendation_history")
-            .select("*")
-            .eq("user_id", userId)
-            .order("created_at", { ascending: false })
-            .limit(limit)
-
-        if (category) {
-            query = query.eq("category", category)
-        }
-
-        const { data, error } = await query
-
-        if (error) {
-            console.error("Error fetching recommendation history:", error)
+        if (result.error) {
+            console.error("Error fetching recommendation history:", result.error)
             return NextResponse.json(
-                { success: false, error: error.message },
+                { success: false, error: result.error.message },
                 { status: 500 }
             )
         }
 
         return NextResponse.json({
             success: true,
-            data: data || [],
-            count: (data || []).length,
+            data: result.data || [],
+            count: result.count || 0,
         })
     } catch (error) {
         console.error("Error in GET /api/recommend/history:", error)
@@ -102,37 +87,25 @@ export async function DELETE(request: NextRequest) {
             )
         }
 
-        const supabase = getServiceClient()
+        const adapter = await getRecommendationAdapter()
+        const result = await adapter.deleteRecommendations(
+            userId,
+            historyIds && Array.isArray(historyIds) && historyIds.length > 0 ? historyIds : undefined,
+            category as RecommendationCategory | undefined
+        )
 
-        let query = supabase
-            .from("recommendation_history")
-            .delete()
-            .eq("user_id", userId)
-
-        // 如果指定了 ID，只删除这些记录
-        if (historyIds && Array.isArray(historyIds) && historyIds.length > 0) {
-            query = query.in("id", historyIds)
-        }
-
-        // 如果指定了分类，只删除该分类的记录
-        if (category) {
-            query = query.eq("category", category)
-        }
-
-        const { error, count } = await query
-
-        if (error) {
-            console.error("Error deleting recommendation history:", error)
+        if (result.error) {
+            console.error("Error deleting recommendation history:", result.error)
             return NextResponse.json(
-                { success: false, error: error.message },
+                { success: false, error: result.error.message },
                 { status: 500 }
             )
         }
 
         return NextResponse.json({
             success: true,
-            deletedCount: count || 0,
-            message: `Successfully deleted ${count || 0} record(s)`,
+            deletedCount: result.deletedCount || 0,
+            message: `Successfully deleted ${result.deletedCount || 0} record(s)`,
         })
     } catch (error) {
         console.error("Error in DELETE /api/recommend/history:", error)
@@ -169,7 +142,7 @@ export async function PUT(request: NextRequest) {
             )
         }
 
-        const supabase = getServiceClient()
+        const adapter = await getRecommendationAdapter()
 
         switch (action) {
             case "mark-as-clicked": {
@@ -180,13 +153,10 @@ export async function PUT(request: NextRequest) {
                     )
                 }
 
-                const { error } = await supabase
-                    .from("recommendation_history")
-                    .update({ clicked: true })
-                    .eq("user_id", userId)
-                    .in("id", historyIds)
-
-                if (error) throw error
+                // 逐个更新
+                for (const id of historyIds) {
+                    await adapter.updateRecommendation(id, { clicked: true })
+                }
 
                 return NextResponse.json({
                     success: true,
@@ -202,13 +172,10 @@ export async function PUT(request: NextRequest) {
                     )
                 }
 
-                const { error } = await supabase
-                    .from("recommendation_history")
-                    .update({ saved: true })
-                    .eq("user_id", userId)
-                    .in("id", historyIds)
-
-                if (error) throw error
+                // 逐个更新
+                for (const id of historyIds) {
+                    await adapter.updateRecommendation(id, { saved: true })
+                }
 
                 return NextResponse.json({
                     success: true,
@@ -217,17 +184,12 @@ export async function PUT(request: NextRequest) {
             }
 
             case "clear-all": {
-                const { error, count } = await supabase
-                    .from("recommendation_history")
-                    .delete()
-                    .eq("user_id", userId)
-
-                if (error) throw error
+                const result = await adapter.deleteRecommendations(userId)
 
                 return NextResponse.json({
                     success: true,
-                    deletedCount: count,
-                    message: `Cleared all ${count} records`,
+                    deletedCount: result.deletedCount,
+                    message: `Cleared all ${result.deletedCount} records`,
                 })
             }
 

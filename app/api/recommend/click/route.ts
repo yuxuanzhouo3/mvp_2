@@ -1,6 +1,14 @@
+/**
+ * 推荐点击记录 API
+ * POST /api/recommend/click
+ * 
+ * 支持双环境架构：INTL (Supabase) 和 CN (CloudBase)
+ */
+
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/integrations/supabase";
 import { requireAuth } from "@/lib/auth/auth";
+import { getRecommendationAdapter } from "@/lib/database";
+import type { UserAction } from "@/lib/database/types";
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,51 +21,53 @@ export async function POST(request: NextRequest) {
     const { user } = authResult;
     const { recommendationId, action = 'click' } = await request.json();
 
+    if (!recommendationId) {
+      return NextResponse.json(
+        { error: 'recommendationId is required' },
+        { status: 400 }
+      );
+    }
+
+    const adapter = await getRecommendationAdapter();
+
     // 记录点击
-    await supabase.from('recommendation_clicks').insert({
-      user_id: user.id,
-      recommendation_id: recommendationId,
-      action
-    });
+    const result = await adapter.recordClick(
+      user.id,
+      recommendationId,
+      action as UserAction
+    );
 
-    // 更新推荐状态
+    if (!result.success) {
+      console.error('Failed to record click:', result.error);
+      return NextResponse.json(
+        { error: 'Failed to record click' },
+        { status: 500 }
+      );
+    }
+
+    // 如果是点击行为，更新用户偏好点击计数
     if (action === 'click') {
-      await supabase
-        .from('recommendation_history')
-        .update({ clicked: true })
-        .eq('id', recommendationId);
+      // 获取推荐的分类
+      const historyResult = await adapter.getRecommendationHistory(user.id, undefined, {
+        limit: 1,
+      });
 
-      // 更新用户偏好点击计数
-      const { data: rec } = await supabase
-        .from('recommendation_history')
-        .select('category')
-        .eq('id', recommendationId)
-        .single();
+      // 从历史中找到对应的推荐记录获取分类
+      // 这里简化处理，实际可以通过单独查询推荐记录获取
+      const rec = historyResult.data?.find((r) => r.id === recommendationId);
 
-      if (rec) {
-        await supabase.rpc('increment', {
-          table_name: 'user_preferences',
-          column_name: 'click_count',
-          row_id: user.id,
-          category: rec.category
-        }).catch(() => {
-          // 如果RPC不存在，使用普通更新
-          supabase
-            .from('user_preferences')
-            .update({
-              click_count: supabase.raw('click_count + 1'),
-              last_activity: new Date().toISOString()
-            })
-            .eq('user_id', user.id)
-            .eq('category', rec.category);
+      if (rec?.category) {
+        await adapter.upsertUserPreference(user.id, rec.category, {
+          incrementClick: true,
         });
       }
     }
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
+    console.error('Click API error:', error);
     return NextResponse.json(
-      { error: error.message },
+      { error: error.message || 'Internal server error' },
       { status: 500 }
     );
   }

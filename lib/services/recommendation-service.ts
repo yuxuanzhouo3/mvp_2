@@ -1,9 +1,11 @@
 /**
  * 推荐系统数据服务层
  * 处理数据库操作和业务逻辑
+ * 
+ * 支持双环境架构：INTL (Supabase) 和 CN (CloudBase)
  */
 
-import { createClient } from "@supabase/supabase-js";
+import { getRecommendationAdapter, db } from "@/lib/database";
 import type {
   AIRecommendation,
   RecommendationCategory,
@@ -12,24 +14,7 @@ import type {
   UserAction,
   UserPreferenceAnalysis,
   UserPreferenceSummary,
-} from "@/lib/types/recommendation";
-
-// 创建服务端 Supabase 客户端
-function getServiceClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!supabaseUrl || !serviceKey) {
-    throw new Error("Supabase configuration is missing");
-  }
-
-  return createClient(supabaseUrl, serviceKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  });
-}
+} from "@/lib/database/types";
 
 /**
  * 获取用户推荐历史
@@ -39,27 +24,15 @@ export async function getUserRecommendationHistory(
   category?: RecommendationCategory,
   limit: number = 20
 ): Promise<RecommendationHistory[]> {
-  const supabase = getServiceClient();
+  const adapter = await getRecommendationAdapter();
+  const result = await adapter.getRecommendationHistory(userId, category, { limit });
 
-  let query = supabase
-    .from("recommendation_history")
-    .select("*")
-    .eq("user_id", userId)
-    .order("created_at", { ascending: false })
-    .limit(limit);
-
-  if (category) {
-    query = query.eq("category", category);
-  }
-
-  const { data, error } = await query;
-
-  if (error) {
-    console.error("Error fetching recommendation history:", error);
+  if (result.error) {
+    console.error("Error fetching recommendation history:", result.error);
     return [];
   }
 
-  return data || [];
+  return result.data || [];
 }
 
 /**
@@ -69,29 +42,15 @@ export async function saveRecommendationToHistory(
   userId: string,
   recommendation: AIRecommendation
 ): Promise<string | null> {
-  const supabase = getServiceClient();
+  const adapter = await getRecommendationAdapter();
+  const result = await adapter.saveRecommendation(userId, recommendation);
 
-  const { data, error } = await supabase
-    .from("recommendation_history")
-    .insert({
-      user_id: userId,
-      category: recommendation.category,
-      title: recommendation.title,
-      description: recommendation.description,
-      link: recommendation.link,
-      link_type: recommendation.linkType,
-      metadata: recommendation.metadata,
-      reason: recommendation.reason,
-    })
-    .select("id")
-    .single();
-
-  if (error) {
-    console.error("Error saving recommendation:", error);
+  if (!result.success || result.error) {
+    console.error("Error saving recommendation:", result.error);
     return null;
   }
 
-  return data?.id || null;
+  return result.id || null;
 }
 
 /**
@@ -101,30 +60,15 @@ export async function saveRecommendationsToHistory(
   userId: string,
   recommendations: AIRecommendation[]
 ): Promise<string[]> {
-  const supabase = getServiceClient();
+  const adapter = await getRecommendationAdapter();
+  const result = await adapter.saveRecommendations(userId, recommendations);
 
-  const records = recommendations.map((rec) => ({
-    user_id: userId,
-    category: rec.category,
-    title: rec.title,
-    description: rec.description,
-    link: rec.link,
-    link_type: rec.linkType,
-    metadata: rec.metadata,
-    reason: rec.reason,
-  }));
-
-  const { data, error } = await supabase
-    .from("recommendation_history")
-    .insert(records)
-    .select("id");
-
-  if (error) {
-    console.error("Error saving recommendations:", error);
+  if (!result.success || result.error) {
+    console.error("Error saving recommendations:", result.error);
     return [];
   }
 
-  return (data || []).map((item) => item.id);
+  return result.ids || [];
 }
 
 /**
@@ -135,34 +79,15 @@ export async function recordUserClick(
   recommendationId: string,
   action: UserAction
 ): Promise<string | null> {
-  const supabase = getServiceClient();
+  const adapter = await getRecommendationAdapter();
+  const result = await adapter.recordClick(userId, recommendationId, action);
 
-  // 记录点击
-  const { data: clickData, error: clickError } = await supabase
-    .from("recommendation_clicks")
-    .insert({
-      user_id: userId,
-      recommendation_id: recommendationId,
-      action,
-    })
-    .select("id")
-    .single();
-
-  if (clickError) {
-    console.error("Error recording click:", clickError);
+  if (!result.success || result.error) {
+    console.error("Error recording click:", result.error);
     return null;
   }
 
-  // 如果是点击或保存，更新推荐历史的状态
-  if (action === "click" || action === "save") {
-    const updateField = action === "click" ? "clicked" : "saved";
-    await supabase
-      .from("recommendation_history")
-      .update({ [updateField]: true })
-      .eq("id", recommendationId);
-  }
-
-  return clickData?.id || null;
+  return result.id || null;
 }
 
 /**
@@ -172,22 +97,15 @@ export async function getUserPreferences(
   userId: string,
   category?: RecommendationCategory
 ): Promise<UserPreference[]> {
-  const supabase = getServiceClient();
+  const adapter = await getRecommendationAdapter();
+  const result = await adapter.getUserPreferences(userId, category);
 
-  let query = supabase.from("user_preferences").select("*").eq("user_id", userId);
-
-  if (category) {
-    query = query.eq("category", category);
-  }
-
-  const { data, error } = await query;
-
-  if (error) {
-    console.error("Error fetching user preferences:", error);
+  if (result.error) {
+    console.error("Error fetching user preferences:", result.error);
     return [];
   }
 
-  return data || [];
+  return result.data || [];
 }
 
 /**
@@ -214,64 +132,15 @@ export async function updateUserPreferences(
     incrementView?: boolean;
   }
 ): Promise<UserPreference | null> {
-  const supabase = getServiceClient();
+  const adapter = await getRecommendationAdapter();
+  const result = await adapter.upsertUserPreference(userId, category, updates);
 
-  // 获取现有偏好
-  const existing = await getUserCategoryPreference(userId, category);
-
-  if (existing) {
-    // 合并偏好权重
-    const newPreferences = updates.preferences
-      ? { ...existing.preferences, ...updates.preferences }
-      : existing.preferences;
-
-    // 合并标签
-    const newTags = updates.tags
-      ? [...new Set([...existing.tags, ...updates.tags])]
-      : existing.tags;
-
-    const { data, error } = await supabase
-      .from("user_preferences")
-      .update({
-        preferences: newPreferences,
-        tags: newTags,
-        click_count: updates.incrementClick ? existing.click_count + 1 : existing.click_count,
-        view_count: updates.incrementView ? existing.view_count + 1 : existing.view_count,
-        last_activity: new Date().toISOString(),
-      })
-      .eq("id", existing.id)
-      .select()
-      .single();
-
-    if (error) {
-      console.error("Error updating preferences:", error);
-      return null;
-    }
-
-    return data;
-  } else {
-    // 创建新偏好
-    const { data, error } = await supabase
-      .from("user_preferences")
-      .insert({
-        user_id: userId,
-        category,
-        preferences: updates.preferences || {},
-        tags: updates.tags || [],
-        click_count: updates.incrementClick ? 1 : 0,
-        view_count: updates.incrementView ? 1 : 0,
-        last_activity: new Date().toISOString(),
-      })
-      .select()
-      .single();
-
-    if (error) {
-      console.error("Error creating preferences:", error);
-      return null;
-    }
-
-    return data;
+  if (result.error) {
+    console.error("Error updating preferences:", result.error);
+    return null;
   }
+
+  return result.data;
 }
 
 /**
@@ -373,16 +242,9 @@ export async function getUserPreferenceAnalysis(
  * 检查并清理过期缓存
  */
 export async function cleanupExpiredCache(): Promise<number> {
-  const supabase = getServiceClient();
-
-  const { data, error } = await supabase.rpc("cleanup_expired_cache");
-
-  if (error) {
-    console.error("Error cleaning up cache:", error);
-    return 0;
-  }
-
-  return data || 0;
+  const adapter = await getRecommendationAdapter();
+  const result = await adapter.cleanupExpiredCache();
+  return result.deletedCount;
 }
 
 /**
@@ -392,21 +254,14 @@ export async function getCachedRecommendations(
   category: RecommendationCategory,
   preferenceHash: string
 ): Promise<AIRecommendation[] | null> {
-  const supabase = getServiceClient();
+  const adapter = await getRecommendationAdapter();
+  const result = await adapter.getCachedRecommendations(category, preferenceHash);
 
-  const { data, error } = await supabase
-    .from("recommendation_cache")
-    .select("recommendations")
-    .eq("category", category)
-    .eq("preference_hash", preferenceHash)
-    .gt("expires_at", new Date().toISOString())
-    .single();
-
-  if (error || !data) {
+  if (result.error || !result.data) {
     return null;
   }
 
-  return data.recommendations as AIRecommendation[];
+  return result.data.recommendations as AIRecommendation[];
 }
 
 /**
@@ -418,29 +273,13 @@ export async function cacheRecommendations(
   recommendations: AIRecommendation[],
   expirationMinutes: number = 60
 ): Promise<void> {
-  const supabase = getServiceClient();
-
-  const expiresAt = new Date();
-  expiresAt.setMinutes(expiresAt.getMinutes() + expirationMinutes);
-
-  // 先尝试删除旧的缓存，再插入新的
-  // 这样可以避免 upsert 的约束问题
-  try {
-    await supabase
-      .from("recommendation_cache")
-      .delete()
-      .eq("category", category)
-      .eq("preference_hash", preferenceHash);
-
-    await supabase.from("recommendation_cache").insert({
-      category,
-      preference_hash: preferenceHash,
-      recommendations,
-      expires_at: expiresAt.toISOString(),
-    });
-  } catch (error) {
-    console.error("Failed to cache recommendations:", error);
-  }
+  const adapter = await getRecommendationAdapter();
+  await adapter.cacheRecommendations(
+    category,
+    preferenceHash,
+    recommendations,
+    expirationMinutes
+  );
 }
 
 /**
@@ -456,4 +295,19 @@ export function generatePreferenceHash(preferences: UserPreference | null): stri
     .join(",");
 
   return topTags || "default";
+}
+
+/**
+ * 获取当前数据库提供商信息
+ */
+export function getDatabaseInfo(): {
+  provider: 'supabase' | 'cloudbase';
+  isSupabase: boolean;
+  isCloudBase: boolean;
+} {
+  return {
+    provider: db.getProvider(),
+    isSupabase: db.isSupabase(),
+    isCloudBase: db.isCloudBase(),
+  };
 }
