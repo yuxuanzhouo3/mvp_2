@@ -9,12 +9,19 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  // Controlled via env to avoid profiling alias issues on some React versions
   webpack: (config, { dev, isServer }) => {
+    const disableProfilingAlias =
+      process.env.DISABLE_REACT_PROFILING_ALIAS === "true" ||
+      process.env.DISABLE_REACT_PROFILING_ALIAS === "1";
+
     // Disable React DevTools in production
     if (!dev && !isServer) {
-      config.resolve.alias = {
-        ...config.resolve.alias,
-        'react-dom': 'react-dom/profiling',
+      if (!disableProfilingAlias) {
+        config.resolve.alias = {
+          ...config.resolve.alias,
+          'react-dom': 'react-dom/profiling',
+        }
       }
       // Remove React DevTools from production build
       config.plugins = config.plugins.filter(plugin =>
