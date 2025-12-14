@@ -1,8 +1,177 @@
-import { ZhipuAI } from 'zhipuai';
+import OpenAI from "openai";
+import { ZhipuAI } from "zhipuai";
+import { isChinaDeployment } from "@/lib/config/deployment.config";
 
-const client = new ZhipuAI({
-  apiKey: process.env.ZHIPU_API_KEY
-});
+type AIProvider = "openai" | "mistral" | "zhipu";
+
+export type AIMessage = {
+  role: "system" | "user" | "assistant";
+  content: string;
+};
+
+const DEFAULT_MODELS = {
+  openai: process.env.OPENAI_MODEL || "gpt-4o-mini",
+  mistral: process.env.MISTRAL_MODEL || "mistral-large-latest",
+  zhipu: process.env.ZHIPU_MODEL || "glm-4.5-flash",
+};
+
+function hasValidKey(value?: string | null) {
+  return Boolean(value && value.trim() && !value.includes("your_"));
+}
+
+function getProviderOrder(): AIProvider[] {
+  if (isChinaDeployment()) {
+    return hasValidKey(process.env.ZHIPU_API_KEY) ? ["zhipu"] : [];
+  }
+
+  const providers: AIProvider[] = [];
+
+  if (hasValidKey(process.env.OPENAI_API_KEY)) {
+    providers.push("openai");
+  }
+  if (hasValidKey(process.env.MISTRAL_API_KEY)) {
+    providers.push("mistral");
+  }
+  if (hasValidKey(process.env.ZHIPU_API_KEY)) {
+    // Allow Zhipu as a fallback in INTL if configured (e.g., for testing)
+    providers.push("zhipu");
+  }
+
+  return providers;
+}
+
+export function isAIProviderConfigured(): boolean {
+  return getProviderOrder().length > 0;
+}
+
+export function isZhipuConfigured(): boolean {
+  return hasValidKey(process.env.ZHIPU_API_KEY);
+}
+
+async function callAIWithFallback(messages: AIMessage[], temperature = 0.8) {
+  const providers = getProviderOrder();
+
+  if (providers.length === 0) {
+    throw new Error("No AI provider configured for current deployment region");
+  }
+
+  let lastError: unknown;
+
+  for (const provider of providers) {
+    try {
+      switch (provider) {
+        case "openai":
+          return {
+            content: await callOpenAI(messages, temperature),
+            provider,
+            model: DEFAULT_MODELS.openai,
+          };
+        case "mistral":
+          return {
+            content: await callMistral(messages, temperature),
+            provider,
+            model: DEFAULT_MODELS.mistral,
+          };
+        case "zhipu":
+          return {
+            content: await callZhipu(messages, temperature),
+            provider,
+            model: DEFAULT_MODELS.zhipu,
+          };
+      }
+    } catch (error) {
+      lastError = error;
+      console.error(`[AI][${provider}] request failed:`, error);
+    }
+  }
+
+  throw lastError || new Error("All AI providers failed");
+}
+
+async function callOpenAI(messages: AIMessage[], temperature: number) {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!hasValidKey(apiKey)) {
+    throw new Error("OPENAI_API_KEY is not configured");
+  }
+
+  const client = new OpenAI({ apiKey: apiKey.trim() });
+  const response = await client.chat.completions.create({
+    model: DEFAULT_MODELS.openai,
+    messages,
+    temperature,
+    max_tokens: 2000,
+  });
+
+  const content = response.choices?.[0]?.message?.content;
+  if (!content) {
+    throw new Error("OpenAI returned empty content");
+  }
+  return content;
+}
+
+async function callMistral(messages: AIMessage[], temperature: number) {
+  const apiKey = process.env.MISTRAL_API_KEY;
+  if (!hasValidKey(apiKey)) {
+    throw new Error("MISTRAL_API_KEY is not configured");
+  }
+
+  const response = await fetch("https://api.mistral.ai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey.trim()}`,
+    },
+    body: JSON.stringify({
+      model: DEFAULT_MODELS.mistral,
+      messages,
+      temperature,
+      max_tokens: 2000,
+      top_p: 0.9,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Mistral API error ${response.status}: ${errorText}`);
+  }
+
+  const data = await response.json();
+  const content = data?.choices?.[0]?.message?.content;
+  if (!content) {
+    throw new Error("Mistral returned empty content");
+  }
+  return content;
+}
+
+async function callZhipu(messages: AIMessage[], temperature: number) {
+  const apiKey = process.env.ZHIPU_API_KEY;
+  if (!hasValidKey(apiKey)) {
+    throw new Error("ZHIPU_API_KEY is not configured");
+  }
+
+  const client = new ZhipuAI({ apiKey: apiKey.trim() });
+  const response = await client.chat.completions.create({
+    model: DEFAULT_MODELS.zhipu,
+    messages,
+    temperature,
+    top_p: 0.9,
+  });
+
+  const content = response.choices?.[0]?.message?.content;
+  if (!content) {
+    throw new Error("Zhipu returned empty content");
+  }
+  return content;
+}
+
+function cleanAIContent(content: string) {
+  return content.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+}
+
+export async function callRecommendationAI(messages: AIMessage[], temperature = 0.8) {
+  const result = await callAIWithFallback(messages, temperature);
+  return cleanAIContent(result.content);
+}
 
 interface UserHistory {
   category: string;
@@ -28,7 +197,8 @@ export interface RecommendationItem {
 export async function generateRecommendations(
   userHistory: UserHistory[],
   category: string,
-  locale: string = 'zh'
+  locale: string = 'zh',
+  count: number = 5
 ): Promise<RecommendationItem[]> {
 
   const categoryConfig = {
@@ -79,10 +249,12 @@ export async function generateRecommendations(
 
   const config = categoryConfig[category as keyof typeof categoryConfig] || categoryConfig.entertainment;
 
+  const desiredCount = Math.max(5, Math.min(10, count));
+
   const prompt = locale === 'zh' ? `
 你是一个专业的推荐系统分析师。
 
-任务：基于用户历史行为，生成 3 个个性化推荐。
+任务：基于用户历史行为，生成 ${desiredCount} 个多样化的个性化推荐（覆盖不同子类型和平台）。
 
 用户历史记录：
 ${JSON.stringify(userHistory.slice(0, 20), null, 2)}
@@ -182,7 +354,7 @@ ${JSON.stringify(userHistory.slice(0, 20), null, 2)}
 ]` : `
 You are a professional recommendation system analyst.
 
-Task: Generate 3 personalized recommendations based on user history.
+Task: Generate ${desiredCount} diverse personalized recommendations based on user history (cover different subtypes/platforms).
 
 User history:
 ${JSON.stringify(userHistory.slice(0, 20), null, 2)}
@@ -293,9 +465,8 @@ Return JSON format (strictly, no extra text):
 ]`;
 
   try {
-    const response = await client.chat.completions.create({
-      model: 'glm-4-flash',
-      messages: [
+    const aiContent = await callRecommendationAI(
+      [
         {
           role: 'system',
           content: locale === 'zh'
@@ -307,22 +478,19 @@ Return JSON format (strictly, no extra text):
           content: prompt
         }
       ],
-      temperature: 0.8,
-      top_p: 0.9
-    });
+      0.8
+    );
 
-    const content = response.choices[0].message.content;
-    if (!content) {
-      console.error('智谱 API 返回空内容');
+    if (!aiContent) {
+      console.error('AI 返回空内容');
       return getFallbackRecommendations(category, locale);
     }
-    const cleanContent = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
 
-    const result = JSON.parse(cleanContent);
+    const result = JSON.parse(aiContent);
     return Array.isArray(result) ? result : [result];
 
   } catch (error) {
-    console.error('智谱 AI 推荐生成失败:', error);
+    console.error('AI 推荐生成失败:', error);
     return getFallbackRecommendations(category, locale);
   }
 }
@@ -419,8 +587,4 @@ function getFallbackRecommendations(category: string, locale: string): Recommend
   };
 
   return fallbacks[locale]?.[category] || fallbacks.zh.entertainment;
-}
-
-export function isZhipuConfigured(): boolean {
-  return !!process.env.ZHIPU_API_KEY;
 }

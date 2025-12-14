@@ -21,7 +21,8 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [oauthLoading, setOauthLoading] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const isChina = language === 'zh'
+  const isChineseLanguage = language === 'zh'
+  const isChinaDeployment = RegionConfig.auth.provider === 'cloudbase'
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -89,10 +90,10 @@ export default function LoginPage() {
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
           <CardTitle className="text-2xl font-bold text-center">
-            {isChina ? '欢迎回来' : 'Welcome back'}
+            {isChineseLanguage ? '欢迎回来' : 'Welcome back'}
           </CardTitle>
           <CardDescription className="text-center">
-            {isChina ? '登录您的账户以继续' : 'Sign in to your account to continue'}
+            {isChineseLanguage ? '登录您的账户以继续' : 'Sign in to your account to continue'}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -146,7 +147,7 @@ export default function LoginPage() {
           </form>
 
           {/* Google Login for International */}
-          {!isChina && RegionConfig.auth.features.googleAuth && (
+          {RegionConfig.auth.provider === 'supabase' && RegionConfig.auth.features.googleAuth && (
             <>
               <div className="relative">
                 <div className="absolute inset-0 flex items-center">
@@ -181,7 +182,7 @@ export default function LoginPage() {
           )}
 
           {/* WeChat Login for China */}
-          {isChina && RegionConfig.auth.features.wechatAuth && (
+          {isChinaDeployment && RegionConfig.auth.features.wechatAuth && (
             <>
               <div className="relative">
                 <div className="absolute inset-0 flex items-center">

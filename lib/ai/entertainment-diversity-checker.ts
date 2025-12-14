@@ -3,7 +3,7 @@
  * 确保推荐的娱乐内容涵盖多种类型
  */
 
-import type { RecommendationItem } from './zhipu-recommendation';
+import { callRecommendationAI, type AIMessage, type RecommendationItem } from './zhipu-recommendation';
 
 export type EntertainmentType = 'video' | 'game' | 'music' | 'review';
 
@@ -264,33 +264,23 @@ Return JSON format (strictly, no extra text):
   "entertainmentType": "${type}"
 }`;
 
-    // 使用 generateRecommendations 函数，但我们需要一个更直接的方法
-    // 让我们直接调用智谱 AI
-    const { ZhipuAI } = await import('zhipuai');
-    const client = new ZhipuAI({
-      apiKey: process.env.ZHIPU_API_KEY
-    });
+    const messages: AIMessage[] = [
+      {
+        role: 'system',
+        content: locale === 'zh'
+          ? '你是推荐分析师。只返回 JSON 对象，不要生成链接，不要有markdown标记。'
+          : 'You are a recommendation analyst. Only return JSON object, no links, no markdown.'
+      },
+      {
+        role: 'user',
+        content: prompt
+      }
+    ];
 
-    const response = await client.chat.completions.create({
-      model: 'glm-4-flash',
-      messages: [
-        {
-          role: 'system',
-          content: locale === 'zh'
-            ? '你是推荐分析师。只返回 JSON 对象，不要生成链接，不要有markdown标记。'
-            : 'You are a recommendation analyst. Only return JSON object, no links, no markdown.'
-        },
-        {
-          role: 'user',
-          content: prompt
-        }
-      ],
-      temperature: 0.8,
-      top_p: 0.9
-    });
-
-    const content = response.choices[0].message.content || '';
-    const cleanContent = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    const cleanContent = await callRecommendationAI(messages, 0.8);
+    if (!cleanContent) {
+      throw new Error('AI 返回空内容');
+    }
 
     const result = JSON.parse(cleanContent);
 

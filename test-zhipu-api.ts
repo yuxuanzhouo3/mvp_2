@@ -2,7 +2,7 @@
 
 /**
  * 智谱 API 测试脚本
- * 测试 glm-4-flash 模型的集成
+ * 测试 glm-4.5-flash 模型的集成
  */
 
 import https from "https";
@@ -113,7 +113,7 @@ async function callZhipuAPI(messages: Array<{ role: string; content: string }>):
 }
 
 async function main() {
-  console.log("🔍 Testing Zhipu (GLM-4-Flash) API Integration");
+  console.log("🔍 Testing Zhipu (GLM-4.5-Flash) API Integration");
   console.log("═".repeat(60));
 
   try {
@@ -153,7 +153,7 @@ async function main() {
 
     console.log("\n✅ All tests passed!");
     console.log(
-      "The Zhipu API (glm-4-flash) is properly configured and working.\n"
+      "The Zhipu API (glm-4.5-flash) is properly configured and working.\n"
     );
   } catch (error) {
     console.error("\n❌ Test failed:");

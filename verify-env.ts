@@ -15,7 +15,7 @@ console.log("🔍 环境配置检查\n");
 if (!fs.existsSync(envPath)) {
   console.error("❌ .env.local 文件不存在");
   console.log("💡 创建方法:");
-  console.log('   echo "ZHIPU_API_KEY=your_key_here" > .env.local');
+  console.log("   cp .env.example .env.local");
   process.exit(1);
 }
 
@@ -25,52 +25,66 @@ console.log("✅ .env.local 文件存在");
 const envContent = fs.readFileSync(envPath, "utf-8");
 const lines = envContent.split("\n");
 
-// 3. 检查 ZHIPU_API_KEY
-const zhipuLine = lines.find((line) => line.startsWith("ZHIPU_API_KEY="));
+const getEnvValue = (key: string) => {
+  const line = lines.find((line) => line.startsWith(`${key}=`));
+  if (!line) return null;
+  return line.slice(key.length + 1).trim();
+};
 
-if (!zhipuLine) {
-  console.error("\n❌ 未找到 ZHIPU_API_KEY 配置");
-  console.log("💡 请在 .env.local 中添加:");
-  console.log('   ZHIPU_API_KEY=sk_xxxxx...');
-  process.exit(1);
-}
+const isValidKey = (value: string | null) =>
+  Boolean(value && value.trim() && !value.includes("your_"));
 
-const [, apiKey] = zhipuLine.split("=");
+const deploymentRegion =
+  (getEnvValue("NEXT_PUBLIC_DEPLOYMENT_REGION") || "INTL").toUpperCase();
 
-if (!apiKey || apiKey.includes("your_") || apiKey.trim() === "") {
-  console.error("\n❌ ZHIPU_API_KEY 值无效");
-  console.log("当前值:", apiKey);
-  console.log("💡 请在 .env.local 中设置有效的 API Key");
-  process.exit(1);
-}
+console.log(`🌏 部署区域: ${deploymentRegion}`);
 
-console.log("✅ ZHIPU_API_KEY 已配置");
-console.log(`   Key 长度: ${apiKey.trim().length} 字符`);
-console.log(`   Key 前缀: ${apiKey.trim().substring(0, 10)}...`);
+if (deploymentRegion === "CN") {
+  const zhipuKey = getEnvValue("ZHIPU_API_KEY");
 
-// 4. 检查其他配置
-const otherAiKeys = [
-  "GROQ_API_KEY",
-  "TOGETHER_API_KEY",
-  "HUGGINGFACE_API_KEY",
-];
+  if (!isValidKey(zhipuKey)) {
+    console.error("\n❌ CN 环境需要配置 ZHIPU_API_KEY");
+    console.log("💡 请在 .env.local 中设置:");
+    console.log("   ZHIPU_API_KEY=sk_xxx");
+    process.exit(1);
+  }
 
-const foundKeys = otherAiKeys.filter((key) =>
-  lines.some((line) => line.startsWith(key + "="))
-);
+  console.log("\n✅ ZHIPU_API_KEY 已配置");
+  console.log(`   Key 长度: ${zhipuKey!.length} 字符`);
+  console.log(`   Key 前缀: ${zhipuKey!.slice(0, 10)}...`);
+} else {
+  const openaiKey = getEnvValue("OPENAI_API_KEY");
+  const mistralKey = getEnvValue("MISTRAL_API_KEY");
 
-if (foundKeys.length > 0) {
-  console.log("\n⚠️  检测到其他 AI 提供商配置 (已删除，但在 .env.local 中仍存在):");
-  foundKeys.forEach((key) => {
-    console.log(`   - ${key}`);
-  });
-  console.log("💡 这些不会被使用，但建议删除");
+  if (!isValidKey(openaiKey) && !isValidKey(mistralKey)) {
+    console.error("\n❌ INTL 环境需要配置 OPENAI_API_KEY 或 MISTRAL_API_KEY");
+    console.log("💡 请至少设置一个可用的密钥");
+    process.exit(1);
+  }
+
+  if (isValidKey(openaiKey)) {
+    console.log("\n✅ OPENAI_API_KEY 已配置");
+    console.log(`   Key 前缀: ${openaiKey!.slice(0, 8)}...`);
+  } else {
+    console.warn("\n⚠️ 未检测到 OPENAI_API_KEY");
+  }
+
+  if (isValidKey(mistralKey)) {
+    console.log("✅ MISTRAL_API_KEY 已配置");
+    console.log(`   Key 前缀: ${mistralKey!.slice(0, 8)}...`);
+  } else {
+    console.warn("⚠️ 未检测到 MISTRAL_API_KEY");
+  }
 }
 
 console.log("\n" + "=".repeat(60));
-console.log("✅ 配置检查完成！可以开始使用了");
+console.log("✅ 配置检查完成！");
 console.log("=".repeat(60));
 
-console.log("\n📝 下一步:");
-console.log("   1. npm run test:zhipu    (测试 API 连接)");
+console.log("\n📋 下一步");
+if (deploymentRegion === "CN") {
+  console.log("   1. npm run test:zhipu    (测试智谱 API 连接)");
+} else {
+  console.log("   1. 可运行 API 测试脚本验证 OpenAI/Mistral 连接");
+}
 console.log("   2. npm run dev           (启动应用)");

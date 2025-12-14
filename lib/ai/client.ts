@@ -1,5 +1,5 @@
 /**
- * AI 客户端 - 使用智谱 (Zhipu) GLM-4-Flash
+ * AI 客户端 - 使用智谱 (Zhipu) GLM-4.5-Flash
  */
 
 interface AIRequest {
@@ -147,7 +147,7 @@ export async function callAI(request: AIRequest): Promise<AIResponse> {
     console.log("Calling Zhipu API...");
     const content = await callZhipuAPI(request);
     console.log("✅ Successfully called Zhipu API");
-    return { content, model: "glm-4-flash" };
+    return { content, model: "glm-4.5-flash" };
   } catch (error) {
     console.error("❌ Zhipu API failed:", error instanceof Error ? error.message : String(error));
     throw error;

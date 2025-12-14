@@ -7,8 +7,15 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { RecommendationCard, RecommendationList } from "@/components/RecommendationCard"
-import type { AIRecommendation, RecommendationCategory, AIRecommendResponse } from "@/lib/types/recommendation"
+import type {
+  AIRecommendation,
+  RecommendationCategory,
+  AIRecommendResponse,
+  RecommendationHistory,
+} from "@/lib/types/recommendation"
+import { RegionConfig } from "@/lib/config/region"
 import { getClientLocale } from "@/lib/utils/locale"
+import { isValidUserId } from "@/lib/utils"
 
 // 分类配置
 const categoryConfig: Record<
@@ -52,7 +59,34 @@ const categoryConfig: Record<
   },
 }
 
-// 获取用户 ID
+// åŽ†å²è®°å½•å¡«å……ä¸º AI æŽ¨èæ ¼å¼ï¼Œç»Ÿä¸€ä¾é� å•ä¸ªæŽ¨èå¡
+type HistoryItem = AIRecommendation & { historyId?: string }
+
+function mapHistoryRecordToRecommendation(record: RecommendationHistory): HistoryItem {
+  return {
+    historyId: record.id,
+    title: record.title,
+    description: record.description || "",
+    category: record.category,
+    link: record.link,
+    linkType: record.link_type || "search",
+    metadata: record.metadata || {},
+    reason: record.reason || "",
+    tags: (record.metadata?.tags as string[] | undefined) || undefined,
+  }
+}
+
+function dedupeHistory(items: HistoryItem[]): HistoryItem[] {
+  const seen = new Set<string>()
+  return items.filter((item) => {
+    const key = `${item.title}-${item.link}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+// èŽ·å–ç”¨æˆ· ID
 function getUserId(): string {
   if (typeof window !== "undefined") {
     // 尝试 Supabase 国际版缓存 (新方式)
@@ -105,7 +139,10 @@ function getUserId(): string {
 
 export default function CategoryPage({ params }: { params: { id: string } }) {
   const [currentRecommendations, setCurrentRecommendations] = useState<AIRecommendation[]>([])
-  const [history, setHistory] = useState<AIRecommendation[]>([])
+  const [history, setHistory] = useState<HistoryItem[]>([])
+  const [historySource, setHistorySource] = useState<"local" | "supabase" | "cloudbase">("local")
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false)
+  const [userId, setUserId] = useState<string | null>(null)
   const [isShaking, setIsShaking] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [source, setSource] = useState<"ai" | "fallback" | "cache" | null>(null)
@@ -115,54 +152,152 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
 
   const categoryId = params.id as RecommendationCategory
   const category = categoryConfig[categoryId]
+  const historyProvider = RegionConfig.database.provider
 
-  // 初始化历史
   useEffect(() => {
-    // 从 localStorage 加载历史
+    const resolvedId = getUserId()
+    if (resolvedId !== "anonymous") {
+      setUserId(resolvedId)
+    }
+  }, [])
+
+  const loadLocalHistory = useCallback(() => {
     const savedHistory = localStorage.getItem(`ai_history_${params.id}`)
     if (savedHistory) {
       try {
-        const parsedHistory = JSON.parse(savedHistory)
-        // 限制最多 10 条历史记录
-        setHistory(parsedHistory.slice(0, 10))
+        const parsedHistory: HistoryItem[] = JSON.parse(savedHistory)
+        setHistory(dedupeHistory(parsedHistory).slice(0, 10))
+        setHistorySource("local")
       } catch {
-        // ignore
+        // ignore parse errors
       }
     }
   }, [params.id])
 
+  const fetchRemoteHistory = useCallback(
+    async (targetUserId: string) => {
+      if (!isValidUserId(targetUserId)) {
+        setHistorySource("local")
+        return
+      }
+
+      setIsHistoryLoading(true)
+      try {
+        const response = await fetch(
+          `/api/recommend/history?userId=${targetUserId}&category=${categoryId}&limit=10`
+        )
+        const result = await response.json()
+
+        if (!response.ok || !result.success) {
+          throw new Error(result.error || "Failed to load history")
+        }
+
+        const mappedHistory: HistoryItem[] = dedupeHistory(
+          (result.data || []).map(mapHistoryRecordToRecommendation)
+        )
+        setHistory(mappedHistory)
+        setHistorySource(historyProvider)
+        localStorage.setItem(`ai_history_${params.id}`, JSON.stringify(mappedHistory))
+      } catch (err) {
+        console.warn("Failed to load remote history, falling back to local cache:", err)
+        setHistorySource("local")
+        loadLocalHistory()
+      } finally {
+        setIsHistoryLoading(false)
+      }
+    },
+    [categoryId, historyProvider, loadLocalHistory, params.id]
+  )
+
+  // 初始化加载本地历史缓存
+  useEffect(() => {
+    loadLocalHistory()
+  }, [loadLocalHistory])
+
+  // 有登录用户时从远端查询历史（Supabase 或 CloudBase）
+  useEffect(() => {
+    if (!userId) return
+    fetchRemoteHistory(userId)
+  }, [userId, fetchRemoteHistory])
+
   // 删除单条历史记录
   const deleteHistoryItem = useCallback(
-    (index: number) => {
+    async (index: number) => {
+      const item = history[index]
       const newHistory = history.filter((_, i) => i !== index)
       setHistory(newHistory)
       localStorage.setItem(`ai_history_${params.id}`, JSON.stringify(newHistory))
+
+      const resolvedUserId = userId || getUserId()
+      if (item?.historyId && isValidUserId(resolvedUserId)) {
+        try {
+          await fetch("/api/recommend/history", {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              userId: resolvedUserId,
+              historyIds: [item.historyId],
+              category: categoryId,
+            }),
+          })
+        } catch (err) {
+          console.error("Failed to delete remote history item:", err)
+        }
+      }
     },
-    [history, params.id]
+    [history, params.id, userId, categoryId]
   )
+
+  const clearHistory = useCallback(async () => {
+    setHistory([])
+    localStorage.removeItem(`ai_history_${params.id}`)
+
+    const resolvedUserId = userId || getUserId()
+    if (isValidUserId(resolvedUserId)) {
+      try {
+        await fetch("/api/recommend/history", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: resolvedUserId,
+            action: "clear-all",
+          }),
+        })
+      } catch (err) {
+        console.error("Failed to clear remote history:", err)
+      }
+    }
+  }, [params.id, userId])
 
   // 记录用户行为
   const recordAction = useCallback(
-    async (recommendation: AIRecommendation, action: "view" | "click" | "save" | "dismiss") => {
-      const userId = getUserId()
-      if (userId === "anonymous") return
+    async (
+      recommendation: AIRecommendation,
+      action: "view" | "click" | "save" | "dismiss"
+    ): Promise<string | undefined> => {
+      const resolvedUserId = userId || getUserId()
+      if (!isValidUserId(resolvedUserId)) return
 
       try {
-        await fetch("/api/recommend/record", {
+        const response = await fetch("/api/recommend/record", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            userId,
+            userId: resolvedUserId,
             category: categoryId,
             recommendation,
             action,
           }),
         })
+
+        const result = await response.json().catch(() => null)
+        return result?.historyId as string | undefined
       } catch (err) {
         console.error("Failed to record action:", err)
+        return
       }
     },
-    [categoryId]
+    [categoryId, userId]
   )
 
   // 获取 AI 推荐
@@ -172,9 +307,10 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
     setError(null)
 
     try {
-      const userId = getUserId()
+      const resolvedUserId = userId || getUserId()
+      const queryUserId = isValidUserId(resolvedUserId) ? resolvedUserId : "anonymous"
       const response = await fetch(
-        `/api/recommend/ai/${categoryId}?userId=${userId}&count=5&locale=${locale}&skipCache=true`,
+        `/api/recommend/ai/${categoryId}?userId=${queryUserId}&count=5&locale=${locale}&skipCache=true`,
         { method: "GET" }
       )
 
@@ -186,16 +322,22 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
 
       // 延迟显示结果以保持动画效果
       setTimeout(() => {
-        setCurrentRecommendations(data.recommendations)
+        const uniqueRecs = dedupeHistory(data.recommendations)
+        setCurrentRecommendations(uniqueRecs)
         setSource(data.source)
 
         // 更新历史（保留最近 10 条）
-        const newHistory = [...data.recommendations, ...history].slice(0, 10)
+        const newHistory: HistoryItem[] = dedupeHistory([
+          ...uniqueRecs,
+          ...history,
+        ]).slice(0, 10)
         setHistory(newHistory)
         localStorage.setItem(`ai_history_${params.id}`, JSON.stringify(newHistory))
 
-        // 记录浏览行为
-        data.recommendations.forEach((rec) => recordAction(rec, "view"))
+        // 同步远端历史记录（根据地区使用 Supabase 或 CloudBase）
+        if (isValidUserId(resolvedUserId)) {
+          fetchRemoteHistory(resolvedUserId)
+        }
 
         setIsShaking(false)
         setIsLoading(false)
@@ -206,7 +348,7 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
       setIsShaking(false)
       setIsLoading(false)
     }
-  }, [categoryId, locale, history, params.id, recordAction])
+  }, [categoryId, locale, history, params.id, recordAction, fetchRemoteHistory, userId])
 
   // 处理链接点击
   const handleLinkClick = useCallback(
@@ -408,16 +550,30 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
         {history.length > 0 && (
           <div className="mt-8">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-gray-800">
-                {locale === "zh" ? "最近推荐" : "Recent History"}
-              </h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-semibold text-gray-800">
+                  {locale === "zh" ? "最近推荐" : "Recent History"}
+                </h2>
+                <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
+                  {historySource === "supabase"
+                    ? "Supabase"
+                    : historySource === "cloudbase"
+                      ? "CloudBase"
+                      : locale === "zh"
+                        ? "本地"
+                        : "Local"}
+                </Badge>
+                {isHistoryLoading && (
+                  <span className="text-xs text-gray-500">
+                    {locale === "zh" ? "同步中..." : "Syncing..."}
+                  </span>
+                )}
+              </div>
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => {
-                  setHistory([])
-                  localStorage.removeItem(`ai_history_${params.id}`)
-                }}
+                onClick={clearHistory}
+                disabled={isHistoryLoading}
                 className="text-gray-500 text-xs"
               >
                 {locale === "zh" ? "清空全部" : "Clear All"}
@@ -427,7 +583,7 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
             <div className="flex flex-col gap-2 max-h-96 overflow-y-auto pr-2">
               {history.map((item, index) => (
                 <motion.div
-                  key={`${item.title}-${index}`}
+                  key={item.historyId || `${item.title}-${index}`}
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: 20 }}

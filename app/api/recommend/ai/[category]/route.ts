@@ -6,7 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { generateRecommendations, isZhipuConfigured } from "@/lib/ai/zhipu-recommendation";
+import { generateRecommendations, isAIProviderConfigured } from "@/lib/ai/zhipu-recommendation";
 import { generateSearchLink, selectBestPlatform, selectFoodPlatformWithRotation } from "@/lib/search/search-engine";
 import { enhanceTravelRecommendation } from "@/lib/ai/travel-enhancer";
 import {
@@ -111,8 +111,8 @@ export async function GET(
     }
 
     // 检查 AI 是否配置
-    if (!isZhipuConfigured()) {
-      console.log("Zhipu API not configured, using fallback data");
+    if (!isAIProviderConfigured()) {
+      console.log("[AI] No provider configured for current region, using fallback data");
       const fallbackRecs = await generateFallbackRecommendations(category, locale, count);
 
       return NextResponse.json({
@@ -127,7 +127,12 @@ export async function GET(
       console.log(`[AI] 用户历史记录数: ${userHistory?.length || 0}`);
 
       // 1. 使用智谱 AI 生成推荐内容（不含链接）
-      const aiRecommendations = await generateRecommendations(userHistory || [], category, locale);
+      const aiRecommendations = await generateRecommendations(
+        userHistory || [],
+        category,
+        locale,
+        count
+      );
       console.log(`[AI] 生成推荐数: ${aiRecommendations.length}`);
 
       // 2. 处理推荐的多样性

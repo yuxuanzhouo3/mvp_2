@@ -24,7 +24,8 @@ export default function RegisterPage() {
   const [oauthLoading, setOauthLoading] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
-  const isChina = language === 'zh'
+  const isChineseLanguage = language === 'zh'
+  const isChinaDeployment = RegionConfig.auth.provider === 'cloudbase'
 
   const validateForm = (): boolean => {
     if (password.length < 6) {
@@ -75,7 +76,7 @@ export default function RegisterPage() {
           router.refresh()
         } else {
           // Registration successful, redirect to login page
-          setSuccess(isChina ? '注册成功！正在跳转到登录页面...' : 'Registration successful! Redirecting to login...')
+          setSuccess(isChineseLanguage ? '注册成功！正在跳转到登录页面...' : 'Registration successful! Redirecting to login...')
           // Redirect to login page after a short delay
           setTimeout(() => {
             router.push('/login')
@@ -120,7 +121,7 @@ export default function RegisterPage() {
     try {
       await auth.toDefaultLoginPage?.(`${window.location.origin}/auth/callback`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : (isChina ? '微信登录失败' : 'WeChat login failed'))
+      setError(err instanceof Error ? err.message : (isChineseLanguage ? '微信登录失败' : 'WeChat login failed'))
       setOauthLoading(null)
     }
   }
@@ -141,15 +142,15 @@ export default function RegisterPage() {
           <form onSubmit={onSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="name">
-                {isChina ? '昵称' : 'Name'}
+                {isChineseLanguage ? '昵称' : 'Name'}
                 <span className="text-muted-foreground text-xs ml-1">
-                  ({isChina ? '可选' : 'optional'})
+                  ({isChineseLanguage ? '可选' : 'optional'})
                 </span>
               </Label>
               <Input
                 id="name"
                 type="text"
-                placeholder={isChina ? '请输入昵称' : 'Enter your name'}
+                placeholder={isChineseLanguage ? '请输入昵称' : 'Enter your name'}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 disabled={loading || !!oauthLoading}
@@ -171,7 +172,7 @@ export default function RegisterPage() {
               <Label htmlFor="password">
                 {t.auth.password}
                 <span className="text-muted-foreground text-xs ml-1">
-                  ({isChina ? '至少6位' : 'min 6 chars'})
+                  ({isChineseLanguage ? '至少6位' : 'min 6 chars'})
                 </span>
               </Label>
               <Input
@@ -218,19 +219,19 @@ export default function RegisterPage() {
               className="w-full"
               disabled={loading || !!oauthLoading || !!success}
             >
-              {loading ? (
-                <span className="flex items-center gap-2">
-                  <LoadingSpinner />
-                  {isChina ? '注册中...' : 'Creating account...'}
-                </span>
-              ) : (
-                t.auth.register
-              )}
+                  {loading ? (
+                    <span className="flex items-center gap-2">
+                      <LoadingSpinner />
+                      {isChineseLanguage ? '注册中...' : 'Creating account...'}
+                    </span>
+                  ) : (
+                    t.auth.register
+                  )}
             </Button>
           </form>
 
           {/* Google Login for International */}
-          {!isChina && RegionConfig.auth.features.googleAuth && (
+          {RegionConfig.auth.provider === 'supabase' && RegionConfig.auth.features.googleAuth && (
             <>
               <div className="relative">
                 <div className="absolute inset-0 flex items-center">
@@ -265,7 +266,7 @@ export default function RegisterPage() {
           )}
 
           {/* WeChat Login for China */}
-          {isChina && RegionConfig.auth.features.wechatAuth && (
+          {isChinaDeployment && RegionConfig.auth.features.wechatAuth && (
             <>
               <div className="relative">
                 <div className="absolute inset-0 flex items-center">
