@@ -188,6 +188,8 @@ export function BillingHistory() {
     );
   }
 
+  const visibleRecords = records.filter((record) => record.status !== "pending");
+
   return (
     <Card>
       <CardHeader>
@@ -203,7 +205,7 @@ export function BillingHistory() {
       </CardHeader>
 
       <CardContent>
-        {records.length === 0 ? (
+        {visibleRecords.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
             {language === "zh" ? "暂无账单记录" : "No billing records found"}
           </div>
@@ -224,7 +226,7 @@ export function BillingHistory() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {records.map((record) => (
+              {visibleRecords.map((record) => (
                 <TableRow key={record.id}>
                   <TableCell>{formatDate(record.date)}</TableCell>
                   <TableCell>{record.description}</TableCell>
@@ -234,20 +236,7 @@ export function BillingHistory() {
                   <TableCell>{record.paymentMethod}</TableCell>
                   <TableCell>{getStatusBadge(record.status)}</TableCell>
                   <TableCell>
-                    <div className="flex items-center gap-2">
-                      {/* 待处理订单显示取消按钮 */}
-                      {record.status === "pending" && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleCancelOrder(record.id)}
-                          disabled={processingId === record.id}
-                        >
-                          <X className="h-4 w-4 mr-1" />
-                          {language === "zh" ? "取消" : "Cancel"}
-                        </Button>
-                      )}
-                    </div>
+                    <div className="flex items-center gap-2" />
                   </TableCell>
                 </TableRow>
               ))}

@@ -3,6 +3,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth/auth";
 import { supabaseAdmin } from "@/lib/integrations/supabase-admin";
 
+function normalizePlan(plan?: string | null): "enterprise" | "pro" | "free" {
+  const val = (plan || "").toLowerCase();
+  if (val.includes("enterprise")) return "enterprise";
+  if (val.includes("pro")) return "pro";
+  return "free";
+}
+
 export async function POST(request: NextRequest) {
   console.log("[API] POST /api/auth/refresh-subscription - Start");
 
@@ -45,13 +52,55 @@ export async function POST(request: NextRequest) {
       subscriptionError = error;
     }
 
-    // 确定订阅计划
-    let subscriptionPlan = "free";
-    let subscriptionStatus = "inactive";
+    // 查找最近一条已完成的支付（用于兜底判定档位）
+    const { data: latestPayment } = await supabaseAdmin
+      .from("payments")
+      .select("metadata, status, created_at")
+      .eq("user_id", user.id)
+      .eq("status", "completed")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    // 以用户当前元数据为回退，避免误降级
+    let subscriptionPlan = normalizePlan(user.user_metadata?.subscription_plan as string);
+    let subscriptionStatus = (user.user_metadata?.subscription_status as string) || "inactive";
+    let subscriptionEnd: string | null = (user.user_metadata?.subscription_end as string) || null;
+    let billingCycle: string | null = (user.user_metadata?.subscription_billing_cycle as string) || null;
 
     if (subscription) {
-      subscriptionPlan = subscription.plan_type === "yearly" ? "pro" : "pro";
+      // plan_type 记录档位（pro / enterprise），默认回落到 pro
+      subscriptionPlan = normalizePlan(subscription.plan_type || "pro");
+
       subscriptionStatus = subscription.status;
+      subscriptionEnd = subscription.subscription_end;
+      billingCycle = subscription.billing_cycle || null;
+    }
+
+    // 兜底使用最近一次支付的 planType 元数据（即使 subscription 记录存在但 plan_type 异常，也用支付信息纠正）
+    const paymentPlanType = normalizePlan(latestPayment?.metadata?.planType);
+    if (paymentPlanType !== "free" && (subscriptionPlan === "free" || !subscription)) {
+      subscriptionPlan = paymentPlanType;
+      if (!subscriptionStatus || subscriptionStatus === "inactive") {
+        subscriptionStatus = "active";
+      }
+    }
+
+    // 如果数据库中的 plan_type 异常，但支付兜底识别为 enterprise/pro，则顺便纠正数据库记录
+    if (subscription && subscriptionPlan !== normalizePlan(subscription.plan_type)) {
+      try {
+        await supabaseAdmin
+          .from("user_subscriptions")
+          .update({ plan_type: subscriptionPlan })
+          .eq("id", subscription.id);
+        console.log("[API] Fixed subscription plan_type to:", subscriptionPlan);
+      } catch (fixError) {
+        console.error("[API] Failed to fix subscription plan_type:", fixError);
+      }
+    }
+    // 兜底账单周期
+    if (!billingCycle && latestPayment?.metadata?.billingCycle) {
+      billingCycle = latestPayment.metadata.billingCycle;
     }
 
     // 更新用户元数据
@@ -65,6 +114,8 @@ export async function POST(request: NextRequest) {
           user_metadata: {
             subscription_plan: subscriptionPlan,
             subscription_status: subscriptionStatus,
+            subscription_end: subscriptionEnd,
+            subscription_billing_cycle: billingCycle,
           }
         }
       );

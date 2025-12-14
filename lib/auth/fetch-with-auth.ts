@@ -18,20 +18,18 @@ export async function getAuthHeaders(): Promise<Record<string, string>> {
       authToken = localStorage.getItem("auth-token");
     }
   } else {
-    // 国际版：强制刷新session以确保token有效
+    // 国际版：优先使用当前 session，没有则强制刷新
     try {
       const supabase = await import("@/lib/integrations/supabase");
 
-      // 强制刷新session，确保token有效
-      const { data: refreshData } = await supabase.supabase.auth.refreshSession();
-
-      if (refreshData.session?.access_token) {
-        // 检查token是否即将过期（5分钟内）
-        const expiresAt = refreshData.session.expires_at;
-        const now = Math.floor(Date.now() / 1000);
-        const timeToExpiry = expiresAt - now;
-
-        if (timeToExpiry > 60) { // 还有1分钟以上才使用
+      // 先尝试获取现有 session（Supabase 会自动处理续期）
+      const { data: sessionData } = await supabase.supabase.auth.getSession();
+      if (sessionData.session?.access_token) {
+        authToken = sessionData.session.access_token;
+      } else {
+        // 兜底刷新 session
+        const { data: refreshData } = await supabase.supabase.auth.refreshSession();
+        if (refreshData.session?.access_token) {
           authToken = refreshData.session.access_token;
         }
       }

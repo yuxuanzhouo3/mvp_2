@@ -1,28 +1,77 @@
 // app/payment-success/page.tsx - 支付成功页面
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { CheckCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { SearchParamsBoundary } from "@/components/search-params-boundary";
+import { getStripePromise } from "@/lib/stripe-client";
+import { fetchWithAuth } from "@/lib/auth/fetch-with-auth";
 
 function PaymentSuccessContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [isProcessing, setIsProcessing] = useState(true);
   const [paymentDetails, setPaymentDetails] = useState<any>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const provider = searchParams.get("provider") || "unknown";
-  const orderId = searchParams.get("orderId") || searchParams.get("token") || "unknown";
+  const paymentIntentClientSecret = searchParams.get("payment_intent_client_secret") || "";
+  const orderId =
+    searchParams.get("payment_intent") ||
+    searchParams.get("orderId") ||
+    searchParams.get("token") ||
+    "unknown";
+
+  const refreshSubscription = useCallback(async () => {
+    try {
+      const refreshResponse = await fetchWithAuth("/api/auth/refresh-subscription", {
+        method: "POST",
+      });
+
+      if (refreshResponse.ok) {
+        const data = await refreshResponse.json();
+        console.log("User subscription refreshed:", data);
+        
+        // 清除旧缓存并更新
+        const { clearSupabaseUserCache, saveSupabaseUserCache } = await import("@/lib/auth/auth-state-manager-intl");
+        clearSupabaseUserCache();
+        
+        // 如果有订阅数据，更新缓存
+        if (data.success && data.subscriptionPlan) {
+          // 获取当前用户基本信息
+          const { auth } = await import("@/lib/auth/client");
+          const { data: userData } = await auth.getUser();
+          
+          if (userData?.user) {
+            saveSupabaseUserCache({
+              id: userData.user.id,
+              email: userData.user.email || "",
+              name: userData.user.user_metadata?.full_name,
+              avatar: userData.user.user_metadata?.avatar_url,
+              subscription_plan: data.subscriptionPlan,
+              subscription_status: data.subscriptionStatus || "active",
+            });
+          }
+        }
+        
+        window.dispatchEvent(new CustomEvent("supabase-user-changed"));
+      } else {
+        console.error("Failed to refresh subscription:", await refreshResponse.text());
+      }
+    } catch (refreshError) {
+      console.error("Error refreshing subscription:", refreshError);
+    }
+  }, []);
 
   useEffect(() => {
-    // 模拟支付确认过程
     const confirmPayment = async () => {
+      setErrorMessage(null);
+
       try {
         if (provider === "paypal" && orderId && orderId !== "unknown") {
-          // PayPal 支付确认
           console.log(`[DEBUG] Starting PayPal capture for orderId: ${orderId}`);
 
           const response = await fetch("/api/paypal/capture-order", {
@@ -33,101 +82,108 @@ function PaymentSuccessContent() {
             body: JSON.stringify({ orderId }),
           });
 
-          console.log(`[DEBUG] Response status: ${response.status}, ok: ${response.ok}`);
-          console.log(`[DEBUG] Response headers:`, Object.fromEntries(response.headers.entries()));
-
-          // 检查响应内容类型
-          const contentType = response.headers.get('content-type');
-          console.log(`[DEBUG] Response content-type: ${contentType}`);
-
           if (!response.ok) {
             const errorText = await response.text();
-            console.error(`[DEBUG] Error response text:`, errorText);
             throw new Error(`HTTP ${response.status}: ${errorText}`);
           }
 
-          let result;
-          try {
-            const responseText = await response.text();
-            console.log(`[DEBUG] Raw response text:`, responseText);
-
-            if (!responseText || responseText.trim() === '') {
-              throw new Error('Empty response from server');
-            }
-
-            result = JSON.parse(responseText);
-            console.log(`[DEBUG] Parsed result:`, result);
-          } catch (jsonError) {
-            console.error(`[DEBUG] JSON parse error:`, jsonError);
-            console.error(`[DEBUG] Response was not valid JSON`);
-            throw new Error(`Invalid JSON response: ${jsonError.message}`);
+          const text = await response.text();
+          if (!text || text.trim() === "") {
+            throw new Error("Empty response from server");
           }
+
+          const result = JSON.parse(text);
 
           if (result.success) {
-            console.log(`[DEBUG] Payment capture successful:`, result);
             setPaymentDetails(result);
-
-            // 支付成功后，刷新用户订阅状态
-            try {
-              const refreshResponse = await fetch("/api/auth/refresh-subscription", {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                },
-              });
-
-              if (refreshResponse.ok) {
-                console.log("User subscription refreshed successfully");
-                // 清除本地缓存，强制前端重新获取用户状态
-                localStorage.removeItem("supabase-user-cache");
-                // 触发自定义事件通知其他组件
-                window.dispatchEvent(new CustomEvent('supabase-user-changed'));
-              } else {
-                console.error("Failed to refresh subscription:", await refreshResponse.text());
-              }
-            } catch (refreshError) {
-              console.error("Error refreshing subscription:", refreshError);
-            }
+            await refreshSubscription();
           } else {
-            console.error(`[DEBUG] Payment capture failed:`, result);
-            throw new Error(result.error || 'Payment capture failed');
+            throw new Error(result.error || "Payment capture failed");
           }
         } else if (provider === "stripe") {
-          // Stripe 支付通常通过 webhook 处理，这里可以查询状态
-          console.log("Stripe payment confirmation handled via webhook");
+          if (!paymentIntentClientSecret) {
+            setErrorMessage("Stripe return data missing. Please retry from the pricing page.");
+            return;
+          }
 
-          // 对于 Stripe，也尝试刷新订阅状态
-          try {
-            const refreshResponse = await fetch("/api/auth/refresh-subscription", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-            });
+          const stripe = await getStripePromise();
+          if (!stripe) {
+            setErrorMessage("Stripe is not configured in this environment.");
+            return;
+          }
 
-            if (refreshResponse.ok) {
-              console.log("User subscription refreshed successfully for Stripe");
-              localStorage.removeItem("supabase-user-cache");
-              window.dispatchEvent(new CustomEvent('supabase-user-changed'));
+          const { paymentIntent, error } = await stripe.retrievePaymentIntent(paymentIntentClientSecret);
+
+          if (error) {
+            setErrorMessage(error.message || "Unable to verify Stripe payment.");
+            return;
+          }
+
+          if (!paymentIntent) {
+            setErrorMessage("No payment intent found. Please try again.");
+            return;
+          }
+
+          const totalAmount =
+            (paymentIntent as { amount_received?: number }).amount_received ??
+            paymentIntent.amount ??
+            0;
+
+          setPaymentDetails({
+            amount: totalAmount / 100,
+            currency: (paymentIntent.currency || "usd").toUpperCase(),
+            captureId: paymentIntent.id,
+            status: paymentIntent.status,
+          });
+
+          if (paymentIntent.status === "succeeded") {
+            // 调用备用确认 API 确保数据库状态正确更新
+            // 这解决了 webhook 可能失败的问题
+            try {
+              console.log("[PaymentSuccess] Calling confirm API for payment:", paymentIntent.id);
+              const confirmResponse = await fetchWithAuth("/api/payment/confirm", {
+                method: "POST",
+                body: JSON.stringify({ paymentIntentId: paymentIntent.id }),
+              });
+
+              if (confirmResponse.ok) {
+                const confirmResult = await confirmResponse.json();
+                console.log("[PaymentSuccess] Payment confirmed:", confirmResult);
+              } else {
+                console.error("[PaymentSuccess] Confirm API failed:", await confirmResponse.text());
+              }
+            } catch (confirmError) {
+              console.error("[PaymentSuccess] Error calling confirm API:", confirmError);
+              // 不阻止用户流程，因为 webhook 可能已经处理成功
             }
-          } catch (refreshError) {
-            console.error("Error refreshing Stripe subscription:", refreshError);
+
+            await refreshSubscription();
+          } else if (paymentIntent.status === "requires_payment_method") {
+            setErrorMessage("Payment was not completed. Please try again with a different card.");
           }
         } else if (orderId === "unknown" || !orderId) {
+          setErrorMessage("Missing order ID. Please check your payment status.");
           console.error("No valid order ID found in URL parameters");
-          throw new Error("Missing order ID. Please check your payment status.");
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error("Payment confirmation error:", error);
+        setErrorMessage(error?.message || "Unable to confirm payment.");
       } finally {
         setIsProcessing(false);
       }
     };
 
-    // 延迟执行以确保 webhook 已处理
-    const timer = setTimeout(confirmPayment, 2000);
-    return () => clearTimeout(timer);
-  }, [provider, orderId]);
+    confirmPayment();
+  }, [provider, orderId, paymentIntentClientSecret, refreshSubscription]);
+
+  const subscriptionStatusLabel =
+    isProcessing
+      ? "确认中"
+      : errorMessage
+      ? "待确认"
+      : paymentDetails?.status && paymentDetails.status !== "succeeded"
+      ? "处理中"
+      : "已激活";
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50 flex items-center justify-center p-4">
@@ -145,6 +201,11 @@ function PaymentSuccessContent() {
         </CardHeader>
 
         <CardContent className="space-y-4">
+          {errorMessage && !isProcessing && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              {errorMessage}
+            </div>
+          )}
           {isProcessing ? (
             <div className="text-center py-4">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600 mx-auto"></div>
@@ -172,14 +233,26 @@ function PaymentSuccessContent() {
                       {paymentDetails.captureId || orderId}
                     </div>
                   </div>
+                  {paymentDetails.status && (
+                    <div className="bg-gray-50 p-3 rounded-lg">
+                      <div className="text-sm text-gray-600">支付状态</div>
+                      <div className="font-medium capitalize">{paymentDetails.status}</div>
+                    </div>
+                  )}
                 </>
               )}
 
               <div className="bg-blue-50 p-3 rounded-lg">
                 <div className="text-sm text-blue-600">订阅状态</div>
-                <div className="font-medium text-blue-800">已激活</div>
+                <div className="font-medium text-blue-800">
+                  {subscriptionStatusLabel}
+                </div>
                 <div className="text-xs text-blue-600 mt-1">
-                  您现在可以享受所有高级功能
+                  {paymentDetails?.status
+                    ? `支付状态：${paymentDetails.status}`
+                    : errorMessage
+                    ? "支付还未完成，请稍后重试或联系我们支持。"
+                    : "您现在可以享受所有高级功能"}
                 </div>
               </div>
             </div>

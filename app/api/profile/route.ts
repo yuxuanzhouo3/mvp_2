@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getSupabaseAdmin } from "@/lib/integrations/supabase-admin";
 import { isChinaRegion } from "@/lib/config/region";
 
 // Force dynamic rendering for this route
@@ -75,30 +76,81 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Try to get additional profile data from profiles table if it exists
+    // Try to get additional profile data from user_profiles table
     let profileData: any = null;
     try {
       const { data: profile } = await supabase
-        .from("profiles")
+        .from("user_profiles")
         .select("*")
         .eq("id", user.id)
         .single();
 
       profileData = profile;
     } catch {
-      // profiles table might not exist, which is fine
-      console.log("[/api/profile] No profiles table or profile not found");
+      // user_profiles table might not exist or profile not found
+      console.log("[/api/profile] No user_profiles table or profile not found");
+    }
+
+    // Update or create user_profiles record
+    try {
+      const supabaseAdmin = getSupabaseAdmin();
+
+      const profileUpdate = {
+        id: user.id,
+        email: user.email,
+        full_name: user.user_metadata?.full_name || user.user_metadata?.name || profileData?.full_name || "",
+        subscription_tier: profileData?.subscription_tier || "free",
+        subscription_status: profileData?.subscription_status || "active",
+        updated_at: new Date().toISOString(),
+      };
+
+      if (profileData) {
+        // Update existing profile
+        console.log("[/api/profile] Updating existing user profile");
+        await supabaseAdmin
+          .from("user_profiles")
+          .update(profileUpdate)
+          .eq("id", user.id);
+      } else {
+        // Insert new profile
+        console.log("[/api/profile] Creating new user profile");
+        await supabaseAdmin
+          .from("user_profiles")
+          .insert({
+            ...profileUpdate,
+            created_at: new Date().toISOString(),
+          });
+      }
+    } catch (error) {
+      console.error("[/api/profile] Failed to update user_profiles table:", error);
+      // Continue with the response even if profile update fails
+    }
+
+    // Get the latest profile data after update
+    let latestProfileData = profileData;
+    try {
+      const { data: updatedProfile } = await supabase
+        .from("user_profiles")
+        .select("*")
+        .eq("id", user.id)
+        .single();
+
+      if (updatedProfile) {
+        latestProfileData = updatedProfile;
+      }
+    } catch (error) {
+      console.warn("[/api/profile] Failed to fetch updated profile:", error);
     }
 
     // Build the response matching SupabaseUserProfile interface
     const userProfile = {
       id: user.id,
       email: user.email || "",
-      name: profileData?.name || profileData?.full_name || user.user_metadata?.full_name || user.user_metadata?.name || "",
-      avatar: profileData?.avatar || profileData?.avatar_url || user.user_metadata?.avatar_url || "",
-      subscription_plan: profileData?.subscription_plan || user.user_metadata?.subscription_plan || "free",
-      subscription_status: profileData?.subscription_status || user.user_metadata?.subscription_status || "active",
-      membership_expires_at: profileData?.membership_expires_at || user.user_metadata?.membership_expires_at || null,
+      name: latestProfileData?.full_name || user.user_metadata?.full_name || user.user_metadata?.name || "",
+      avatar: latestProfileData?.avatar || latestProfileData?.avatar_url || user.user_metadata?.avatar_url || "",
+      subscription_plan: latestProfileData?.subscription_tier || "free",
+      subscription_status: latestProfileData?.subscription_status || "active",
+      membership_expires_at: latestProfileData?.membership_expires_at || user.user_metadata?.membership_expires_at || null,
     };
 
     console.log("[/api/profile] Returning profile for user:", user.id);

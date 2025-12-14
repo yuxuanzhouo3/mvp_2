@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { ArrowLeft, CreditCard, User, Crown, History } from "lucide-react"
+import { ArrowLeft, CreditCard, User, Crown, History, Edit2, Save, X } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useLanguage } from "@/components/language-provider"
 import { useTranslations } from "@/lib/i18n"
@@ -30,6 +30,27 @@ export default function SettingsPage() {
   const [cvv, setCvv] = useState("")
   const [isSaving, setIsSaving] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [overridePlan, setOverridePlan] = useState<"free" | "pro" | "enterprise" | null>(null)
+  const [isEditingName, setIsEditingName] = useState(false)
+  const [editedName, setEditedName] = useState("")
+  const [isUpdatingName, setIsUpdatingName] = useState(false)
+
+  const normalizePlan = (plan?: string | null) => {
+    const val = (plan || "").toLowerCase()
+    if (val.includes("enterprise")) return "enterprise"
+    if (val.includes("pro")) return "pro"
+    return "free"
+  }
+
+  const currentPlan = overridePlan ?? (user?.subscriptionTier ? normalizePlan(user.subscriptionTier) : "free")
+  const isEnterprise = currentPlan === "enterprise"
+  const isPro = currentPlan === "pro"
+  const subscriptionTitle = isEnterprise
+    ? t.settingsPage.subscription.enterprisePlan || t.settingsPage.subscription.title
+    : t.settingsPage.subscription.title
+  const subscriptionSubtitle = isEnterprise
+    ? t.settingsPage.subscription.enterpriseDescription || t.settingsPage.subscription.subtitle
+    : t.settingsPage.subscription.subtitle
 
   if (isLoading) {
     return (
@@ -76,14 +97,43 @@ export default function SettingsPage() {
       const data = await response.json()
 
       if (response.ok && data.success) {
+        const planFromDb = normalizePlan(data.subscription?.plan_type)
+        const resolvedPlan = planFromDb !== "free" ? planFromDb : normalizePlan(data.subscriptionPlan)
+        setOverridePlan(resolvedPlan)
+
+        // 更新本地缓存
+        const { updateSupabaseUserCache, clearSupabaseUserCache } = await import("@/lib/auth/auth-state-manager-intl")
+        
+        // 先清除缓存，确保获取最新数据
+        clearSupabaseUserCache()
+        
+        // 更新缓存中的订阅信息
+        if (user) {
+          const { saveSupabaseUserCache } = await import("@/lib/auth/auth-state-manager-intl")
+          saveSupabaseUserCache({
+            id: user.id,
+            email: user.email || "",
+            name: user.name,
+            avatar: user.avatar,
+            subscription_plan: resolvedPlan,
+            subscription_status: data.subscriptionStatus,
+          })
+        }
+
         // 刷新用户认证状态
         await refresh()
+
+        const planLabel = resolvedPlan === "enterprise" 
+          ? (language === "zh" ? "企业版" : "Enterprise")
+          : resolvedPlan === "pro"
+          ? (language === "zh" ? "专业版" : "Pro")
+          : (language === "zh" ? "免费版" : "Free")
 
         toast({
           title: language === "zh" ? "订阅已更新" : "Subscription Updated",
           description: language === "zh"
-            ? `您的订阅状态已更新为：${data.subscriptionPlan === "free" ? "免费版" : "专业版"}`
-            : `Your subscription has been updated to: ${data.subscriptionPlan}`,
+            ? `您的订阅状态已更新为：${planLabel}`
+            : `Your subscription has been updated to: ${planLabel}`,
         })
       } else {
         toast({
@@ -112,6 +162,83 @@ export default function SettingsPage() {
       })
     } finally {
       setIsRefreshing(false)
+    }
+  }
+
+  const handleEditName = () => {
+    setEditedName(user?.name || "")
+    setIsEditingName(true)
+  }
+
+  const handleCancelEditName = () => {
+    setIsEditingName(false)
+    setEditedName("")
+  }
+
+  const handleSaveName = async () => {
+    if (!editedName.trim()) {
+      toast({
+        title: language === "zh" ? "错误" : "Error",
+        description: language === "zh" ? "姓名不能为空" : "Name cannot be empty",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setIsUpdatingName(true)
+
+    try {
+      const response = await fetchWithAuth("/api/profile/update", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          full_name: editedName.trim(),
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || "Failed to update name")
+      }
+
+      const data = await response.json()
+
+      if (data.success) {
+        // Update local state
+        if (user) {
+          user.name = editedName.trim()
+        }
+
+        // Update user cache
+        try {
+          const { updateSupabaseUserCache } = await import("@/lib/auth/auth-state-manager-intl")
+          updateSupabaseUserCache({
+            ...user,
+            name: editedName.trim(),
+          })
+        } catch (error) {
+          console.error("Failed to update user cache:", error)
+        }
+
+        setIsEditingName(false)
+        setEditedName("")
+
+        toast({
+          title: language === "zh" ? "更新成功" : "Success",
+          description: language === "zh" ? "姓名已更新" : "Name updated successfully",
+        })
+      }
+    } catch (error) {
+      console.error("Update name error:", error)
+      toast({
+        title: language === "zh" ? "更新失败" : "Update Failed",
+        description: error instanceof Error ? error.message : (language === "zh" ? "请重试" : "Please try again"),
+        variant: "destructive",
+      })
+    } finally {
+      setIsUpdatingName(false)
     }
   }
 
@@ -181,8 +308,50 @@ export default function SettingsPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label>{t.settingsPage.account.name}</Label>
-                  <Input value={user?.name || t.settingsPage.account.na} disabled />
+                  <div className="flex items-center justify-between">
+                    <Label>{t.settingsPage.account.name}</Label>
+                    {!isEditingName && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleEditName}
+                        className="h-8 w-8 p-0"
+                      >
+                        <Edit2 className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                  {isEditingName ? (
+                    <div className="flex gap-2">
+                      <Input
+                        value={editedName}
+                        onChange={(e) => setEditedName(e.target.value)}
+                        placeholder={language === "zh" ? "输入您的姓名" : "Enter your name"}
+                        className="flex-1"
+                        disabled={isUpdatingName}
+                        maxLength={100}
+                      />
+                      <Button
+                        size="sm"
+                        onClick={handleSaveName}
+                        disabled={isUpdatingName || !editedName.trim()}
+                        className="px-3"
+                      >
+                        <Save className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleCancelEditName}
+                        disabled={isUpdatingName}
+                        className="px-3"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <Input value={user?.name || t.settingsPage.account.na} disabled />
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label>{t.settingsPage.account.email}</Label>
@@ -204,17 +373,17 @@ export default function SettingsPage() {
                     </Button>
                   </div>
                   <div className="flex items-center gap-2">
-                    {user?.subscriptionTier === "enterprise" && (
+                    {currentPlan === "enterprise" && (
                       <span className="px-3 py-1 text-sm rounded-full bg-purple-100 text-purple-700 font-medium">
                         {t.settingsPage.account.tiers.enterprise}
                       </span>
                     )}
-                    {user?.subscriptionTier === "pro" && (
+                    {currentPlan === "pro" && (
                       <span className="px-3 py-1 text-sm rounded-full bg-green-100 text-green-700 font-medium">
                         {t.settingsPage.account.tiers.pro}
                       </span>
                     )}
-                    {(user?.subscriptionTier === "free" || !user?.subscriptionTier) && (
+                    {currentPlan === "free" && (
                       <span className="px-3 py-1 text-sm rounded-full bg-gray-100 text-gray-700 font-medium">
                         {t.settingsPage.account.tiers.free}
                       </span>
@@ -305,13 +474,51 @@ export default function SettingsPage() {
           <TabsContent value="subscription" className="mt-6 space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>{t.settingsPage.subscription.title}</CardTitle>
+                <CardTitle>{subscriptionTitle}</CardTitle>
                 <CardDescription>
-                  {t.settingsPage.subscription.subtitle}
+                  {subscriptionSubtitle}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {user?.isPro ? (
+                {isEnterprise ? (
+                  <div className="text-center py-8">
+                    <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-purple-100 mb-4">
+                      <Crown className="h-8 w-8 text-purple-700" />
+                    </div>
+                    <h3 className="text-xl font-semibold mb-2">
+                      {t.settingsPage.subscription.youAreEnterprise || t.settingsPage.subscription.youArePro}
+                    </h3>
+                    <p className="text-gray-600 mb-4">
+                      {t.settingsPage.subscription.enterpriseDescription || t.settingsPage.subscription.proDescription}
+                    </p>
+                    <div className="mt-6 p-4 bg-purple-50 rounded-lg">
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="text-lg font-bold text-purple-800">
+                          {t.settingsPage.subscription.enterprisePlan || t.settingsPage.subscription.proPlan}
+                        </h4>
+                        <div className="text-right">
+                          <div className="text-2xl font-bold text-purple-700">$49.99</div>
+                          <div className="text-sm text-purple-600">{t.settingsPage.subscription.perMonth}</div>
+                        </div>
+                      </div>
+                      <ul className="space-y-2 text-left text-sm text-purple-800">
+                        <li>✓ {t.settingsPage.subscription.features.unlimited}</li>
+                        <li>✓ {t.settingsPage.subscription.features.aiPersonalization}</li>
+                        <li>✓ {t.settingsPage.subscription.features.favorites}</li>
+                        <li>✓ {t.settingsPage.subscription.features.support}</li>
+                        <li>✓ {t.settingsPage.subscription.features.adFree}</li>
+                      </ul>
+                      <Button
+                        variant="outline"
+                        onClick={handleRefreshSubscription}
+                        disabled={isRefreshing}
+                        className="w-full mt-4"
+                      >
+                        {t.settingsPage.subscription.manageButton || t.settingsPage.subscription.upgradeButton}
+                      </Button>
+                    </div>
+                  </div>
+                ) : isPro ? (
                   <div className="text-center py-8">
                     <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-100 mb-4">
                       <Crown className="h-8 w-8 text-green-600" />

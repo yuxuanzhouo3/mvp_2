@@ -817,8 +817,11 @@ export const en = {
       title: "Pro Subscription",
       subtitle: "Upgrade to unlock premium features",
       youArePro: "You're a Pro!",
+      youAreEnterprise: "You're on Enterprise!",
       proDescription: "Enjoy unlimited recommendations and exclusive features.",
+      enterpriseDescription: "Enjoy max limits, priority access, and dedicated support.",
       proPlan: "Pro Plan",
+      enterprisePlan: "Enterprise Plan",
       perMonth: "per month",
       features: {
         unlimited: "Unlimited recommendations",
@@ -828,6 +831,7 @@ export const en = {
         adFree: "Ad-free experience",
       },
       upgradeButton: "Upgrade to Pro",
+      manageButton: "Manage subscription",
     },
   },
 

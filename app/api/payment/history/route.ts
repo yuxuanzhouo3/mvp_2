@@ -32,20 +32,34 @@ export async function GET(request: NextRequest) {
     const from = (page - 1) * pageSize;
     const to = from + pageSize - 1;
 
+    console.log(`[Payment History] Fetching history for user: ${userId} (type: ${typeof userId})`);
+
     // 查询支付记录
     const { data: payments, error } = await supabaseAdmin
       .from("payments")
-      .select("id, created_at, amount, currency, status, payment_method, transaction_id")
+      .select("id, created_at, amount, currency, status, payment_method, transaction_id, user_id")
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .range(from, to);
 
     if (error) {
-      console.error("Error fetching payment history:", error);
+      console.error("[Payment History] Error fetching payment history:", error);
       return NextResponse.json(
         { error: "Failed to fetch billing history" },
         { status: 500 }
       );
+    }
+
+    console.log(`[Payment History] Found ${payments?.length || 0} records for user: ${userId}`);
+    
+    // 调试：如果没有找到记录，查询所有记录看看 user_id 格式
+    if (!payments || payments.length === 0) {
+      const { data: allPayments } = await supabaseAdmin
+        .from("payments")
+        .select("id, user_id, transaction_id, created_at")
+        .order("created_at", { ascending: false })
+        .limit(5);
+      console.log("[Payment History] Debug - Recent payments in DB:", allPayments);
     }
 
     // 格式化支付记录

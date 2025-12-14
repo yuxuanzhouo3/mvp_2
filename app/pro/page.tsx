@@ -14,6 +14,8 @@ import { useToast } from "@/hooks/use-toast"
 import { useLanguage } from "@/components/language-provider"
 import { useTranslations } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
+import { StripeCheckoutDialog } from "@/components/payment/stripe-checkout-dialog"
+import { fetchWithAuth } from "@/lib/auth/fetch-with-auth"
 
 type PaymentMethod = "stripe" | "paypal"
 type Tier = "free" | "pro" | "enterprise"
@@ -30,6 +32,15 @@ export default function PricingPage() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [hoveredPlan, setHoveredPlan] = useState<Tier | null>(null)
   const [selectedPlan, setSelectedPlan] = useState<Tier | null>(null)
+  const [stripeCheckout, setStripeCheckout] = useState<{
+    clientSecret: string
+    orderId: string
+    amount: number
+    currency: string
+    planName: string
+    billingCycle: BillingCycle
+  } | null>(null)
+  const [isStripeDialogOpen, setIsStripeDialogOpen] = useState(false)
 
   const currentTier = user?.subscriptionTier || "free"
 
@@ -57,15 +68,20 @@ export default function PricingPage() {
       }
 
       const amount = pricing[tier][billingCycle]
-
-      const { fetchWithAuth } = await import("@/lib/auth/fetch-with-auth");
+      const currency = "USD"
+      const planName =
+        tier === "pro"
+          ? t.pricing.plans.pro.name
+          : tier === "enterprise"
+          ? t.pricing.plans.enterprise.name
+          : t.pricing.plans.free.name
 
       const response = await fetchWithAuth("/api/payment/create", {
         method: "POST",
         body: JSON.stringify({
           method: selectedPayment,
           amount,
-          currency: "USD",
+          currency,
           planType: tier,
           billingCycle,
           description: `${billingCycle === "monthly" ? "1 Month" : "1 Year"} ${tier.charAt(0).toUpperCase() + tier.slice(1)} Membership`,
@@ -81,16 +97,22 @@ export default function PricingPage() {
       if (selectedPayment === "paypal" && data.paymentUrl) {
         // 重定向到 PayPal 支付页面
         window.location.href = data.paymentUrl
+        return
       } else if (selectedPayment === "stripe" && data.clientSecret) {
-        // 处理 Stripe 支付（通常在前端使用 Elements）
-        toast({
-          title: "Stripe Payment",
-          description: "Redirecting to secure payment...",
+        setStripeCheckout({
+          clientSecret: data.clientSecret,
+          orderId: data.orderId || data.paymentIntentId || "",
+          amount,
+          currency,
+          planName,
+          billingCycle,
         })
-        // 这里可以集成 Stripe Elements 或重定向到专门的 Stripe 支付页面
-        setTimeout(() => {
-          router.push("/settings")
-        }, 2000)
+        setIsStripeDialogOpen(true)
+        toast({
+          title: "Stripe",
+          description: language === "zh" ? "请输入卡片信息完成支付" : "Complete your payment securely with Stripe",
+        })
+        return
       } else {
         toast({
           title: t.pricing.toast.success,
@@ -503,6 +525,25 @@ export default function PricingPage() {
         </div>
       </div>
     </div>
+      {stripeCheckout && (
+        <StripeCheckoutDialog
+          open={isStripeDialogOpen}
+          clientSecret={stripeCheckout.clientSecret}
+          amount={stripeCheckout.amount}
+          currency={stripeCheckout.currency}
+          planName={stripeCheckout.planName}
+          billingCycle={stripeCheckout.billingCycle}
+          orderId={stripeCheckout.orderId}
+          onClose={() => {
+            setIsStripeDialogOpen(false)
+            setStripeCheckout(null)
+          }}
+          onSucceeded={() => {
+            setIsStripeDialogOpen(false)
+            setStripeCheckout(null)
+          }}
+        />
+      )}
     </>
   )
 }

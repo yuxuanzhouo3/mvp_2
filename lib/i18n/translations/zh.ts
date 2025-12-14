@@ -800,8 +800,11 @@ export const zh = {
       title: "Pro 订阅",
       subtitle: "升级以解锁高级功能",
       youArePro: "您已是 Pro 会员！",
+      youAreEnterprise: "您已是 Enterprise 会员！",
       proDescription: "享受无限推荐和专属功能。",
+      enterpriseDescription: "享受最大额度、优先通道与专属支持。",
       proPlan: "Pro 计划",
+      enterprisePlan: "Enterprise 计划",
       perMonth: "每月",
       features: {
         unlimited: "无限推荐",
@@ -811,6 +814,7 @@ export const zh = {
         adFree: "无广告体验",
       },
       upgradeButton: "升级到 Pro",
+      manageButton: "管理订阅",
     },
   },
 

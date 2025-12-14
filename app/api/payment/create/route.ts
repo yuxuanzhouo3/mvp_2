@@ -147,7 +147,14 @@ export async function POST(request: NextRequest) {
       planType: planType || "pro",
     };
 
-    const { error: recordError } = await supabaseAdmin.from("payments").insert({
+    console.log("[Payment Create] Inserting payment record:", {
+      user_id: userId,
+      amount,
+      currency,
+      transaction_id: orderResult.orderId,
+    });
+
+    const { data: insertedPayment, error: recordError } = await supabaseAdmin.from("payments").insert({
       user_id: userId,
       amount,
       currency,
@@ -155,10 +162,10 @@ export async function POST(request: NextRequest) {
       payment_method: method,
       transaction_id: orderResult.orderId,
       metadata: metadataObj,
-    });
+    }).select().single();
 
     if (recordError) {
-      console.error("Error recording payment:", recordError);
+      console.error("[Payment Create] Error recording payment:", recordError);
       return NextResponse.json(
         {
           success: false,
@@ -168,7 +175,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log("✅ Payment recorded with metadata:", {
+    console.log("✅ Payment recorded:", {
+      paymentId: insertedPayment?.id,
+      userId: insertedPayment?.user_id,
       transactionId: orderResult.orderId,
       metadata: metadataObj,
     });

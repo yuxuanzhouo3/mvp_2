@@ -4,11 +4,166 @@
 
 import { supabaseAdmin } from "@/lib/integrations/supabase-admin";
 import { PaymentMethod } from "./payment-config";
+import { stripe } from "@/lib/stripe";
+import Stripe from "stripe";
 
 export interface WebhookEvent {
   type: string;
   data: any;
   paymentMethod: PaymentMethod;
+}
+
+type AppSubscriptionStatus = "active" | "expired" | "cancelled";
+
+function resolveBillingCycleFromInterval(
+  interval?: Stripe.Price.Recurring.Interval | string
+): "monthly" | "yearly" {
+  if (interval === "year") return "yearly";
+  if (interval === "month") return "monthly";
+  return "monthly";
+}
+
+function mapStripeStatusToAppStatus(status?: string): AppSubscriptionStatus {
+  switch (status) {
+    case "canceled":
+      return "cancelled";
+    case "unpaid":
+    case "incomplete_expired":
+    case "past_due":
+      return "expired";
+    default:
+      return "active";
+  }
+}
+
+async function resolveUserIdFromStripe(
+  metadata?: Record<string, any>,
+  lookup?: { subscriptionId?: string; paymentIntentId?: string }
+): Promise<string | null> {
+  const metaUser =
+    metadata?.userId ||
+    metadata?.user_id ||
+    metadata?.userid ||
+    metadata?.customer_id ||
+    null;
+  if (metaUser) return metaUser;
+
+  try {
+    if (lookup?.subscriptionId) {
+      const { data } = await supabaseAdmin
+        .from("payments")
+        .select("user_id")
+        .eq("subscription_id", lookup.subscriptionId)
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      if (data && data[0]?.user_id) {
+        return data[0].user_id;
+      }
+    }
+
+    if (lookup?.paymentIntentId) {
+      const { data } = await supabaseAdmin
+        .from("payments")
+        .select("user_id")
+        .eq("transaction_id", lookup.paymentIntentId)
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      if (data && data[0]?.user_id) {
+        return data[0].user_id;
+      }
+    }
+  } catch (error) {
+    console.error("Error resolving user id from Stripe metadata:", error);
+  }
+
+  return null;
+}
+
+async function upsertStripePaymentRecord(params: {
+  transactionId: string;
+  amount: number;
+  currency: string;
+  status: "completed" | "failed" | "pending";
+  userId?: string | null;
+  subscriptionId?: string | null;
+  metadata?: Record<string, any>;
+  completedAt?: string;
+}) {
+  const {
+    transactionId,
+    amount,
+    currency,
+    status,
+    userId,
+    subscriptionId,
+    metadata = {},
+    completedAt,
+  } = params;
+
+  console.log(`[Webhook] Upserting payment record for transaction: ${transactionId}, status: ${status}`);
+
+  // 先查询是否已存在该 transaction_id 的记录
+  const { data: existingPayment, error: queryError } = await supabaseAdmin
+    .from("payments")
+    .select("id, status, user_id")
+    .eq("transaction_id", transactionId)
+    .limit(1)
+    .single();
+
+  if (queryError && queryError.code !== "PGRST116") {
+    // PGRST116 是 "no rows returned" 错误，可以忽略
+    console.error("[Webhook] Error querying existing payment:", queryError);
+  }
+
+  const now = new Date().toISOString();
+  const resolvedUserId = userId || existingPayment?.user_id || null;
+
+  if (existingPayment) {
+    // 记录存在，执行更新
+    console.log(`[Webhook] Found existing payment ${existingPayment.id}, updating status from ${existingPayment.status} to ${status}`);
+    
+    const { error: updateError } = await supabaseAdmin
+      .from("payments")
+      .update({
+        status,
+        user_id: resolvedUserId,
+        subscription_id: subscriptionId || null,
+        metadata: { ...metadata },
+        completed_at: completedAt || (status === "completed" ? now : null),
+        updated_at: now,
+      })
+      .eq("id", existingPayment.id);
+
+    if (updateError) {
+      console.error("[Webhook] Error updating payment record:", updateError);
+      throw updateError;
+    }
+    console.log(`[Webhook] Successfully updated payment ${existingPayment.id} to status: ${status}`);
+  } else {
+    // 记录不存在，执行插入
+    console.log(`[Webhook] No existing payment found, inserting new record for transaction: ${transactionId}`);
+    
+    const { error: insertError } = await supabaseAdmin.from("payments").insert({
+      user_id: resolvedUserId,
+      amount,
+      currency: currency?.toUpperCase?.() || "USD",
+      status,
+      payment_method: "stripe",
+      transaction_id: transactionId,
+      subscription_id: subscriptionId || null,
+      metadata,
+      completed_at: completedAt || (status === "completed" ? now : null),
+      updated_at: now,
+    });
+
+    if (insertError) {
+      console.error("[Webhook] Error inserting payment record:", insertError);
+      throw insertError;
+    }
+    console.log(`[Webhook] Successfully inserted new payment record for transaction: ${transactionId}`);
+  }
 }
 
 /**
@@ -43,10 +198,10 @@ export async function handlePayPalWebhook(event: WebhookEvent) {
       default:
         console.log(`Unhandled PayPal webhook type: ${type}`);
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error(`Error handling PayPal webhook ${type}:`, {
-      error: error.message,
-      stack: error.stack,
+      error: error?.message,
+      stack: error?.stack,
       data
     });
     throw error;
@@ -63,6 +218,22 @@ export async function handleStripeWebhook(event: WebhookEvent) {
 
   try {
     switch (type) {
+      case "checkout.session.completed":
+        await handleStripeCheckoutSessionCompleted(data);
+        break;
+      case "customer.subscription.created":
+      case "customer.subscription.updated":
+        await handleStripeSubscriptionUpdated(data, type);
+        break;
+      case "customer.subscription.deleted":
+        await handleStripeSubscriptionDeleted(data);
+        break;
+      case "invoice.payment_succeeded":
+        await handleStripeInvoicePaymentSucceeded(data);
+        break;
+      case "invoice.payment_failed":
+        await handleStripeInvoicePaymentFailed(data);
+        break;
       case "payment_intent.succeeded":
         await handleStripePaymentSucceeded(data);
         break;
@@ -278,26 +449,39 @@ async function handlePayPalPaymentDeclined(data: any) {
  */
 async function handleStripePaymentSucceeded(data: any) {
   const paymentIntentId = data.id;
-  const amount = data.amount / 100; // Stripe 使用分作为单位
-  const currency = data.currency;
+  const amount =
+    data.amount_received !== undefined
+      ? data.amount_received / 100
+      : data.amount / 100;
+  const currency = (data.currency || "usd").toUpperCase();
+  const metadata = data.metadata || {};
+  const subscriptionId =
+    typeof data.subscription === "string" ? data.subscription : undefined;
 
-  // 更新支付记录状态
-  const { error } = await supabaseAdmin
-    .from("payments")
-    .update({
-      status: "completed",
-      completed_at: new Date().toISOString(),
-      transaction_id: paymentIntentId,
-    })
-    .eq("transaction_id", paymentIntentId);
+  let userId =
+    metadata.userId || metadata.user_id || metadata.userid || null;
 
-  if (error) {
-    console.error("Error updating Stripe payment status:", error);
-    throw error;
+  if (!userId) {
+    userId = await resolveUserIdFromStripe(metadata, {
+      subscriptionId,
+      paymentIntentId,
+    });
   }
 
-  // 更新用户订阅状态
-  await updateUserSubscription(data.metadata?.userId, amount, currency.toUpperCase());
+  await upsertStripePaymentRecord({
+    transactionId: paymentIntentId,
+    amount,
+    currency,
+    status: "completed",
+    userId,
+    subscriptionId,
+    metadata,
+    completedAt: new Date().toISOString(),
+  });
+
+  if (userId) {
+    await updateUserSubscription(userId, amount, currency, metadata);
+  }
 
   console.log(`Stripe payment succeeded: ${paymentIntentId}`);
 }
@@ -307,20 +491,37 @@ async function handleStripePaymentSucceeded(data: any) {
  */
 async function handleStripePaymentFailed(data: any) {
   const paymentIntentId = data.id;
+  const metadata = data.metadata || {};
+  const subscriptionId =
+    typeof data.subscription === "string" ? data.subscription : undefined;
+  const amount =
+    data.amount_received !== undefined
+      ? data.amount_received / 100
+      : data.amount
+      ? data.amount / 100
+      : 0;
+  const currency = (data.currency || "usd").toUpperCase();
 
-  // 更新支付记录状态
-  const { error } = await supabaseAdmin
-    .from("payments")
-    .update({
-      status: "failed",
-      completed_at: new Date().toISOString(),
-    })
-    .eq("transaction_id", paymentIntentId);
+  let userId =
+    metadata.userId || metadata.user_id || metadata.userid || null;
 
-  if (error) {
-    console.error("Error updating Stripe payment status:", error);
-    throw error;
+  if (!userId) {
+    userId = await resolveUserIdFromStripe(metadata, {
+      subscriptionId,
+      paymentIntentId,
+    });
   }
+
+  await upsertStripePaymentRecord({
+    transactionId: paymentIntentId,
+    amount,
+    currency,
+    status: "failed",
+    userId,
+    subscriptionId,
+    metadata,
+    completedAt: new Date().toISOString(),
+  });
 
   console.log(`Stripe payment failed: ${paymentIntentId}`);
 }
@@ -330,10 +531,19 @@ async function handleStripePaymentFailed(data: any) {
  */
 async function updateUserSubscription(userId: string, amount: number, currency: string, metadata?: any) {
   try {
+    if (!userId) {
+      console.warn("updateUserSubscription called without userId", { metadata });
+      return;
+    }
+
     // 从元数据或金额判断订阅类型
     const billingCycle = metadata?.billingCycle || (amount >= 99 ? "yearly" : "monthly");
     const planType = metadata?.planType || (amount >= 199 ? "enterprise" : "pro");
     const daysToAdd = billingCycle === "yearly" ? 365 : 30;
+    const requestedEnd = metadata?.subscriptionEnd ? new Date(metadata.subscriptionEnd) : null;
+    const statusToSet: AppSubscriptionStatus = metadata?.status || "active";
+    const isStatusActive = statusToSet === "active";
+    const normalizedCurrency = currency?.toUpperCase?.() || "USD";
 
     // 首先检查用户是否已有活跃订阅
     const { data: existingSubscription, error: fetchError } = await supabaseAdmin
@@ -352,21 +562,30 @@ async function updateUserSubscription(userId: string, amount: number, currency: 
       throw fetchError;
     }
 
-    if (existingSubscription) {
+    if (requestedEnd) {
+      if (existingSubscription) {
+        const currentEnd = new Date(existingSubscription.subscription_end);
+        subscriptionEnd = currentEnd > requestedEnd ? currentEnd : requestedEnd;
+      } else {
+        isNewSubscription = true;
+        subscriptionEnd = requestedEnd;
+      }
+    } else if (existingSubscription && isStatusActive) {
       // 用户已有活跃订阅，叠加时间
       console.log(`User ${userId} has existing subscription ending at: ${existingSubscription.subscription_end}`);
 
-      // 从现有订阅的结束时间开始叠加
       subscriptionEnd = new Date(existingSubscription.subscription_end);
       subscriptionEnd.setDate(subscriptionEnd.getDate() + daysToAdd);
 
       console.log(`Extended subscription to: ${subscriptionEnd.toISOString()}`);
+    } else if (existingSubscription && !isStatusActive) {
+      subscriptionEnd = new Date(existingSubscription.subscription_end);
     } else {
-      // 用户没有活跃订阅，创建新订阅
       isNewSubscription = true;
       subscriptionEnd = new Date();
-      subscriptionEnd.setDate(subscriptionEnd.getDate() + daysToAdd);
-
+      if (isStatusActive) {
+        subscriptionEnd.setDate(subscriptionEnd.getDate() + daysToAdd);
+      }
       console.log(`Created new subscription for user ${userId} ending at: ${subscriptionEnd.toISOString()}`);
     }
 
@@ -375,10 +594,11 @@ async function updateUserSubscription(userId: string, amount: number, currency: 
       .from("user_subscriptions")
       .upsert({
         user_id: userId,
-        status: "active",
+        status: statusToSet,
         subscription_end: subscriptionEnd.toISOString(),
-        plan_type: billingCycle === "yearly" ? "yearly" : "monthly",
-        currency,
+        // 订阅档位（pro / enterprise）
+        plan_type: planType,
+        currency: normalizedCurrency,
         updated_at: new Date().toISOString(),
         // 只在创建新订阅时设置 created_at
         ...(isNewSubscription && { created_at: new Date().toISOString() })
@@ -399,7 +619,7 @@ async function updateUserSubscription(userId: string, amount: number, currency: 
       {
         user_metadata: {
           subscription_plan: planType,
-          subscription_status: "active",
+          subscription_status: statusToSet,
           subscription_end: subscriptionEnd.toISOString(),
         }
       }
@@ -429,5 +649,374 @@ export async function handleWebhook(event: WebhookEvent) {
     return await handleStripeWebhook(event);
   } else {
     throw new Error(`Unsupported payment method for webhook: ${paymentMethod}`);
+  }
+}
+
+/**
+ * Stripe Checkout Session completed (subscription checkout)
+ */
+async function handleStripeCheckoutSessionCompleted(session: Stripe.Checkout.Session) {
+  const paymentIntentId =
+    typeof session.payment_intent === "string"
+      ? session.payment_intent
+      : session.payment_intent?.id;
+  const subscriptionId =
+    typeof session.subscription === "string"
+      ? session.subscription
+      : (session.subscription as Stripe.Subscription)?.id;
+
+  const amount = session.amount_total ? session.amount_total / 100 : 0;
+  const currency = (session.currency || "usd").toUpperCase();
+  const metadata = session.metadata || {};
+
+  let userId =
+    metadata.userId ||
+    metadata.user_id ||
+    metadata.userid ||
+    session.client_reference_id ||
+    null;
+
+  let billingCycle: "monthly" | "yearly" | undefined =
+    (metadata.billingCycle as any) || undefined;
+  let planType =
+    metadata.planType ||
+    metadata.tier ||
+    metadata.plan ||
+    (amount >= 199 ? "enterprise" : "pro");
+  let subscriptionEnd: string | undefined;
+
+  if (subscriptionId) {
+    try {
+      const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+
+      billingCycle =
+        billingCycle ||
+        resolveBillingCycleFromInterval(
+          subscription.items?.data?.[0]?.price?.recurring?.interval
+        );
+      planType =
+        planType ||
+        subscription.metadata?.planType ||
+        subscription.metadata?.tier ||
+        subscription.items?.data?.[0]?.price?.nickname?.toLowerCase() ||
+        planType;
+      subscriptionEnd = subscription.current_period_end
+        ? new Date(subscription.current_period_end * 1000).toISOString()
+        : undefined;
+
+      if (!userId) {
+        userId = await resolveUserIdFromStripe(subscription.metadata, {
+          subscriptionId,
+          paymentIntentId,
+        });
+      }
+    } catch (error) {
+      console.error("Error retrieving Stripe subscription for checkout:", error);
+    }
+  }
+
+  if (!userId) {
+    userId = await resolveUserIdFromStripe(metadata, {
+      subscriptionId,
+      paymentIntentId,
+    });
+  }
+
+  await upsertStripePaymentRecord({
+    transactionId: paymentIntentId || session.id,
+    amount,
+    currency,
+    status: "completed",
+    userId,
+    subscriptionId,
+    metadata: {
+      ...metadata,
+      checkoutSessionId: session.id,
+      billingCycle: billingCycle || "monthly",
+      planType,
+      subscriptionId,
+      eventType: "checkout.session.completed",
+    },
+    completedAt: new Date().toISOString(),
+  });
+
+  if (userId) {
+    await updateUserSubscription(userId, amount, currency, {
+      ...metadata,
+      billingCycle: billingCycle || "monthly",
+      planType,
+      subscriptionEnd,
+      status: "active",
+      subscriptionId,
+    });
+  } else {
+    console.warn("Stripe checkout completed but user id missing", {
+      checkoutSessionId: session.id,
+      subscriptionId,
+    });
+  }
+}
+
+/**
+ * Stripe subscription created/updated
+ */
+async function handleStripeSubscriptionUpdated(
+  subscription: Stripe.Subscription,
+  eventType: string
+) {
+  const subscriptionId = subscription.id;
+  const price = subscription.items?.data?.[0]?.price;
+  const amount = price?.unit_amount ? price.unit_amount / 100 : 0;
+  const currency = (price?.currency || subscription.currency || "usd").toUpperCase();
+
+  const billingCycle = resolveBillingCycleFromInterval(price?.recurring?.interval);
+  const planType =
+    subscription.metadata?.planType ||
+    subscription.metadata?.tier ||
+    price?.nickname?.toLowerCase() ||
+    (amount >= 199 ? "enterprise" : "pro");
+  const subscriptionEnd = subscription.current_period_end
+    ? new Date(subscription.current_period_end * 1000).toISOString()
+    : undefined;
+  const status = mapStripeStatusToAppStatus(subscription.status);
+
+  let userId =
+    subscription.metadata?.userId ||
+    subscription.metadata?.user_id ||
+    subscription.metadata?.userid ||
+    null;
+
+  if (!userId) {
+    userId = await resolveUserIdFromStripe(subscription.metadata, { subscriptionId });
+  }
+
+  if (!userId) {
+    console.warn(`Stripe ${eventType} received without user metadata`, {
+      subscriptionId,
+    });
+    return;
+  }
+
+  await updateUserSubscription(userId, amount, currency, {
+    ...subscription.metadata,
+    billingCycle,
+    planType,
+    subscriptionEnd,
+    status,
+    subscriptionId,
+  });
+}
+
+/**
+ * Stripe subscription cancelled/deleted
+ */
+async function handleStripeSubscriptionDeleted(subscription: Stripe.Subscription) {
+  const subscriptionId = subscription.id;
+  const price = subscription.items?.data?.[0]?.price;
+  const amount = price?.unit_amount ? price.unit_amount / 100 : 0;
+  const currency = (price?.currency || subscription.currency || "usd").toUpperCase();
+  const billingCycle = resolveBillingCycleFromInterval(price?.recurring?.interval);
+  const planType =
+    subscription.metadata?.planType ||
+    subscription.metadata?.tier ||
+    price?.nickname?.toLowerCase() ||
+    (amount >= 199 ? "enterprise" : "pro");
+
+  const subscriptionEnd =
+    subscription.cancel_at_period_end && subscription.current_period_end
+      ? new Date(subscription.current_period_end * 1000).toISOString()
+      : new Date().toISOString();
+
+  let userId =
+    subscription.metadata?.userId ||
+    subscription.metadata?.user_id ||
+    subscription.metadata?.userid ||
+    null;
+
+  if (!userId) {
+    userId = await resolveUserIdFromStripe(subscription.metadata, { subscriptionId });
+  }
+
+  if (!userId) {
+    console.warn("Stripe subscription deleted but user id missing", { subscriptionId });
+    return;
+  }
+
+  await updateUserSubscription(userId, amount, currency, {
+    ...subscription.metadata,
+    billingCycle,
+    planType,
+    subscriptionEnd,
+    status: "cancelled",
+    subscriptionId,
+  });
+}
+
+/**
+ * Stripe invoice payment succeeded (recurring)
+ */
+async function handleStripeInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
+  const paymentIntentId =
+    typeof invoice.payment_intent === "string"
+      ? invoice.payment_intent
+      : invoice.payment_intent?.id;
+  const subscriptionId =
+    typeof invoice.subscription === "string"
+      ? invoice.subscription
+      : (invoice.subscription as Stripe.Subscription)?.id;
+
+  const amount =
+    invoice.amount_paid !== undefined
+      ? invoice.amount_paid / 100
+      : invoice.amount_due !== undefined
+      ? invoice.amount_due / 100
+      : 0;
+  const currency = (invoice.currency || "usd").toUpperCase();
+
+  const line = invoice.lines?.data?.[0];
+  const billingCycle = resolveBillingCycleFromInterval(line?.price?.recurring?.interval);
+  const planType =
+    invoice.metadata?.planType ||
+    invoice.metadata?.tier ||
+    line?.price?.nickname?.toLowerCase() ||
+    (line?.price?.unit_amount && line.price.unit_amount / 100 >= 199 ? "enterprise" : "pro");
+  const subscriptionEnd = line?.period?.end
+    ? new Date(line.period.end * 1000).toISOString()
+    : undefined;
+
+  let userId =
+    invoice.metadata?.userId ||
+    invoice.metadata?.user_id ||
+    invoice.metadata?.userid ||
+    null;
+
+  if (!userId) {
+    userId = await resolveUserIdFromStripe(invoice.metadata || undefined, {
+      subscriptionId,
+      paymentIntentId,
+    });
+  }
+
+  if (!userId && paymentIntentId) {
+    try {
+      const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+      userId =
+        (paymentIntent.metadata as any)?.userId ||
+        (paymentIntent.metadata as any)?.user_id ||
+        null;
+    } catch (error) {
+      console.error("Error retrieving payment intent for invoice:", error);
+    }
+  }
+
+  await upsertStripePaymentRecord({
+    transactionId: paymentIntentId || invoice.id,
+    amount,
+    currency,
+    status: "completed",
+    userId,
+    subscriptionId,
+    metadata: {
+      ...(invoice.metadata || {}),
+      billingCycle: billingCycle || "monthly",
+      planType,
+      subscriptionId,
+      invoiceId: invoice.id,
+      eventType: "invoice.payment_succeeded",
+    },
+    completedAt: new Date().toISOString(),
+  });
+
+  if (userId) {
+    await updateUserSubscription(userId, amount, currency, {
+      ...invoice.metadata,
+      billingCycle: billingCycle || "monthly",
+      planType,
+      subscriptionEnd,
+      status: "active",
+      subscriptionId,
+    });
+  } else {
+    console.warn("Stripe invoice payment succeeded but user id missing", {
+      invoiceId: invoice.id,
+      subscriptionId,
+    });
+  }
+}
+
+/**
+ * Stripe invoice payment failed
+ */
+async function handleStripeInvoicePaymentFailed(invoice: Stripe.Invoice) {
+  const paymentIntentId =
+    typeof invoice.payment_intent === "string"
+      ? invoice.payment_intent
+      : invoice.payment_intent?.id;
+  const subscriptionId =
+    typeof invoice.subscription === "string"
+      ? invoice.subscription
+      : (invoice.subscription as Stripe.Subscription)?.id;
+
+  const amount =
+    invoice.amount_due !== undefined
+      ? invoice.amount_due / 100
+      : (invoice.amount_paid ?? 0) / 100;
+  const currency = (invoice.currency || "usd").toUpperCase();
+  const line = invoice.lines?.data?.[0];
+  const billingCycle = resolveBillingCycleFromInterval(line?.price?.recurring?.interval);
+  const planType =
+    invoice.metadata?.planType ||
+    invoice.metadata?.tier ||
+    line?.price?.nickname?.toLowerCase() ||
+    (line?.price?.unit_amount && line.price.unit_amount / 100 >= 199 ? "enterprise" : "pro");
+  const subscriptionEnd = line?.period?.end
+    ? new Date(line.period.end * 1000).toISOString()
+    : new Date().toISOString();
+
+  let userId =
+    invoice.metadata?.userId ||
+    invoice.metadata?.user_id ||
+    invoice.metadata?.userid ||
+    null;
+
+  if (!userId) {
+    userId = await resolveUserIdFromStripe(invoice.metadata || undefined, {
+      subscriptionId,
+      paymentIntentId,
+    });
+  }
+
+  await upsertStripePaymentRecord({
+    transactionId: paymentIntentId || invoice.id,
+    amount,
+    currency,
+    status: "failed",
+    userId,
+    subscriptionId,
+    metadata: {
+      ...(invoice.metadata || {}),
+      billingCycle: billingCycle || "monthly",
+      planType,
+      subscriptionId,
+      invoiceId: invoice.id,
+      eventType: "invoice.payment_failed",
+    },
+    completedAt: new Date().toISOString(),
+  });
+
+  if (userId) {
+    await updateUserSubscription(userId, amount, currency, {
+      ...invoice.metadata,
+      billingCycle: billingCycle || "monthly",
+      planType,
+      subscriptionEnd,
+      status: "expired",
+      subscriptionId,
+    });
+  } else {
+    console.warn("Stripe invoice payment failed but user id missing", {
+      invoiceId: invoice.id,
+      subscriptionId,
+    });
   }
 }
