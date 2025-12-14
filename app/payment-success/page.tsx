@@ -6,8 +6,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { CheckCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { SearchParamsBoundary } from "@/components/search-params-boundary";
 
-export default function PaymentSuccessPage() {
+function PaymentSuccessContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [isProcessing, setIsProcessing] = useState(true);
@@ -205,5 +206,13 @@ export default function PaymentSuccessPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function PaymentSuccessPage() {
+  return (
+    <SearchParamsBoundary>
+      <PaymentSuccessContent />
+    </SearchParamsBoundary>
   );
 }

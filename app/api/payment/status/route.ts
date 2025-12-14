@@ -5,6 +5,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/integrations/supabase-admin";
 import { z } from "zod";
 
+// Force dynamic rendering for this route
+export const dynamic = 'force-dynamic';
+
 // 验证查询参数
 const querySchema = z.object({
   paymentId: z.string().min(1, "paymentId is required"),

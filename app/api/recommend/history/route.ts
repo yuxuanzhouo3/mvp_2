@@ -3,11 +3,14 @@
  * GET /api/recommend/history - 获取历史记录
  * DELETE /api/recommend/history - 删除历史记录
  * PUT /api/recommend/history - 批量更新历史记录
- * 
+ *
  * 支持双环境架构：INTL (Supabase) 和 CN (CloudBase)
  */
 
 import { type NextRequest, NextResponse } from "next/server"
+
+// Force dynamic rendering for this route
+export const dynamic = 'force-dynamic';
 import { isValidUserId } from "@/lib/utils"
 import { getRecommendationAdapter } from "@/lib/database"
 import type { RecommendationCategory, UserAction } from "@/lib/database/types"

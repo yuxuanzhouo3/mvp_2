@@ -2,6 +2,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getStoredAuthState } from "@/lib/auth/auth-state-manager";
 
+// Force dynamic rendering for this route
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/auth/me
  * 获取当前用户信息（中国版认证）

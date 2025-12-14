@@ -5,6 +5,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/integrations/supabase-admin";
 import { requireAuth } from "@/lib/auth/auth";
 
+// Force dynamic rendering for this route
+export const dynamic = 'force-dynamic';
+
 // GET /api/payment/history?page=1&pageSize=20
 export async function GET(request: NextRequest) {
   try {

@@ -5,10 +5,11 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { isChinaRegion } from "@/lib/config/region"
+import { SearchParamsBoundary } from "@/components/search-params-boundary"
 
 type AuthStatus = "loading" | "success" | "error"
 
-export default function AuthCallbackPage() {
+function AuthCallbackContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const code = searchParams.get("code")
@@ -139,4 +140,12 @@ function LoadingSpinner() {
       />
     </svg>
   )
+}
+
+export default function AuthCallbackPage() {
+  return (
+    <SearchParamsBoundary>
+      <AuthCallbackContent />
+    </SearchParamsBoundary>
+  );
 }

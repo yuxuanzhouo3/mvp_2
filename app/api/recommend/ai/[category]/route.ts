@@ -6,6 +6,9 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+
+// Force dynamic rendering for this route
+export const dynamic = 'force-dynamic';
 import { generateRecommendations, isAIProviderConfigured } from "@/lib/ai/zhipu-recommendation";
 import { generateSearchLink, selectBestPlatform, selectFoodPlatformWithRotation } from "@/lib/search/search-engine";
 import { enhanceTravelRecommendation } from "@/lib/ai/travel-enhancer";
