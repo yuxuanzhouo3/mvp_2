@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/integrations/supabase";
 import { isChinaRegion } from "@/lib/config/region";
 
-const DEFAULT_REDIRECT_PATH = "/dashboard";
+const DEFAULT_REDIRECT_PATH = "/";
 const REFRESH_TOKEN_MAX_AGE = 60 * 60 * 24 * 14; // 14 days
 const isProduction = process.env.NODE_ENV === "production";
 

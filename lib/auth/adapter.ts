@@ -131,7 +131,7 @@ class SupabaseAuthAdapter implements AuthAdapter {
       "http://localhost:3000";
     const authCallbackPath =
       process.env.NEXT_PUBLIC_AUTH_CALLBACK_PATH || "/auth/callback";
-    const redirectTo = `${baseUrl.replace(/\/$/, "")}${authCallbackPath}?redirect=/dashboard`;
+    const redirectTo = `${baseUrl.replace(/\/$/, "")}${authCallbackPath}?redirect=/`;
 
     await this.supabase.auth.signInWithOAuth({
       provider,
