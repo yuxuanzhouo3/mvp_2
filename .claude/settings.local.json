@@ -33,7 +33,8 @@
       "Bash(timeout:*)",
       "Bash(del:*)",
       "Bash(set:*)",
-      "Bash(npx next build:*)"
+      "Bash(npx next build:*)",
+      "Bash(npx supabase --help:*)"
     ],
     "deny": [],
     "ask": []

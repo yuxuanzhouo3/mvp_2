@@ -55,7 +55,7 @@ export async function POST() {
 
       const { error } = await supabase
         .from('profiles')
-        .update({ subscription_plan: 'pro', pro: true })
+        .update({ subscription_tier: 'pro' })
         .eq('id', user.id)
 
       if (error) {
