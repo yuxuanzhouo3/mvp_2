@@ -38,16 +38,25 @@ function AuthCallbackContent() {
           data: { session },
         } = await supabase.auth.getSession()
 
-        // Exchange the code for a session if none exists yet
+        // If no session, attempt to parse the current URL (handles both code and hash flows)
         if (!session) {
-          if (!code) {
-            throw new Error("Missing OAuth code in callback URL")
-          }
-          const { data, error } = await supabase.auth.exchangeCodeForSession(code)
+          const { data, error } = await supabase.auth.getSessionFromUrl({
+            storeSession: true,
+          })
+
           if (error) {
-            throw error
+            // As a fallback, try explicit code exchange if a code param exists
+            if (code) {
+              const { data: codeData, error: codeError } =
+                await supabase.auth.exchangeCodeForSession(code)
+              if (codeError) throw codeError
+              session = codeData.session
+            } else {
+              throw error
+            }
+          } else {
+            session = data.session
           }
-          session = data.session
         }
 
         if (!session?.access_token) {
