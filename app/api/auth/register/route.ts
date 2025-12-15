@@ -111,17 +111,48 @@ export async function POST(request: NextRequest) {
           data: {
             name: fullName,
           },
+          emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/auth/callback`,
         },
       });
 
       if (error) {
-        if (error.message.includes("already registered")) {
+        // Log detailed error information for debugging
+        console.error("[Register] Supabase signup error:", {
+          message: error.message,
+          status: error.status,
+          code: error.code,
+          timestamp: new Date().toISOString(),
+        });
+
+        // Check for specific error types
+        if (error.message.includes("already registered") || error.message.includes("already exists")) {
           return NextResponse.json(
             {
               error: "Email already registered",
               code: "EMAIL_EXISTS",
             },
             { status: 409 }
+          );
+        }
+
+        if (error.message.includes("Invalid redirect") || error.message.includes("redirect")) {
+          return NextResponse.json(
+            {
+              error: "Invalid redirect configuration. Please ensure your domain is added to Supabase redirect URLs.",
+              code: "INVALID_REDIRECT",
+              details: "Contact admin to verify Supabase Auth settings",
+            },
+            { status: 400 }
+          );
+        }
+
+        if (error.message.includes("SMTP") || error.message.includes("email")) {
+          return NextResponse.json(
+            {
+              error: "Email service is temporarily unavailable. Please try again later.",
+              code: "EMAIL_SERVICE_ERROR",
+            },
+            { status: 503 }
           );
         }
 
@@ -142,7 +173,7 @@ export async function POST(request: NextRequest) {
           email: data.user?.email,
           name: fullName,
         },
-        message: "Registration successful. You can now log in.",
+        message: "Registration successful. Check your email to confirm your account.",
         region: "INTL",
       });
     }
