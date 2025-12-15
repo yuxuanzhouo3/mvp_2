@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Badge } from "@/components/ui/badge"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
-import { Check, Crown, Zap, Building2, CreditCard, ArrowLeft, Loader2, Settings, Info } from "lucide-react"
+import { Check, Crown, Zap, Building2, CreditCard, ArrowLeft, Loader2, Settings, Info, ShieldCheck, Sparkles } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useLanguage } from "@/components/language-provider"
 import { useTranslations } from "@/lib/i18n"
@@ -178,6 +178,7 @@ export default function PricingPage() {
     period: plan.id === "free" ? "" : billingCycle === "monthly" ? "/month" : "/year",
     savings: billingCycle === "yearly" && plan.id !== "free" ? Math.round((1 - plan.yearlyPrice / (plan.monthlyPrice * 12)) * 100) : 0,
   }))
+  const proHeroFeatures = t.pricing.plans.pro.features.slice(0, 3)
 
   return (
     <>
@@ -198,81 +199,115 @@ export default function PricingPage() {
           animation: selectCard 0.3s ease-in-out forwards, glow 2s ease-in-out infinite;
         }
       `}</style>
-      <div className="min-h-screen bg-[#F7F9FC] px-4 py-8 sm:py-12 md:py-16">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="flex items-center mb-6 sm:mb-8">
-          <Link href="/">
-            <Button variant="ghost" size="sm" className="text-gray-600 hover:text-gray-900">
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              {t.pricing.back}
-            </Button>
-          </Link>
+      <div className="relative min-h-screen overflow-hidden bg-gradient-to-b from-[#f7f9ff] via-[#f4f7ff] to-[#eef2ff] px-4 py-8 sm:py-12 md:py-16">
+        <div className="pointer-events-none absolute inset-0">
+          <div className="absolute -left-24 top-6 h-64 w-64 rounded-full bg-gradient-to-br from-blue-200/70 via-blue-100/40 to-transparent blur-3xl" />
+          <div className="absolute -right-16 bottom-10 h-64 w-64 rounded-full bg-gradient-to-br from-purple-200/60 via-blue-100/30 to-transparent blur-3xl" />
+          <div className="absolute inset-x-4 top-20 h-px bg-gradient-to-r from-transparent via-blue-200 to-transparent" />
         </div>
-
-        <div className="text-center mb-8 sm:mb-12">
-          <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold text-gray-900 mb-4">
-            {t.pricing.title}
-          </h1>
-          <p className="text-lg sm:text-xl text-gray-600 max-w-3xl mx-auto px-4">
-            {t.pricing.subtitle}
-          </p>
-          {currentTier !== "free" && (
-            <Badge className="mt-4 sm:mt-6" variant="secondary">
-              {t.pricing.current}: {currentTier.charAt(0).toUpperCase() + currentTier.slice(1)}
-            </Badge>
-          )}
-        </div>
-
-        {/* Billing Cycle Toggle */}
-        <div className="flex justify-center mb-6 sm:mb-8">
-          <div className="bg-white rounded-lg shadow-sm border p-1 inline-flex">
-            <button
-              onClick={() => setBillingCycle("monthly")}
-              className={cn(
-                "px-4 sm:px-6 py-2 rounded-md text-sm font-medium transition-all",
-                billingCycle === "monthly"
-                  ? "bg-blue-600 text-white shadow"
-                  : "text-gray-600 hover:text-gray-900"
-              )}
-            >
-              {t.pricing.billing.monthly || "Monthly"}
-            </button>
-            <button
-              onClick={() => setBillingCycle("yearly")}
-              className={cn(
-                "px-4 sm:px-6 py-2 rounded-md text-sm font-medium transition-all relative",
-                billingCycle === "yearly"
-                  ? "bg-blue-600 text-white shadow"
-                  : "text-gray-600 hover:text-gray-900"
-              )}
-            >
-              {t.pricing.billing.yearly || "Yearly"}
-              <span className="absolute -top-2 -right-2 bg-green-500 text-white text-xs px-2 py-0.5 rounded-full">
-                -20%
-              </span>
-            </button>
+        <div className="relative max-w-6xl mx-auto">
+          {/* Header */}
+          <div className="flex items-center justify-between gap-3 mb-4 sm:mb-6">
+            <Link href="/">
+              <Button variant="ghost" size="sm" className="text-gray-600 hover:text-gray-900">
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                {t.pricing.back}
+              </Button>
+            </Link>
           </div>
-        </div>
+
+          <div className="relative overflow-hidden rounded-3xl border border-white/60 bg-white/80 shadow-[0_25px_80px_-45px_rgba(15,23,42,0.45)] backdrop-blur-xl mb-8 sm:mb-12">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_20%,rgba(59,130,246,0.12),transparent_35%),radial-gradient(circle_at_85%_10%,rgba(109,40,217,0.12),transparent_35%)]" aria-hidden="true" />
+            <div className="relative grid gap-6 p-6 sm:p-8 md:grid-cols-[1.1fr,0.9fr] items-center">
+              <div className="space-y-4">
+                <div className="inline-flex items-center gap-2 rounded-full bg-blue-50 text-blue-700 px-3 py-1 text-xs font-semibold shadow-sm">
+                  <Sparkles className="h-4 w-4" />
+                  <span>{language === "zh" ? "Pro 体验" : "Pro experience"}</span>
+                </div>
+                <div className="space-y-3">
+                  <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold text-gray-900">{t.pricing.title}</h1>
+                  <p className="text-base sm:text-lg text-gray-600 max-w-3xl">{t.pricing.subtitle}</p>
+                  {currentTier !== "free" && (
+                    <Badge className="mt-2" variant="secondary">
+                      {t.pricing.current}: {currentTier.charAt(0).toUpperCase() + currentTier.slice(1)}
+                    </Badge>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-2 sm:gap-3">
+                  {proHeroFeatures.map((feature, index) => (
+                    <span
+                      key={`${feature}-${index}`}
+                      className="inline-flex items-center gap-2 rounded-full border border-blue-100 bg-white/80 px-3 py-1 text-xs sm:text-sm text-blue-800 shadow-sm"
+                    >
+                      <Check className="h-3.5 w-3.5 text-blue-600" />
+                      {feature}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-3 md:space-y-4">
+                <div className="bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-2xl p-4 sm:p-5 shadow-xl">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="text-sm text-white/80">{language === "zh" ? "结算周期" : "Billing cycle"}</div>
+                    <div className="flex items-center gap-1 text-[11px] font-semibold text-emerald-100 bg-white/10 px-2 py-1 rounded-full">
+                      <Sparkles className="h-3 w-3" />
+                      {language === "zh" ? "年度立省 20%" : "Save 20% yearly"}
+                    </div>
+                  </div>
+                  <div className="flex rounded-xl bg-white/10 p-1 gap-1">
+                    <button
+                      onClick={() => setBillingCycle("monthly")}
+                      className={cn(
+                        "flex-1 rounded-lg px-4 py-2 text-sm font-semibold transition-all",
+                        billingCycle === "monthly"
+                          ? "bg-white text-slate-900 shadow-sm"
+                          : "text-white/80 hover:bg-white/10"
+                      )}
+                    >
+                      {t.pricing.billing.monthly || "Monthly"}
+                    </button>
+                    <button
+                      onClick={() => setBillingCycle("yearly")}
+                      className={cn(
+                        "flex-1 rounded-lg px-4 py-2 text-sm font-semibold transition-all",
+                        billingCycle === "yearly"
+                          ? "bg-white text-slate-900 shadow-sm"
+                          : "text-white/80 hover:bg-white/10"
+                  )}
+                >
+                      {t.pricing.billing.yearly || "Yearly"}
+                    </button>
+                  </div>
+                  <p className="text-xs text-white/70 text-center">
+                    {language === "zh" ? "灵活切换，锁定最优价格" : "Switch anytime - keep the best rate."}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-gray-600 bg-white/70 border border-white/60 rounded-xl px-3 py-2 shadow-sm">
+                  <ShieldCheck className="h-4 w-4 text-blue-600" />
+                  <span>{language === "zh" ? "支付信息已加密传输" : "Payments are encrypted end-to-end"}</span>
+                </div>
+              </div>
+            </div>
+          </div>
 
         {/* Payment Method Selector */}
         {isAuthenticated && (
-          <Card className="max-w-lg mx-auto mb-8 sm:mb-10">
-            <CardHeader className="text-center sm:text-left">
-              <CardTitle className="text-lg flex items-center gap-2 justify-center sm:justify-start">
-                <CreditCard className="h-5 w-5" />
+          <Card className="max-w-2xl mx-auto mb-8 sm:mb-10 bg-white/80 backdrop-blur-xl border-white/70 shadow-[0_20px_60px_-45px_rgba(15,23,42,0.4)] rounded-2xl">
+            <CardHeader className="text-center sm:text-left pb-4 sm:pb-5">
+              <CardTitle className="text-lg flex items-center gap-2 justify-center sm:justify-start text-gray-900">
+                <CreditCard className="h-5 w-5 text-blue-600" />
                 {t.pricing.paymentMethod.title}
               </CardTitle>
-              <CardDescription>{t.pricing.paymentMethod.subtitle}</CardDescription>
+              <CardDescription className="text-gray-600">{t.pricing.paymentMethod.subtitle}</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="space-y-3 sm:space-y-4">
               <RadioGroup value={selectedPayment} onValueChange={(v) => setSelectedPayment(v as PaymentMethod)}>
                 <div
                   className={cn(
-                    "flex items-center space-x-3 p-3 sm:p-4 border-2 rounded-lg cursor-pointer transition-all",
+                    "flex items-center space-x-3 p-3 sm:p-4 border-2 rounded-xl cursor-pointer transition-all",
                     selectedPayment === "stripe"
-                      ? "border-blue-500 bg-blue-50"
-                      : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                      ? "border-blue-500 bg-blue-50 shadow-md"
+                      : "border-gray-200 hover:border-blue-200 hover:bg-blue-50/30"
                   )}
                   onClick={() => setSelectedPayment("stripe")}
                 >
@@ -281,7 +316,7 @@ export default function PricingPage() {
                     "w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all flex-shrink-0",
                     selectedPayment === "stripe"
                       ? "border-blue-500 bg-blue-500"
-                      : "border-gray-300"
+                      : "border-gray-300 bg-white"
                   )}>
                     {selectedPayment === "stripe" && (
                       <div className="w-2 h-2 bg-white rounded-full" />
@@ -303,10 +338,10 @@ export default function PricingPage() {
                 </div>
                 <div
                   className={cn(
-                    "flex items-center space-x-3 p-3 sm:p-4 border-2 rounded-lg cursor-pointer transition-all",
+                    "flex items-center space-x-3 p-3 sm:p-4 border-2 rounded-xl cursor-pointer transition-all",
                     selectedPayment === "paypal"
-                      ? "border-blue-500 bg-blue-50"
-                      : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                      ? "border-blue-500 bg-blue-50 shadow-md"
+                      : "border-gray-200 hover:border-blue-200 hover:bg-blue-50/30"
                   )}
                   onClick={() => setSelectedPayment("paypal")}
                 >
@@ -315,7 +350,7 @@ export default function PricingPage() {
                     "w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all flex-shrink-0",
                     selectedPayment === "paypal"
                       ? "border-blue-500 bg-blue-500"
-                      : "border-gray-300"
+                      : "border-gray-300 bg-white"
                   )}>
                     {selectedPayment === "paypal" && (
                       <div className="w-2 h-2 bg-white rounded-full" />
@@ -350,16 +385,15 @@ export default function PricingPage() {
               <Card
                 key={plan.id}
                 className={cn(
-                  "relative transition-all duration-500 overflow-hidden cursor-pointer",
-                  "transform hover:-translate-y-2 active:scale-105",
+                  "relative transition-all duration-500 overflow-hidden cursor-pointer rounded-2xl bg-white/85 backdrop-blur-xl",
+                  "border border-white/70 shadow-[0_25px_70px_-45px_rgba(15,23,42,0.4)] hover:-translate-y-2",
                   plan.popular
-                    ? "border-2 shadow-xl lg:scale-105 lg:hover:scale-105"
-                    : "border shadow-md hover:shadow-lg",
-                  hoveredPlan === plan.id ? "transform -translate-y-2" : "",
-                  selectedPlan === plan.id ? "ring-4 ring-blue-500 ring-offset-4 shadow-2xl border-blue-500 scale-105" : "",
+                    ? "lg:scale-105 ring-1 ring-blue-200 shadow-blue-100/50"
+                    : "ring-1 ring-slate-100",
+                  hoveredPlan === plan.id ? "-translate-y-2" : "",
+                  selectedPlan === plan.id ? "ring-2 ring-blue-500 shadow-xl scale-[1.02]" : "",
                   selectedPlan === plan.id && "card-selected",
-                  plan.borderColor,
-                  isCurrentPlan && "ring-4 ring-green-500 ring-offset-4"
+                  isCurrentPlan && "ring-2 ring-green-500"
                 )}
                 onMouseEnter={() => setHoveredPlan(plan.id)}
                 onMouseLeave={() => setHoveredPlan(null)}
@@ -393,7 +427,8 @@ export default function PricingPage() {
                     </Badge>
                   </div>
                 )}
-                <CardHeader className={`${plan.bgColor} pb-6 sm:pb-8 relative`}>
+                <div className="absolute inset-x-6 top-0 h-1 rounded-b-full bg-gradient-to-r from-blue-500/70 via-purple-500/40 to-transparent opacity-80" />
+                <CardHeader className={`${plan.bgColor} pb-6 sm:pb-8 relative rounded-t-2xl`}>
                   {plan.savings > 0 && (
                     <div className="absolute top-3 sm:top-4 left-3 sm:left-4">
                       <Badge variant="secondary" className="bg-green-100 text-green-800 text-xs">
@@ -501,30 +536,30 @@ export default function PricingPage() {
 
         {/* FAQ Section */}
         <div className="mt-12 sm:mt-16 max-w-4xl mx-auto px-4">
-          <h2 className="text-2xl sm:text-3xl font-bold text-center mb-8 sm:mb-12">{t.pricing.faq.title}</h2>
+          <h2 className="text-2xl sm:text-3xl font-bold text-center mb-8 sm:mb-12 text-gray-900">{t.pricing.faq.title}</h2>
           <div className="grid gap-6 sm:gap-8 md:grid-cols-1 lg:grid-cols-3">
-            <div className="bg-white rounded-lg p-6 shadow-sm border">
-              <h3 className="font-semibold mb-3 text-lg">{t.pricing.faq.switchPlans.question}</h3>
+            <div className="bg-white/85 backdrop-blur-xl rounded-2xl p-6 shadow-[0_20px_60px_-45px_rgba(15,23,42,0.35)] border border-white/70">
+              <h3 className="font-semibold mb-3 text-lg text-gray-900">{t.pricing.faq.switchPlans.question}</h3>
               <p className="text-gray-600 leading-relaxed">
                 {t.pricing.faq.switchPlans.answer}
               </p>
             </div>
-            <div className="bg-white rounded-lg p-6 shadow-sm border">
-              <h3 className="font-semibold mb-3 text-lg">{t.pricing.faq.paymentMethods.question}</h3>
+            <div className="bg-white/85 backdrop-blur-xl rounded-2xl p-6 shadow-[0_20px_60px_-45px_rgba(15,23,42,0.35)] border border-white/70">
+              <h3 className="font-semibold mb-3 text-lg text-gray-900">{t.pricing.faq.paymentMethods.question}</h3>
               <p className="text-gray-600 leading-relaxed">
                 {t.pricing.faq.paymentMethods.answer}
               </p>
             </div>
-            <div className="bg-white rounded-lg p-6 shadow-sm border">
-              <h3 className="font-semibold mb-3 text-lg">{t.pricing.faq.freeTrial.question}</h3>
+            <div className="bg-white/85 backdrop-blur-xl rounded-2xl p-6 shadow-[0_20px_60px_-45px_rgba(15,23,42,0.35)] border border-white/70">
+              <h3 className="font-semibold mb-3 text-lg text-gray-900">{t.pricing.faq.freeTrial.question}</h3>
               <p className="text-gray-600 leading-relaxed">
                 {t.pricing.faq.freeTrial.answer}
               </p>
             </div>
           </div>
         </div>
+        </div>
       </div>
-    </div>
       {stripeCheckout && (
         <StripeCheckoutDialog
           open={isStripeDialogOpen}

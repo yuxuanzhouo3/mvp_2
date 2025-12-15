@@ -1,72 +1,46 @@
-// lib/auth/auth.ts - 认证工具函数
-import { supabase } from "@/lib/integrations/supabase";
+// lib/auth/auth.ts - 璁よ瘉宸ュ叿鍑芥暟
 import { NextRequest, NextResponse } from "next/server";
-import { isChinaRegion } from "@/lib/config/region";
+import {
+  extractTokenFromHeader,
+  verifyAuthToken,
+} from "@/lib/auth/auth-utils";
 
 /**
- * 验证用户认证状态
+ * 楠岃瘉鐢ㄦ埛璁よ瘉鐘舵€?
  */
 export async function requireAuth(request: NextRequest): Promise<{
   user: any;
   session: any;
 } | null> {
   try {
-    // 从请求头获取JWT token
-    const authHeader = request.headers.get("authorization");
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      console.error("Missing or invalid authorization header");
+    const { token, error: tokenError } = extractTokenFromHeader(
+      request.headers.get("authorization")
+    );
+
+    if (!token || tokenError) {
+      console.error("Missing or invalid authorization header", tokenError);
       return null;
     }
 
-    const token = authHeader.substring(7); // Remove "Bearer " prefix
-
-    // 根据地区选择认证验证方式
-    if (isChinaRegion()) {
-      // 中国地区：使用 CloudBase 认证，通过 /api/auth/me 验证
-      try {
-        const response = await fetch(
-          `${process.env.NEXTAUTH_URL || "http://localhost:3000"}/api/auth/me`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
-
-        if (!response.ok) {
-          console.error("CloudBase auth verification failed:", response.status);
-          return null;
-        }
-
-        const data = await response.json();
-        if (!data.success || !data.user) {
-          console.error("CloudBase auth verification returned invalid data");
-          return null;
-        }
-
-        return {
-          user: data.user,
-          session: { access_token: token },
-        };
-      } catch (error) {
-        console.error("CloudBase auth verification error:", error);
-        return null;
-      }
-    } else {
-      // 国际地区：使用 Supabase 认证
-      const {
-        data: { user },
-        error,
-      } = await supabase.auth.getUser(token);
-
-      if (error || !user) {
-        console.error("Invalid token or user not found:", error?.message);
-        return null;
-      }
-
-      return { user, session: { access_token: token } };
+    const verification = await verifyAuthToken(token);
+    if (!verification.success || !verification.user) {
+      console.error(
+        "Auth verification failed:",
+        verification.error || "Unknown error"
+      );
+      return null;
     }
+
+    // Remove sensitive fields like hashed password if present
+    const { password, ...safeUser } = verification.user;
+
+    return {
+      user: safeUser,
+      session: {
+        access_token: token,
+        region: verification.region,
+      },
+    };
   } catch (error) {
     console.error("Auth verification error:", error);
     return null;
@@ -74,7 +48,7 @@ export async function requireAuth(request: NextRequest): Promise<{
 }
 
 /**
- * 创建认证失败的响应
+ * 鍒涘缓璁よ瘉澶辫触鐨勫搷搴?
  */
 export function createAuthErrorResponse(
   message: string = "Authentication required"

@@ -72,12 +72,14 @@ export async function verifyAuthToken(token: string): Promise<{
         return { success: false, error: "User not found", region };
       }
 
+      const { password, ...userWithoutPassword } = res.data[0];
+
       return {
         success: true,
         userId,
         user: {
           id: userId,
-          ...res.data[0],
+          ...userWithoutPassword,
         },
         region,
       };
