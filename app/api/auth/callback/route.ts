@@ -16,7 +16,8 @@ function getBaseUrl(request: NextRequest) {
 }
 
 function resolveRedirectPath(request: NextRequest) {
-  const requested = request.nextUrl.searchParams.get("next");
+  const requested = request.nextUrl.searchParams.get("next") ||
+                   request.nextUrl.searchParams.get("redirect");
   if (!requested) return DEFAULT_REDIRECT_PATH;
 
   try {
