@@ -203,30 +203,26 @@ class SupabaseAuthClient implements AuthClient {
     options?: any;
   }): Promise<{ data: any; error: Error | null }> {
     try {
-      if (params.provider === "google") {
-        const baseUrl =
-          process.env.NEXT_PUBLIC_APP_URL ||
-          process.env.NEXT_PUBLIC_SITE_URL ||
-          (typeof window !== "undefined" ? window.location.origin : "") ||
-          process.env.NEXTAUTH_URL ||
-          "http://localhost:3000";
-
-        const next =
-          params.options?.redirectTo ||
-          `${baseUrl.replace(/\/$/, "")}/dashboard`;
-
-        const loginUrl = new URL("/api/auth/google", baseUrl);
-        loginUrl.searchParams.set("redirectTo", next);
-
-        if (typeof window !== "undefined") {
-          window.location.href = loginUrl.toString();
-        }
-
-        return { data: { url: loginUrl.toString() }, error: null };
-      }
-
       const supabase = await this.ensureSupabase();
-      return await supabase.auth.signInWithOAuth(params);
+      const baseUrl =
+        process.env.NEXT_PUBLIC_APP_URL ||
+        process.env.NEXT_PUBLIC_SITE_URL ||
+        (typeof window !== "undefined" ? window.location.origin : "") ||
+        process.env.NEXTAUTH_URL ||
+        "http://localhost:3000";
+      const authCallbackPath =
+        process.env.NEXT_PUBLIC_AUTH_CALLBACK_PATH || "/auth/callback";
+      const redirectTo =
+        params.options?.redirectTo ||
+        `${baseUrl.replace(/\/$/, "")}${authCallbackPath}`;
+
+      return await supabase.auth.signInWithOAuth({
+        provider: params.provider,
+        options: {
+          ...params.options,
+          redirectTo,
+        },
+      });
     } catch (error) {
       return {
         data: null,

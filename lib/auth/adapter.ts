@@ -119,33 +119,24 @@ class SupabaseAuthAdapter implements AuthAdapter {
   }
 
   async signInWithOAuth(provider: "google" | "github"): Promise<void> {
-    if (provider === "google") {
-      const baseUrl =
-        process.env.NEXT_PUBLIC_APP_URL ||
-        process.env.NEXT_PUBLIC_SITE_URL ||
-        (typeof window !== "undefined" ? window.location.origin : "") ||
-        process.env.NEXTAUTH_URL ||
-        "http://localhost:3000";
-
-      const next = `${baseUrl.replace(/\/$/, "")}/dashboard`;
-      const loginUrl = new URL("/api/auth/google", baseUrl);
-      loginUrl.searchParams.set("redirectTo", next);
-
-      if (typeof window !== "undefined") {
-        window.location.href = loginUrl.toString();
-      }
-      return;
-    }
-
     if (!this.supabase) {
       throw new Error("Supabase client not initialized");
     }
 
+    const baseUrl =
+      process.env.NEXT_PUBLIC_APP_URL ||
+      process.env.NEXT_PUBLIC_SITE_URL ||
+      (typeof window !== "undefined" ? window.location.origin : "") ||
+      process.env.NEXTAUTH_URL ||
+      "http://localhost:3000";
+    const authCallbackPath =
+      process.env.NEXT_PUBLIC_AUTH_CALLBACK_PATH || "/auth/callback";
+    const redirectTo = `${baseUrl.replace(/\/$/, "")}${authCallbackPath}?redirect=/dashboard`;
+
     await this.supabase.auth.signInWithOAuth({
       provider,
       options: {
-        redirectTo:
-          `${process.env.NEXT_PUBLIC_APP_URL || window.location.origin}/auth/callback`,
+        redirectTo,
       },
     });
   }

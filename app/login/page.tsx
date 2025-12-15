@@ -56,9 +56,11 @@ export default function LoginPage() {
     setError(null)
 
     try {
-      const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL || window.location.origin}/dashboard`
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin
+      const callbackUrl = new URL('/auth/callback', baseUrl)
+      callbackUrl.searchParams.set('redirect', '/dashboard')
       const oauthOptions: Record<string, any> = {
-        redirectTo: callbackUrl,
+        redirectTo: callbackUrl.toString(),
       }
 
       const result = await auth.signInWithOAuth({

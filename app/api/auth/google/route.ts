@@ -44,18 +44,16 @@ export async function GET(request: NextRequest) {
   const baseUrl = getBaseUrl(request);
   const nextPath = resolveNext(request);
 
-  const callbackUrl = new URL("/api/auth/callback", baseUrl);
-  callbackUrl.searchParams.set("next", nextPath);
+  const callbackPath =
+    process.env.NEXT_PUBLIC_AUTH_CALLBACK_PATH || "/auth/callback";
+  const callbackUrl = new URL(callbackPath, baseUrl);
+  callbackUrl.searchParams.set("redirect", nextPath);
 
   try {
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
         redirectTo: callbackUrl.toString(),
-        queryParams: {
-          access_type: "offline",
-          prompt: "consent",
-        },
       },
     });
 

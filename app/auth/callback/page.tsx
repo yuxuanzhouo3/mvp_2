@@ -13,6 +13,8 @@ function AuthCallbackContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const code = searchParams.get("code")
+  const errorParam = searchParams.get("error")
+  const errorDescription = searchParams.get("error_description")
   const redirectPath = searchParams.get("redirect") || searchParams.get("next") || "/"
 
   const [status, setStatus] = useState<AuthStatus>("loading")
@@ -28,6 +30,17 @@ function AuthCallbackContent() {
       }
 
       try {
+        if (errorParam) {
+          const displayError =
+            errorDescription ||
+            searchParams.get("error_code") ||
+            "Authentication failed";
+          setStatus("error");
+          setMessage(displayError);
+          setTimeout(() => router.replace("/login"), 1500);
+          return;
+        }
+
         const [{ supabase }, { saveSupabaseUserCache }] = await Promise.all([
           import("@/lib/integrations/supabase"),
           import("@/lib/auth/auth-state-manager-intl"),
