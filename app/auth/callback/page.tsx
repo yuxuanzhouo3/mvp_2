@@ -38,23 +38,33 @@ function AuthCallbackContent() {
           data: { session },
         } = await supabase.auth.getSession()
 
-        // If no session, attempt to parse the current URL (handles both code and hash flows)
+        // If still no session, handle hash-based tokens or explicit code exchange
         if (!session) {
-          const { data, error } = await supabase.auth.getSessionFromUrl({
-            storeSession: true,
-          })
+          // Handle implicit flow fragments if present
+          if (typeof window !== "undefined" && window.location.hash) {
+            const hashParams = new URLSearchParams(window.location.hash.slice(1))
+            const accessToken = hashParams.get("access_token")
+            const refreshToken = hashParams.get("refresh_token")
 
-          if (error) {
-            // As a fallback, try explicit code exchange if a code param exists
-            if (code) {
-              const { data: codeData, error: codeError } =
-                await supabase.auth.exchangeCodeForSession(code)
-              if (codeError) throw codeError
-              session = codeData.session
-            } else {
+            if (accessToken) {
+              const { data, error } = await supabase.auth.setSession({
+                access_token: accessToken,
+                refresh_token: refreshToken || "",
+              })
+              if (error) throw error
+              session = data.session
+            }
+          }
+
+          // If no hash tokens, try code exchange (default PKCE flow)
+          if (!session) {
+            if (!code) {
+              throw new Error("Missing OAuth code or access token in callback URL")
+            }
+            const { data, error } = await supabase.auth.exchangeCodeForSession(code)
+            if (error) {
               throw error
             }
-          } else {
             session = data.session
           }
         }
