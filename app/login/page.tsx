@@ -56,11 +56,14 @@ export default function LoginPage() {
     setError(null)
 
     try {
+      const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL || window.location.origin}/dashboard`
+      const oauthOptions: Record<string, any> = {
+        redirectTo: callbackUrl,
+      }
+
       const result = await auth.signInWithOAuth({
         provider,
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
-        },
+        options: oauthOptions,
       })
 
       if (result.error) {
@@ -78,7 +81,8 @@ export default function LoginPage() {
     setError(null)
 
     try {
-      await auth.toDefaultLoginPage?.(`${window.location.origin}/auth/callback`)
+      const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL || window.location.origin}/auth/callback`
+      await auth.toDefaultLoginPage?.(callbackUrl)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'WeChat login failed')
       setOauthLoading(null)

@@ -53,12 +53,14 @@ export default function RegisterPage() {
     setLoading(true)
 
     try {
+      const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL || window.location.origin}/auth/callback`
+
       const result = await auth.signUp({
         email,
         password,
         options: {
           data: { name: name || email.split('@')[0] },
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
+          emailRedirectTo: callbackUrl,
         },
       })
 
@@ -97,11 +99,14 @@ export default function RegisterPage() {
     setError(null)
 
     try {
+      const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL || window.location.origin}/dashboard`
+      const oauthOptions: Record<string, any> = {
+        redirectTo: callbackUrl,
+      }
+
       const result = await auth.signInWithOAuth({
         provider,
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
-        },
+        options: oauthOptions,
       })
 
       if (result.error) {
@@ -119,7 +124,8 @@ export default function RegisterPage() {
     setError(null)
 
     try {
-      await auth.toDefaultLoginPage?.(`${window.location.origin}/auth/callback`)
+      const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL || window.location.origin}/auth/callback`
+      await auth.toDefaultLoginPage?.(callbackUrl)
     } catch (err) {
       setError(err instanceof Error ? err.message : (isChineseLanguage ? '微信登录失败' : 'WeChat login failed'))
       setOauthLoading(null)

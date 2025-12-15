@@ -7,6 +7,7 @@ import { isChinaRegion } from "@/lib/config/region";
 import { supabase } from "@/lib/integrations/supabase";
 import cloudbase from "@cloudbase/node-sdk";
 import * as jwt from "jsonwebtoken";
+import { NextRequest } from "next/server";
 
 let cachedApp: any = null;
 
@@ -133,6 +134,52 @@ export function extractTokenFromHeader(authHeader: string | null): {
 
   const token = authHeader.replace("Bearer ", "");
   return { token, error: null };
+}
+
+/**
+ * 从请求中提取访问令牌（优先 Authorization，其次 HttpOnly cookies）
+ */
+export function extractTokenFromRequest(request: NextRequest): {
+  token: string | null;
+  error: string | null;
+} {
+  // 1) Authorization header
+  const headerResult = extractTokenFromHeader(
+    request.headers.get("authorization")
+  );
+  if (headerResult.token) {
+    return headerResult;
+  }
+
+  // 2) Supabase access token cookie set by our callback
+  const cookieToken = request.cookies.get("sb-access-token")?.value;
+  if (cookieToken) {
+    return { token: cookieToken, error: null };
+  }
+
+  // 3) Supabase default auth cookie (JSON string) if present
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (supabaseUrl) {
+    try {
+      const projectRef = new URL(supabaseUrl).hostname.split(".")[0];
+      const defaultCookieName = `sb-${projectRef}-auth-token`;
+      const rawCookie = request.cookies.get(defaultCookieName)?.value;
+      if (rawCookie) {
+        try {
+          const parsed = JSON.parse(rawCookie);
+          if (parsed.access_token) {
+            return { token: parsed.access_token, error: null };
+          }
+        } catch {
+          // ignore parse errors, fall through
+        }
+      }
+    } catch {
+      // ignore invalid Supabase URL
+    }
+  }
+
+  return { token: null, error: "Missing access token" };
 }
 
 /**

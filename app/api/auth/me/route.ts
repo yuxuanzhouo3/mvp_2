@@ -1,7 +1,7 @@
 // app/api/auth/me/route.ts - 获取当前用户信息API（统一 JWT 校验）
 import { NextRequest, NextResponse } from "next/server";
 import {
-  extractTokenFromHeader,
+  extractTokenFromRequest,
   verifyAuthToken,
 } from "@/lib/auth/auth-utils";
 
@@ -14,9 +14,7 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(request: NextRequest) {
   try {
-    const { token, error } = extractTokenFromHeader(
-      request.headers.get("authorization")
-    );
+    const { token, error } = extractTokenFromRequest(request);
 
     if (!token || error) {
       return NextResponse.json(

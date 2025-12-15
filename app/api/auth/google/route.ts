@@ -2,9 +2,36 @@ import { NextRequest, NextResponse } from "next/server";
 import { isChinaRegion } from "@/lib/config/region";
 import { supabase } from "@/lib/integrations/supabase";
 
+const DEFAULT_NEXT = "/dashboard";
+
+function getBaseUrl(request: NextRequest) {
+  return (
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    process.env.NEXTAUTH_URL ||
+    request.nextUrl.origin
+  );
+}
+
+function resolveNext(request: NextRequest) {
+  const requested = request.nextUrl.searchParams.get("redirectTo");
+  if (!requested) return DEFAULT_NEXT;
+
+  try {
+    const url = new URL(requested, request.nextUrl.origin);
+    if (url.origin === request.nextUrl.origin) {
+      return url.pathname + url.search;
+    }
+  } catch {
+    // ignore invalid redirect
+  }
+
+  return DEFAULT_NEXT;
+}
+
 /**
- * 国际版 Google 登录（Supabase OAuth）
- * GET /api/auth/google?redirectTo=<url>
+ * Google 登录 (Supabase OAuth)
+ * GET /api/auth/google?redirectTo=<path>
  */
 export async function GET(request: NextRequest) {
   if (isChinaRegion()) {
@@ -14,15 +41,21 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const redirectTo =
-    request.nextUrl.searchParams.get("redirectTo") ||
-    `${process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXTAUTH_URL || "http://localhost:3000"}/auth/callback`;
+  const baseUrl = getBaseUrl(request);
+  const nextPath = resolveNext(request);
+
+  const callbackUrl = new URL("/api/auth/callback", baseUrl);
+  callbackUrl.searchParams.set("next", nextPath);
 
   try {
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo,
+        redirectTo: callbackUrl.toString(),
+        queryParams: {
+          access_type: "offline",
+          prompt: "consent",
+        },
       },
     });
 
@@ -33,7 +66,16 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    return NextResponse.json({ url: data.url });
+    const wantsJson = request.headers
+      .get("accept")
+      ?.toLowerCase()
+      .includes("application/json");
+
+    if (wantsJson) {
+      return NextResponse.json({ url: data.url });
+    }
+
+    return NextResponse.redirect(data.url, { status: 307 });
   } catch (err) {
     console.error("[/api/auth/google] error:", err);
     return NextResponse.json(
