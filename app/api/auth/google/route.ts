@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { isChinaRegion } from "@/lib/config/region";
 import { supabase } from "@/lib/integrations/supabase";
 
-const DEFAULT_NEXT = "/dashboard";
+const DEFAULT_NEXT = "/";
 
 function getBaseUrl(request: NextRequest) {
   return (

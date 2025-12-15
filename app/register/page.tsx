@@ -103,7 +103,7 @@ export default function RegisterPage() {
     try {
       const baseUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin
       const callbackUrl = new URL('/auth/callback', baseUrl)
-      callbackUrl.searchParams.set('redirect', '/dashboard')
+      callbackUrl.searchParams.set('redirect', '/')
       const oauthOptions: Record<string, any> = {
         redirectTo: callbackUrl.toString(),
       }
