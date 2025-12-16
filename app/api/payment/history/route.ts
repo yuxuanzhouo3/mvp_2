@@ -4,7 +4,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/integrations/supabase-admin";
 import { requireAuth } from "@/lib/auth/auth";
-import { extractTokenFromRequest, verifyAuthToken } from "@/lib/auth/auth-utils";
 
 // Force dynamic rendering for this route
 export const dynamic = 'force-dynamic';
@@ -12,21 +11,11 @@ export const dynamic = 'force-dynamic';
 // GET /api/payment/history?page=1&pageSize=20
 export async function GET(request: NextRequest) {
   try {
-    // 调试：检查认证信息
-    const { token, error: tokenError } = extractTokenFromRequest(request);
-    console.log(`[Payment History] Token check - Exists: ${!!token}, Error: ${tokenError}`);
-
     // 验证用户认证
     const authResult = await requireAuth(request);
     if (!authResult) {
-      // 添加更详细的认证失败日志
-      console.error("[Payment History] Authentication failed");
       return NextResponse.json(
-        {
-          error: "Unauthorized",
-          message: "Authentication required to access payment history",
-          code: "AUTH_FAILED"
-        },
+        { error: "Unauthorized" },
         { status: 401 }
       );
     }
