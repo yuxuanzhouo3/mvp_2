@@ -1,5 +1,5 @@
 // 替换成你自己的 API Key（在 Mistral 平台 -> API Keys 中生成）
-const API_KEY = 'ef9oX29Hb55RLkrzMpJAfg6DgTJDKrQI';
+const API_KEY = 'ef9oX29Hb55RLkrzMpJAfgxxxxxxxxxx';
 
 // 要调用的模型，例如 Mistral Large（前沿模型）
 const MODEL = 'mistral-large-latest';

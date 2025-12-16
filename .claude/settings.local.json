@@ -37,7 +37,8 @@
       "Bash(npx supabase --help:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(taskkill:*)"
     ],
     "deny": [],
     "ask": []

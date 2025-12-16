@@ -9,6 +9,375 @@ interface SearchLink {
 }
 
 /**
+ * 游戏平台类型定义
+ */
+export interface GamePlatform {
+  id: string;
+  name: string;
+  url: string;
+  region: 'cn' | 'intl';
+  gameTypes: ('pc' | 'console' | 'mobile' | 'indie')[];
+  searchUrl: (query: string) => string;
+}
+
+/**
+ * 游戏类型枚举
+ */
+export enum GameType {
+  PC = 'pc',
+  CONSOLE = 'console',
+  MOBILE = 'mobile',
+  INDIE = 'indie'
+}
+
+/**
+ * 游戏平台配置
+ */
+export const GAME_PLATFORMS: GamePlatform[] = [
+  // 中国版游戏平台
+  {
+    id: 'steam-cn',
+    name: 'Steam',
+    url: 'https://store.steampowered.com',
+    region: 'cn',
+    gameTypes: ['pc', 'indie'],
+    searchUrl: (q) => `https://store.steampowered.com/search/?term=${encodeURIComponent(q)}`
+  },
+  {
+    id: 'taptap',
+    name: 'TapTap',
+    url: 'https://www.taptap.cn',
+    region: 'cn',
+    gameTypes: ['mobile', 'indie'],
+    searchUrl: (q) => `https://www.taptap.cn/search?kw=${encodeURIComponent(q)}`
+  },
+  {
+    id: 'epic-cn',
+    name: 'Epic Games',
+    url: 'https://www.epicgames.com/store',
+    region: 'cn',
+    gameTypes: ['pc'],
+    searchUrl: (q) => `https://www.epicgames.com/store/zh-CN/browse?q=${encodeURIComponent(q)}`
+  },
+  {
+    id: 'wegame',
+    name: 'WeGame',
+    url: 'https://www.wegame.com.cn',
+    region: 'cn',
+    gameTypes: ['pc'],
+    searchUrl: (q) => `https://www.wegame.com.cn/search.html?q=${encodeURIComponent(q)}`
+  },
+  {
+    id: 'shanguo',
+    name: '杉果',
+    url: 'https://www.sonkwo.cn',
+    region: 'cn',
+    gameTypes: ['pc'],
+    searchUrl: (q) => `https://www.sonkwo.cn/search/?keyword=${encodeURIComponent(q)}`
+  },
+  {
+    id: 'xiaoheihe',
+    name: '小黑盒',
+    url: 'https://www.xiaoheihe.cn',
+    region: 'cn',
+    gameTypes: ['pc', 'mobile'],
+    searchUrl: (q) => `https://www.xiaoheihe.cn/search?q=${encodeURIComponent(q)}`
+  },
+  {
+    id: '3dm',
+    name: '3DM',
+    url: 'https://www.3dmgame.com',
+    region: 'cn',
+    gameTypes: ['pc'],
+    searchUrl: (q) => `https://so.3dmgame.com/?keyword=${encodeURIComponent(q)}`
+  },
+  {
+    id: 'gamersky',
+    name: '游民星空',
+    url: 'https://www.gamersky.com',
+    region: 'cn',
+    gameTypes: ['pc', 'console'],
+    searchUrl: (q) => `https://www.gamersky.com/search/?keyword=${encodeURIComponent(q)}`
+  },
+  {
+    id: 'bilibili-game',
+    name: 'B站游戏',
+    url: 'https://game.bilibili.com',
+    region: 'cn',
+    gameTypes: ['mobile', 'indie'],
+    searchUrl: (q) => `https://search.bilibili.com/all?keyword=${encodeURIComponent(q)} 游戏`
+  },
+  {
+    id: '4399',
+    name: '4399小游戏',
+    url: 'https://www.4399.com',
+    region: 'cn',
+    gameTypes: ['mobile'],
+    searchUrl: (q) => `https://s.4399.com/search_default.php?keyword=${encodeURIComponent(q)}`
+  },
+
+  // 国际版游戏平台
+  {
+    id: 'steam-intl',
+    name: 'Steam',
+    url: 'https://store.steampowered.com',
+    region: 'intl',
+    gameTypes: ['pc', 'indie'],
+    searchUrl: (q) => `https://store.steampowered.com/search/?term=${encodeURIComponent(q)}`
+  },
+  {
+    id: 'epic-intl',
+    name: 'Epic Games',
+    url: 'https://www.epicgames.com/store',
+    region: 'intl',
+    gameTypes: ['pc'],
+    searchUrl: (q) => `https://store.epicgames.com/en-US/browse?q=${encodeURIComponent(q)}`
+  },
+  {
+    id: 'playstation',
+    name: 'PlayStation Store',
+    url: 'https://store.playstation.com',
+    region: 'intl',
+    gameTypes: ['console'],
+    searchUrl: (q) => `https://store.playstation.com/en-us/search/${encodeURIComponent(q)}`
+  },
+  {
+    id: 'xbox',
+    name: 'Xbox Store',
+    url: 'https://www.xbox.com',
+    region: 'intl',
+    gameTypes: ['console'],
+    searchUrl: (q) => `https://www.xbox.com/en-US/search?q=${encodeURIComponent(q)}`
+  },
+  {
+    id: 'nintendo',
+    name: 'Nintendo eShop',
+    url: 'https://www.nintendo.com',
+    region: 'intl',
+    gameTypes: ['console'],
+    searchUrl: (q) => `https://www.nintendo.com/search?q=${encodeURIComponent(q)}&filter=cqf3hd31gd84sb462g4s007su9`
+  },
+  {
+    id: 'gog',
+    name: 'GOG',
+    url: 'https://www.gog.com',
+    region: 'intl',
+    gameTypes: ['pc', 'indie'],
+    searchUrl: (q) => `https://www.gog.com/search?query=${encodeURIComponent(q)}`
+  },
+  {
+    id: 'humble',
+    name: 'Humble Bundle',
+    url: 'https://www.humblebundle.com',
+    region: 'intl',
+    gameTypes: ['pc', 'indie'],
+    searchUrl: (q) => `https://www.humblebundle.com/store/search?q=${encodeURIComponent(q)}`
+  },
+  {
+    id: 'itchio',
+    name: 'itch.io',
+    url: 'https://itch.io',
+    region: 'intl',
+    gameTypes: ['indie'],
+    searchUrl: (q) => `https://itch.io/search?q=${encodeURIComponent(q)}`
+  },
+  {
+    id: 'gamepass',
+    name: 'Game Pass',
+    url: 'https://www.xbox.com',
+    region: 'intl',
+    gameTypes: ['pc', 'console'],
+    searchUrl: (q) => `https://www.xbox.com/en-US/games/search?q=${encodeURIComponent(q)}&store=xbox-one`
+  },
+  {
+    id: 'gmg',
+    name: 'Green Man Gaming',
+    url: 'https://www.greenmangaming.com',
+    region: 'intl',
+    gameTypes: ['pc'],
+    searchUrl: (q) => `https://www.greenmangaming.com/search?q=${encodeURIComponent(q)}`
+  }
+];
+
+/**
+ * 根据地区获取游戏平台
+ */
+export function getGamePlatformsByRegion(region: 'cn' | 'intl' = 'cn'): GamePlatform[] {
+  return GAME_PLATFORMS.filter(platform => platform.region === region);
+}
+
+/**
+ * 根据游戏类型获取平台
+ */
+export function getGamePlatformsByType(gameType: GameType, region: 'cn' | 'intl' = 'cn'): GamePlatform[] {
+  return GAME_PLATFORMS.filter(platform =>
+    platform.region === region &&
+    platform.gameTypes.includes(gameType)
+  );
+}
+
+/**
+ * 智能识别游戏类型
+ * 根据游戏名称和关键词自动识别游戏类型
+ */
+export function identifyGameType(gameName: string, keywords?: string[]): GameType[] {
+  const name = gameName.toLowerCase();
+  const allKeywords = [name, ...(keywords || []).map(k => k.toLowerCase())];
+  const keywordString = allKeywords.join(' ');
+
+  const identifiedTypes: GameType[] = [];
+
+  // 主机游戏关键词
+  const consoleKeywords = [
+    'ps5', 'playstation 5', 'ps4', 'playstation 4', 'ps3', 'playstation 3',
+    'xbox one', 'xbox series x', 'xbox series s', 'xbox 360',
+    'switch', 'nintendo switch', 'wii', 'wii u', '3ds',
+    'playstation', 'xbox', 'nintendo',
+    'sony', 'microsoft', '任天堂',
+    '独占', 'exclusive'
+  ];
+
+  // PC游戏关键词
+  const pcKeywords = [
+    'pc', 'steam', 'epic', 'origin', 'uplay',
+    'windows', 'mac', 'linux',
+    '鼠标', '键盘', '键鼠',
+    'mod', 'mods', 'rtx', 'dlss',
+    '4k', '144hz', 'fps'
+  ];
+
+  // 手机游戏关键词
+  const mobileKeywords = [
+    '手机', '手游', 'android', 'ios', 'iphone', 'ipad',
+    'taptap', '移动', '触屏', '触摸',
+    'app', 'apk', 'ipa'
+  ];
+
+  // 独立游戏关键词
+  const indieKeywords = [
+    '独立游戏', 'indie', '像素', 'pixel', 'retro',
+    '迷宫', 'roguelike', 'rogue-lite', '解谜', 'puzzle',
+    '横版', '2d', '文字', '模拟', '策略',
+    '小众', '精品', '创意'
+  ];
+
+  // 检查关键词匹配
+  if (consoleKeywords.some(keyword => keywordString.includes(keyword))) {
+    identifiedTypes.push(GameType.CONSOLE);
+  }
+
+  if (pcKeywords.some(keyword => keywordString.includes(keyword))) {
+    identifiedTypes.push(GameType.PC);
+  }
+
+  if (mobileKeywords.some(keyword => keywordString.includes(keyword))) {
+    identifiedTypes.push(GameType.MOBILE);
+  }
+
+  if (indieKeywords.some(keyword => keywordString.includes(keyword))) {
+    identifiedTypes.push(GameType.INDIE);
+  }
+
+  // 特定游戏名称的特殊识别
+  const specialGameMappings: Record<string, GameType[]> = {
+    '原神': [GameType.MOBILE, GameType.PC],
+    'genshin impact': [GameType.MOBILE, GameType.PC],
+    '塞尔达传说': [GameType.CONSOLE],
+    'zelda': [GameType.CONSOLE],
+    '马里奥': [GameType.CONSOLE],
+    'mario': [GameType.CONSOLE],
+    '宝可梦': [GameType.MOBILE, GameType.CONSOLE],
+    'pokemon': [GameType.MOBILE, GameType.CONSOLE],
+    '王者荣耀': [GameType.MOBILE],
+    'honor of kings': [GameType.MOBILE],
+    '和平精英': [GameType.MOBILE],
+    'pubg mobile': [GameType.MOBILE],
+    '我的世界': [GameType.MOBILE, GameType.PC, GameType.CONSOLE],
+    'minecraft': [GameType.MOBILE, GameType.PC, GameType.CONSOLE]
+  };
+
+  // 检查特殊游戏名称
+  for (const [specialName, types] of Object.entries(specialGameMappings)) {
+    if (name.includes(specialName.toLowerCase())) {
+      types.forEach(type => {
+        if (!identifiedTypes.includes(type)) {
+          identifiedTypes.push(type);
+        }
+      });
+    }
+  }
+
+  // 如果没有识别出任何类型，默认为PC游戏
+  if (identifiedTypes.length === 0) {
+    identifiedTypes.push(GameType.PC);
+  }
+
+  return identifiedTypes;
+}
+
+/**
+ * 智能选择游戏平台
+ * 根据游戏类型和地区智能选择最佳平台
+ */
+export function selectGamePlatforms(
+  gameName: string,
+  region: 'cn' | 'intl' = 'cn',
+  keywords?: string[],
+  limit: number = 5
+): GamePlatform[] {
+  const gameTypes = identifyGameType(gameName, keywords);
+  const allPossiblePlatforms: { platform: GamePlatform; score: number }[] = [];
+
+  // 为每个平台计算匹配分数
+  GAME_PLATFORMS.forEach(platform => {
+    if (platform.region !== region) return;
+
+    let score = 0;
+
+    // 根据游戏类型匹配度评分
+    gameTypes.forEach(gameType => {
+      if (platform.gameTypes.includes(gameType)) {
+        if (gameType === GameType.PC) score += 3;
+        else if (gameType === GameType.CONSOLE) score += 3;
+        else if (gameType === GameType.MOBILE) score += 3;
+        else if (gameType === GameType.INDIE) score += 2;
+      }
+    });
+
+    // 平台偏好加权
+    const platformPreferences: Record<string, number> = {
+      // 中国版偏好
+      'steam-cn': 10,
+      'taptap': 9,
+      'epic-cn': 8,
+      'wegame': 7,
+      'xiaoheihe': 6,
+
+      // 国际版偏好
+      'steam-intl': 10,
+      'epic-intl': 9,
+      'playstation': 8,
+      'xbox': 8,
+      'nintendo': 8,
+      'gog': 7,
+      'itchio': 6
+    };
+
+    score += platformPreferences[platform.id] || 0;
+
+    if (score > 0) {
+      allPossiblePlatforms.push({ platform, score });
+    }
+  });
+
+  // 按分数排序并返回前N个
+  return allPossiblePlatforms
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map(item => item.platform);
+}
+
+/**
  * 为推荐生成搜索引擎链接
  */
 export function generateSearchLink(
@@ -34,6 +403,15 @@ export function generateSearchLink(
       'B站': (q) => `https://search.bilibili.com/all?keyword=${encodeURIComponent(q)}`,
       '网易云音乐': (q) => `https://music.163.com/#/search/m/?s=${encodeURIComponent(q)}`,
       'Steam': (q) => `https://store.steampowered.com/search/?term=${encodeURIComponent(q)}`,
+      'TapTap': (q) => `https://www.taptap.cn/search?kw=${encodeURIComponent(q)}`,
+      'Epic Games': (q) => `https://www.epicgames.com/store/zh-CN/browse?q=${encodeURIComponent(q)}`,
+      'WeGame': (q) => `https://www.wegame.com.cn/search.html?q=${encodeURIComponent(q)}`,
+      '杉果': (q) => `https://www.sonkwo.cn/search/?keyword=${encodeURIComponent(q)}`,
+      '小黑盒': (q) => `https://www.xiaoheihe.cn/search?q=${encodeURIComponent(q)}`,
+      '3DM': (q) => `https://so.3dmgame.com/?keyword=${encodeURIComponent(q)}`,
+      '游民星空': (q) => `https://www.gamersky.com/search/?keyword=${encodeURIComponent(q)}`,
+      'B站游戏': (q) => `https://search.bilibili.com/all?keyword=${encodeURIComponent(q)} 游戏`,
+      '4399小游戏': (q) => `https://s.4399.com/search_default.php?keyword=${encodeURIComponent(q)}`,
       '爱奇艺': (q) => `https://so.iqiyi.com/so/q_${encodeURIComponent(q)}`,
       '腾讯视频': (q) => `https://v.qq.com/x/search/?q=${encodeURIComponent(q)}`,
 
@@ -77,6 +455,15 @@ export function generateSearchLink(
       'YouTube': (q) => `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`,
       'Spotify': (q) => `https://open.spotify.com/search/${encodeURIComponent(q)}`,
       'Steam': (q) => `https://store.steampowered.com/search/?term=${encodeURIComponent(q)}`,
+      'Epic Games': (q) => `https://store.epicgames.com/en-US/browse?q=${encodeURIComponent(q)}`,
+      'PlayStation Store': (q) => `https://store.playstation.com/en-us/search/${encodeURIComponent(q)}`,
+      'Xbox Store': (q) => `https://www.xbox.com/en-US/search?q=${encodeURIComponent(q)}`,
+      'Nintendo eShop': (q) => `https://www.nintendo.com/search?q=${encodeURIComponent(q)}&filter=cqf3hd31gd84sb462g4s007su9`,
+      'GOG': (q) => `https://www.gog.com/search?query=${encodeURIComponent(q)}`,
+      'Humble Bundle': (q) => `https://www.humblebundle.com/store/search?q=${encodeURIComponent(q)}`,
+      'itch.io': (q) => `https://itch.io/search?q=${encodeURIComponent(q)}`,
+      'Game Pass': (q) => `https://www.xbox.com/en-US/games/search?q=${encodeURIComponent(q)}&store=xbox-one`,
+      'Green Man Gaming': (q) => `https://www.greenmangaming.com/search?q=${encodeURIComponent(q)}`,
       'Netflix': (q) => `https://www.netflix.com/search?q=${encodeURIComponent(q)}`,
 
       // Food platforms
@@ -285,6 +672,7 @@ export function generateSearchLink(
 
 /**
  * 智能选择最佳平台
+ * 对于游戏类型，使用 GAME_PLATFORMS 数组中定义的所有平台
  */
 export function selectBestPlatform(
   category: string,
@@ -293,19 +681,51 @@ export function selectBestPlatform(
   entertainmentType?: 'video' | 'game' | 'music' | 'review'
 ): string {
 
-  // 针对娱乐类型的详细平台映射
+  // 如果是娱乐分类的游戏类型，使用 GAME_PLATFORMS 数组
+  if (category === 'entertainment' && entertainmentType === 'game') {
+    const region = locale === 'zh' ? 'cn' : 'intl';
+    const gamePlatforms = getGamePlatformsByRegion(region);
+    const gamePlatformNames = gamePlatforms.map(p => p.name);
+    
+    // 如果 AI 建议的平台在游戏平台列表中，使用它
+    if (suggestedPlatform && gamePlatformNames.includes(suggestedPlatform)) {
+      return suggestedPlatform;
+    }
+    
+    // 智能选择：根据推荐内容选择最佳游戏平台
+    // 优先返回多样化的平台，而不是总是 Steam
+    const platformRotation = locale === 'zh' 
+      ? ['Steam', 'TapTap', 'Epic Games', 'WeGame', '小黑盒', '3DM', '游民星空', 'B站游戏']
+      : ['Steam', 'Epic Games', 'GOG', 'PlayStation Store', 'Xbox Store', 'Nintendo eShop', 'Humble Bundle', 'itch.io'];
+    
+    // 如果有建议的平台，尝试匹配
+    if (suggestedPlatform) {
+      // 尝试模糊匹配平台名称
+      const normalizedSuggestion = suggestedPlatform.toLowerCase();
+      const matchedPlatform = gamePlatformNames.find(name => 
+        name.toLowerCase().includes(normalizedSuggestion) || 
+        normalizedSuggestion.includes(name.toLowerCase())
+      );
+      if (matchedPlatform) {
+        return matchedPlatform;
+      }
+    }
+    
+    // 返回默认平台（第一个）
+    return platformRotation[0];
+  }
+
+  // 针对其他娱乐类型的平台映射
   const entertainmentPlatformMap: Record<string, Record<string, string[]>> = {
     zh: {
       video: ['豆瓣', 'B站', '爱奇艺', '腾讯视频', '优酷'],
-      game: ['Steam', 'B站', '淘宝', '京东'],
       music: ['网易云音乐', 'B站', '豆瓣'],
-      review: ['豆瓣', 'B站']
+      review: ['豆瓣', 'B站', '知乎']
     },
     en: {
       video: ['IMDb', 'YouTube', 'Netflix', 'Rotten Tomatoes'],
-      game: ['Steam', 'YouTube', 'Twitch', 'IGN'],
       music: ['Spotify', 'YouTube', 'IMDb'],
-      review: ['IMDb', 'Rotten Tomatoes', 'YouTube']
+      review: ['IMDb', 'Rotten Tomatoes', 'YouTube', 'Metacritic']
     }
   };
 

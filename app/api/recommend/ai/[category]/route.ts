@@ -127,8 +127,6 @@ export async function GET(
 
     // 使用新的 AI + 搜索引擎推荐系统
     try {
-      console.log(`[AI] 用户历史记录数: ${userHistory?.length || 0}`);
-
       // 1. 使用智谱 AI 生成推荐内容（不含链接）
       const aiRecommendations = await generateRecommendations(
         userHistory || [],
@@ -136,7 +134,6 @@ export async function GET(
         locale,
         count
       );
-      console.log(`[AI] 生成推荐数: ${aiRecommendations.length}`);
 
       // 2. 处理推荐的多样性
       let processedRecommendations = aiRecommendations;
@@ -247,10 +244,16 @@ export async function GET(
               }
           }
         } else if (category === 'entertainment') {
-          // 娱乐分类根据平台设置 linkType
+          // 娱乐分类根据平台和娱乐类型设置 linkType
+          // 游戏平台列表（支持所有定义的游戏平台）
+          const gamePlatforms = [
+            'Steam', 'TapTap', 'Epic Games', 'WeGame', '杉果', '小黑盒', '3DM', '游民星空', 'B站游戏', '4399小游戏',
+            'PlayStation Store', 'Xbox Store', 'Nintendo eShop', 'GOG', 'Humble Bundle', 'itch.io', 'Game Pass', 'Green Man Gaming'
+          ];
+          
           if (platform === 'B站' || platform === 'YouTube' || platform === '爱奇艺' || platform === '腾讯视频' || platform === 'Netflix') {
             linkType = 'video';
-          } else if (platform === 'Steam') {
+          } else if (gamePlatforms.includes(platform) || enhancedRec.entertainmentType === 'game') {
             linkType = 'game';
           } else if (platform === '网易云音乐' || platform === 'Spotify') {
             linkType = 'music';

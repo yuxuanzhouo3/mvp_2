@@ -24,17 +24,14 @@ function getProviderOrder(): AIProvider[] {
     return hasValidKey(process.env.ZHIPU_API_KEY) ? ["zhipu"] : [];
   }
 
+  // INTL region: prefer Mistral first, then fall back to OpenAI
   const providers: AIProvider[] = [];
 
-  if (hasValidKey(process.env.OPENAI_API_KEY)) {
-    providers.push("openai");
-  }
   if (hasValidKey(process.env.MISTRAL_API_KEY)) {
     providers.push("mistral");
   }
-  if (hasValidKey(process.env.ZHIPU_API_KEY)) {
-    // Allow Zhipu as a fallback in INTL if configured (e.g., for testing)
-    providers.push("zhipu");
+  if (hasValidKey(process.env.OPENAI_API_KEY)) {
+    providers.push("openai");
   }
 
   return providers;
@@ -204,14 +201,18 @@ export async function generateRecommendations(
   const categoryConfig = {
     entertainment: {
       platforms: locale === 'zh'
-        ? ['豆瓣', 'B站', '网易云音乐', 'Steam', '爱奇艺', '腾讯视频', '优酷']
-        : ['IMDb', 'YouTube', 'Spotify', 'Steam', 'Netflix', 'Rotten Tomatoes', 'Twitch'],
+        ? ['豆瓣', 'B站', '网易云音乐', '爱奇艺', '腾讯视频', '优酷', 'Steam', 'TapTap', 'Epic Games', 'WeGame', '小黑盒', '3DM', '游民星空']
+        : ['IMDb', 'YouTube', 'Spotify', 'Netflix', 'Rotten Tomatoes', 'Steam', 'Epic Games', 'GOG', 'PlayStation Store', 'Xbox Store', 'Nintendo eShop', 'Humble Bundle', 'itch.io'],
       examples: locale === 'zh'
         ? '电影、电视剧、游戏、音乐、综艺、动漫'
         : 'movies, TV shows, games, music, variety shows, anime',
       types: locale === 'zh'
         ? ['视频', '游戏', '音乐', '影评/资讯']
-        : ['video', 'game', 'music', 'review/news']
+        : ['video', 'game', 'music', 'review/news'],
+      // 游戏平台专用列表，供 AI 在推荐游戏时选择
+      gamePlatforms: locale === 'zh'
+        ? ['Steam', 'TapTap', 'Epic Games', 'WeGame', '小黑盒', '3DM', '游民星空', 'B站游戏', '4399小游戏']
+        : ['Steam', 'Epic Games', 'GOG', 'PlayStation Store', 'Xbox Store', 'Nintendo eShop', 'Humble Bundle', 'itch.io', 'Game Pass']
     },
     shopping: {
       platforms: locale === 'zh'
@@ -273,16 +274,22 @@ ${JSON.stringify(userHistory.slice(0, 20), null, 2)}
 
 **特别说明**：
 - 如果是娱乐分类(entertainment)，必须确保推荐包含以下4种类型：
-  * 视频类：电影、电视剧、综艺、动漫等
-  * 游戏类：PC游戏、手机游戏、主机游戏等
-  * 音乐类：歌曲、专辑、演唱会等
-  * 影评/资讯类：影评、娱乐新闻、明星资讯等
+  * 视频类：电影、电视剧、综艺、动漫等（平台：豆瓣、B站、爱奇艺、腾讯视频、优酷）
+  * 游戏类：PC游戏、手机游戏、主机游戏等（平台必须多样化！从以下平台中选择：${(config as any).gamePlatforms?.join('、') || 'Steam、TapTap、Epic Games、WeGame、小黑盒、3DM、游民星空'}）
+  * 音乐类：歌曲、专辑、演唱会等（平台：网易云音乐、B站、豆瓣）
+  * 影评/资讯类：影评、娱乐新闻、明星资讯等（平台：豆瓣、B站、知乎）
   * 每个推荐必须明确标注属于哪种类型
-  * 确保生成的3个推荐涵盖至少3种不同的娱乐类型
+  * 确保生成的推荐涵盖至少3种不同的娱乐类型
+  * **游戏推荐重要要求**：不要总是使用Steam！请根据游戏类型选择合适的平台：
+    - PC游戏：Steam、Epic Games、WeGame、GOG
+    - 手机游戏：TapTap、B站游戏、4399小游戏
+    - 主机游戏：PlayStation Store、Xbox Store、Nintendo eShop
+    - 独立游戏：itch.io、Humble Bundle、GOG
+    - 游戏资讯：小黑盒、3DM、游民星空
   * 推荐内容必须是真实存在的作品或内容，使用准确的作品名称
   * 搜索关键词必须精确匹配作品名称，例如：
     - 视频："流浪地球2 豆瓣评分"、"三体 电视剧 观看"
-    - 游戏："艾尔登法环 Steam"、"原神 下载"
+    - 游戏："艾尔登法环 Steam"、"原神 TapTap"、"塞尔达传说 Nintendo eShop"、"哈迪斯 Epic Games"
     - 音乐："周杰伦 新歌 2024"、"霉霉 Taylor Swift 巡演"
     - 影评："奥本海默 影评解析"、"2024年电影排行榜"
 - 如果是美食分类(food)，**必须严格按照以下三种推荐类型生成内容**：
@@ -373,16 +380,21 @@ Requirements:
 
 **Special Instructions**:
 - For entertainment category, must ensure recommendations include all 4 types:
-  * Video: movies, TV shows, variety shows, anime, etc.
-  * Game: PC games, mobile games, console games, etc.
-  * Music: songs, albums, concerts, etc.
-  * Review/News: movie reviews, entertainment news, celebrity news, etc.
+  * Video: movies, TV shows, variety shows, anime, etc. (Platforms: IMDb, YouTube, Netflix, Rotten Tomatoes)
+  * Game: PC games, mobile games, console games, etc. (Platforms MUST be diverse! Choose from: ${(config as any).gamePlatforms?.join(', ') || 'Steam, Epic Games, GOG, PlayStation Store, Xbox Store, Nintendo eShop, Humble Bundle, itch.io'})
+  * Music: songs, albums, concerts, etc. (Platforms: Spotify, YouTube, IMDb)
+  * Review/News: movie reviews, entertainment news, celebrity news, etc. (Platforms: IMDb, Rotten Tomatoes, Metacritic)
   * Each recommendation must clearly indicate which type it belongs to
-  * Ensure the 3 generated recommendations cover at least 3 different entertainment types
+  * Ensure the generated recommendations cover at least 3 different entertainment types
+  * **IMPORTANT for Game recommendations**: Do NOT always use Steam! Choose platform based on game type:
+    - PC games: Steam, Epic Games, GOG, Green Man Gaming
+    - Console games: PlayStation Store, Xbox Store, Nintendo eShop
+    - Indie games: itch.io, Humble Bundle, GOG
+    - Multi-platform: Game Pass, Steam
   * Recommended content must be real existing works or content, use accurate titles
   * Search keywords must precisely match work titles, for example:
     - Video: "Oppenheimer 2023 review", "The Boys season 4 watch"
-    - Game: "Baldur's Gate 3 Steam", "Genshin Impact download"
+    - Game: "Baldur's Gate 3 Steam", "Zelda Tears of the Kingdom Nintendo eShop", "Hades Epic Games", "Stardew Valley GOG"
     - Music: "Taylor Swift new album 2024", "Bruno Mars concert"
     - Review: "Dune Part Two review", "2024 Oscar predictions"
 - For food category, **MUST follow these three recommendation types strictly**:

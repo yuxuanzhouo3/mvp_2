@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>检查登录状态</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .success { background-color: #d4edda; color: #155724; }
+        .warning { background-color: #fff3cd; color: #856404; }
+        .error { background-color: #f8d7da; color: #721c24; }
+        .info { background-color: #d1ecf1; color: #0c5460; }
+        pre {
+            background: #f8f9fa;
+            padding: 10px;
+            overflow-x: auto;
+            border-radius: 4px;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <h1>登录状态诊断工具</h1>
+
+    <div class="section">
+        <h2>当前用户状态</h2>
+        <div id="currentStatus"></div>
+    </div>
+
+    <div class="section">
+        <h2>LocalStorage 检查</h2>
+        <div id="localStorageInfo"></div>
+        <button onclick="clearAllStorage()">清除所有存储</button>
+        <button onclick="refreshStatus()">刷新状态</button>
+    </div>
+
+    <div class="section">
+        <h2>测试 API 调用</h2>
+        <div id="apiTest"></div>
+        <button onclick="testWithAnonymous()">测试匿名用户</button>
+        <button onclick="testWithValidUser()">测试有效用户ID</button>
+    </div>
+
+    <div class="section">
+        <h2>解决方案</h2>
+        <div class="info">
+            <h3>如果你看到"用户历史记录数: 0"：</h3>
+            <ol>
+                <li>确保你已经登录系统</li>
+                <li>检查浏览器控制台是否有认证错误</li>
+                <li>尝试重新登录</li>
+                <li>如果问题持续，清除浏览器缓存后重新登录</li>
+            </ol>
+            <p><strong>注意：</strong> 匿名用户（未登录）会显示历史记录数为0，这是正常行为。</p>
+        </div>
+    </div>
+
+    <script>
+        function getUserId() {
+            // 尝试 Supabase 国际版缓存 (新方式)
+            try {
+                const supabaseCache = localStorage.getItem("supabase-user-cache");
+                if (supabaseCache) {
+                    const cache = JSON.parse(supabaseCache);
+                    if (cache?.user?.id) {
+                        return cache.user.id;
+                    }
+                }
+            } catch (error) {
+                console.warn("Failed to parse Supabase cache:", error);
+            }
+
+            // 尝试 CloudBase 中国版缓存 (备选)
+            try {
+                const cloudbaseCache = localStorage.getItem("auth-state");
+                if (cloudbaseCache) {
+                    const state = JSON.parse(cloudbaseCache);
+                    if (state?.user?.id) {
+                        return state.user.id;
+                    }
+                }
+            } catch (error) {
+                console.warn("Failed to parse CloudBase cache:", error);
+            }
+
+            // 备选：旧的用户缓存 key
+            try {
+                const userStr = localStorage.getItem("user");
+                if (userStr) {
+                    const user = JSON.parse(userStr);
+                    if (user?.id || user?.uid) {
+                        return user.id || user.uid;
+                    }
+                }
+            } catch (error) {
+                console.warn("Failed to parse legacy user cache:", error);
+            }
+
+            return "anonymous";
+        }
+
+        function refreshStatus() {
+            const userId = getUserId();
+            const currentStatusDiv = document.getElementById('currentStatus');
+
+            if (userId === 'anonymous') {
+                currentStatusDiv.innerHTML = `
+                    <div class="error">
+                        <strong>状态：</strong>未登录（匿名用户）<br>
+                        <strong>用户ID：</strong>${userId}<br>
+                        <strong>说明：</strong>您当前处于匿名模式，不会有历史记录
+                    </div>
+                `;
+            } else {
+                currentStatusDiv.innerHTML = `
+                    <div class="success">
+                        <strong>状态：</strong>已登录<br>
+                        <strong>用户ID：</strong>${userId}<br>
+                        <strong>说明：</strong>系统已识别您的身份，应该能够看到历史记录
+                    </div>
+                `;
+            }
+
+            // 检查 localStorage 内容
+            const storageInfo = document.getElementById('localStorageInfo');
+            const items = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && (key.includes('user') || key.includes('auth') || key.includes('supabase'))) {
+                    items.push({
+                        key: key,
+                        value: localStorage.getItem(key)
+                    });
+                }
+            }
+
+            if (items.length === 0) {
+                storageInfo.innerHTML = '<div class="warning">未找到任何用户认证相关的存储数据</div>';
+            } else {
+                storageInfo.innerHTML = items.map(item => `
+                    <div class="info">
+                        <strong>Key:</strong> ${item.key}<br>
+                        <strong>Value:</strong> <pre>${JSON.stringify(JSON.parse(item.value || '{}'), null, 2)}</pre>
+                    </div>
+                `).join('');
+            }
+        }
+
+        function clearAllStorage() {
+            if (confirm('确定要清除所有登录相关的存储数据吗？这将需要重新登录。')) {
+                localStorage.removeItem('supabase-user-cache');
+                localStorage.removeItem('auth-state');
+                localStorage.removeItem('user');
+                refreshStatus();
+                alert('存储已清除，请刷新页面并重新登录');
+            }
+        }
+
+        async function testWithAnonymous() {
+            const apiTestDiv = document.getElementById('apiTest');
+            apiTestDiv.innerHTML = '<div class="info">正在测试匿名用户...</div>';
+
+            try {
+                const response = await fetch('/api/recommend/ai/entertainment?userId=anonymous&count=3');
+                const data = await response.json();
+                apiTestDiv.innerHTML = `
+                    <div class="warning">
+                        <strong>匿名用户测试结果：</strong><br>
+                        响应: ${JSON.stringify(data, null, 2)}
+                    </div>
+                `;
+            } catch (error) {
+                apiTestDiv.innerHTML = `<div class="error">错误: ${error.message}</div>`;
+            }
+        }
+
+        async function testWithValidUser() {
+            const userId = getUserId();
+            const apiTestDiv = document.getElementById('apiTest');
+
+            if (userId === 'anonymous') {
+                apiTestDiv.innerHTML = '<div class="error">请先登录后再测试有效用户ID</div>';
+                return;
+            }
+
+            apiTestDiv.innerHTML = '<div class="info">正在测试已登录用户...</div>';
+
+            try {
+                const response = await fetch(`/api/recommend/ai/entertainment?userId=${userId}&count=3`);
+                const data = await response.json();
+                apiTestDiv.innerHTML = `
+                    <div class="success">
+                        <strong>已登录用户测试结果：</strong><br>
+                        用户ID: ${userId}<br>
+                        响应: ${JSON.stringify(data, null, 2)}
+                    </div>
+                `;
+            } catch (error) {
+                apiTestDiv.innerHTML = `<div class="error">错误: ${error.message}</div>`;
+            }
+        }
+
+        // 页面加载时自动刷新状态
+        window.onload = refreshStatus;
+    </script>
+</body>
+</html>

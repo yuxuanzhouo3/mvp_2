@@ -131,6 +131,27 @@ function getUserId(): string {
     } catch (error) {
       console.warn("[Auth] Failed to parse legacy user cache:", error);
     }
+
+    // 最后尝试：Supabase SDK 的默认存储 (sb-<project-ref>-auth-token)
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith("sb-") && key.endsWith("-auth-token")) {
+          const tokenData = localStorage.getItem(key);
+          if (tokenData) {
+            const parsed = JSON.parse(tokenData);
+            // Supabase SDK 存储格式：{ user: { id: "...", ... }, access_token: "...", ... }
+            const userId = parsed?.user?.id;
+            if (userId) {
+              console.log(`[Auth] Got userId from Supabase SDK storage (${key}): ${userId.slice(0, 8)}...`);
+              return userId;
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.warn("[Auth] Failed to parse Supabase SDK storage:", error);
+    }
   }
 
   console.warn("[Auth] No authenticated user found, using anonymous");
