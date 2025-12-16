@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
     const from = (page - 1) * pageSize;
     const to = from + pageSize - 1;
 
-    console.log(`[Payment History] Fetching history for user: ${userId} (type: ${typeof userId})`);
+    console.log(`[Payment History] Fetching history for user: ${userId} (type: ${typeof userId}, email: ${user.email})`);
 
     // 调试：先查询所有该用户的记录（不分页）
     const { data: allUserPayments } = await supabaseAdmin

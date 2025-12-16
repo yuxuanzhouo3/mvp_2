@@ -42,6 +42,7 @@ export function BillingHistory() {
   const [loadingText, setLoadingText] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
   const { toast } = useToast();
   const { language } = useLanguage();
   const t = useTranslations(language);
@@ -64,6 +65,8 @@ export function BillingHistory() {
         const pageSize = 50;
         let hasMore = true;
 
+        console.log("[BillingHistory] Fetching billing history for user:", user.id);
+
         // Fetch all pages
         while (hasMore) {
           if (page > 1) {
@@ -75,11 +78,15 @@ export function BillingHistory() {
           const resp = await fetchWithAuth(`/api/payment/history?page=${page}&pageSize=${pageSize}`);
 
           if (!resp.ok) {
+            const errorText = await resp.text();
+            console.error("[BillingHistory] API error:", resp.status, errorText);
             throw new Error("Failed to fetch billing history");
           }
 
           const apiData = await resp.json();
           const pageRecords = apiData.records || [];
+
+          console.log(`[BillingHistory] Page ${page}: received ${pageRecords.length} records`, pageRecords);
 
           allRecords = [...allRecords, ...pageRecords];
 
@@ -91,6 +98,7 @@ export function BillingHistory() {
           }
         }
 
+        console.log("[BillingHistory] Total records loaded:", allRecords.length, allRecords);
         setRecords(allRecords);
         setError(null);
       } catch (err) {
@@ -103,7 +111,11 @@ export function BillingHistory() {
     };
 
     fetchBillingHistory();
-  }, [user?.id]);
+  }, [user?.id, language, refreshKey]);
+
+  const handleRefresh = () => {
+    setRefreshKey((prev) => prev + 1);
+  };
 
   const getStatusBadge = (status: BillingRecord["status"]) => {
     const statusConfig = {
@@ -221,15 +233,28 @@ export function BillingHistory() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Receipt className="h-5 w-5" />
-          {language === "zh" ? "账单历史" : "Billing History"}
-        </CardTitle>
-        <CardDescription>
-          {language === "zh"
-            ? "查看和管理您的支付记录"
-            : "View and manage your payment records"}
-        </CardDescription>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Receipt className="h-5 w-5" />
+              {language === "zh" ? "账单历史" : "Billing History"}
+            </CardTitle>
+            <CardDescription>
+              {language === "zh"
+                ? "查看和管理您的支付记录"
+                : "View and manage your payment records"}
+            </CardDescription>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={loading}
+          >
+            <RefreshCw className={`h-4 w-4 mr-1 ${loading ? "animate-spin" : ""}`} />
+            {language === "zh" ? "刷新" : "Refresh"}
+          </Button>
+        </div>
       </CardHeader>
 
       <CardContent>
