@@ -47,11 +47,12 @@ export async function GET(request: NextRequest) {
     const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(userId);
     console.log(`[Payment History] Debug - Auth user for ${userId}:`, authUser?.user?.email, authUser?.user?.id);
 
-    // 查询支付记录
+    // 查询支付记录 - 只显示已完成(completed)的支付记录
     const { data: payments, error } = await supabaseAdmin
       .from("payments")
       .select("id, created_at, amount, currency, status, payment_method, transaction_id, user_id")
       .eq("user_id", userId)
+      .eq("status", "completed")
       .order("created_at", { ascending: false })
       .range(from, to);
 
@@ -124,11 +125,12 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    // 调试：获取该用户的总支付记录数
+    // 调试：获取该用户的已完成支付记录总数
     const { count: totalCount } = await supabaseAdmin
       .from("payments")
       .select("*", { count: "exact", head: true })
-      .eq("user_id", userId);
+      .eq("user_id", userId)
+      .eq("status", "completed");
 
     console.log(`[Payment History] Total payment count for user ${userId}: ${totalCount}`);
 

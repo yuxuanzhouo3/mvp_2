@@ -229,7 +229,8 @@ export function BillingHistory() {
     );
   }
 
-  const visibleRecords = records.filter((record) => record.status !== "pending");
+  // 后端已经只返回 completed 状态的记录，所以这里直接使用所有记录
+  const visibleRecords = records;
 
   return (
     <Card>
