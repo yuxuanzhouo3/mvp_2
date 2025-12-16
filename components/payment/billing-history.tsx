@@ -39,6 +39,7 @@ export function BillingHistory() {
   const { user } = useAuth();
   const [records, setRecords] = useState<BillingRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingText, setLoadingText] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const { toast } = useToast();
@@ -54,23 +55,50 @@ export function BillingHistory() {
 
       try {
         setLoading(true);
+        setLoadingText(language === "zh" ? "正在加载账单记录..." : "Loading billing records...");
 
         const { fetchWithAuth } = await import("@/lib/auth/fetch-with-auth");
 
-        const resp = await fetchWithAuth(`/api/payment/history?page=1&pageSize=50`);
+        let allRecords: BillingRecord[] = [];
+        let page = 1;
+        const pageSize = 50;
+        let hasMore = true;
 
-        if (!resp.ok) {
-          throw new Error("Failed to fetch billing history");
+        // Fetch all pages
+        while (hasMore) {
+          if (page > 1) {
+            setLoadingText(language === "zh"
+              ? `正在加载账单记录... (第 ${page} 页)`
+              : `Loading billing records... (Page ${page})`);
+          }
+
+          const resp = await fetchWithAuth(`/api/payment/history?page=${page}&pageSize=${pageSize}`);
+
+          if (!resp.ok) {
+            throw new Error("Failed to fetch billing history");
+          }
+
+          const apiData = await resp.json();
+          const pageRecords = apiData.records || [];
+
+          allRecords = [...allRecords, ...pageRecords];
+
+          // If we got fewer records than pageSize, we've reached the end
+          if (pageRecords.length < pageSize) {
+            hasMore = false;
+          } else {
+            page++;
+          }
         }
 
-        const apiData = await resp.json();
-        setRecords(apiData.records || []);
+        setRecords(allRecords);
         setError(null);
       } catch (err) {
         console.error("Billing history error:", err);
         setError("Failed to load billing history");
       } finally {
         setLoading(false);
+        setLoadingText("");
       }
     };
 
@@ -171,7 +199,7 @@ export function BillingHistory() {
         <CardContent className="pt-6">
           <div className="flex items-center justify-center py-8">
             <RefreshCw className="h-6 w-6 animate-spin mr-2" />
-            Loading...
+            {loadingText || (language === "zh" ? "加载中..." : "Loading...")}
           </div>
         </CardContent>
       </Card>
