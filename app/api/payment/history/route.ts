@@ -12,6 +12,10 @@ export const dynamic = 'force-dynamic';
 // GET /api/payment/history?page=1&pageSize=20
 export async function GET(request: NextRequest) {
   try {
+    // 调试：检查认证信息
+    const { token, error: tokenError } = extractTokenFromRequest(request);
+    console.log(`[Payment History] Token check - Exists: ${!!token}, Error: ${tokenError}`);
+
     // 验证用户认证
     const authResult = await requireAuth(request);
     if (!authResult) {
