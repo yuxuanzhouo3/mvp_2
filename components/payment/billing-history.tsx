@@ -87,6 +87,7 @@ export function BillingHistory() {
           const pageRecords = apiData.records || [];
 
           console.log(`[BillingHistory] Page ${page}: received ${pageRecords.length} records`, pageRecords);
+          console.log(`[BillingHistory] Debug info:`, apiData.debug);
 
           allRecords = [...allRecords, ...pageRecords];
 

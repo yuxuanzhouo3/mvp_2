@@ -124,11 +124,27 @@ export async function GET(request: NextRequest) {
       };
     });
 
+    // 调试：获取该用户的总支付记录数
+    const { count: totalCount } = await supabaseAdmin
+      .from("payments")
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", userId);
+
+    console.log(`[Payment History] Total payment count for user ${userId}: ${totalCount}`);
+
     return NextResponse.json({
       page,
       pageSize,
       count: records.length,
+      totalCount: totalCount || 0,
       records,
+      debug: {
+        userId,
+        queriedFrom: from,
+        queriedTo: to,
+        returnedCount: records.length,
+        totalInDb: totalCount || 0,
+      }
     });
   } catch (error) {
     console.error("Payment history handler error:", error);
