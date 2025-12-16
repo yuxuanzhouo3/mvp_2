@@ -4,6 +4,7 @@ import { paypalClient } from "@/lib/paypal";
 import { requireAuth } from "@/lib/auth/auth";
 import { supabaseAdmin } from "@/lib/integrations/supabase-admin";
 import { getPricingByMethod } from "@/lib/payment/payment-config";
+import { getBaseUrl } from "@/lib/utils/get-base-url";
 
 export async function POST(request: NextRequest) {
   try {
@@ -48,8 +49,8 @@ export async function POST(request: NextRequest) {
         },
       ],
       application_context: {
-        return_url: `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/payment-success?provider=paypal`,
-        cancel_url: `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/payment-cancel?provider=paypal`,
+        return_url: `${getBaseUrl()}/payment-success?provider=paypal`,
+        cancel_url: `${getBaseUrl()}/payment-cancel?provider=paypal`,
       },
     };
 

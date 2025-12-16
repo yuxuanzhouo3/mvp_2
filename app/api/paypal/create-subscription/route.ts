@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import { PAYPAL_PLANS } from '@/lib/paypal'
+import { getBaseUrl } from '@/lib/utils/get-base-url'
 
 export async function POST(request: NextRequest) {
   try {
@@ -27,8 +28,8 @@ export async function POST(request: NextRequest) {
         email_address: session.user.email,
       },
       application_context: {
-        return_url: `${process.env.NEXTAUTH_URL}/settings?success=true`,
-        cancel_url: `${process.env.NEXTAUTH_URL}/settings?canceled=true`,
+        return_url: `${getBaseUrl()}/settings?success=true`,
+        cancel_url: `${getBaseUrl()}/settings?canceled=true`,
       },
     })
     const response = await paypalClient.execute(request)

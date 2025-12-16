@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import { stripe, STRIPE_PLANS } from '@/lib/stripe'
+import { getBaseUrl } from '@/lib/utils/get-base-url'
 
 export async function POST(request: NextRequest) {
   try {
@@ -29,8 +30,8 @@ export async function POST(request: NextRequest) {
         },
       ],
       mode: 'subscription',
-      success_url: `${process.env.NEXTAUTH_URL}/settings?success=true`,
-      cancel_url: `${process.env.NEXTAUTH_URL}/settings?canceled=true`,
+      success_url: `${getBaseUrl()}/settings?success=true`,
+      cancel_url: `${getBaseUrl()}/settings?canceled=true`,
       metadata: {
         userId: (session.user as any).id,
         tier: tier,
