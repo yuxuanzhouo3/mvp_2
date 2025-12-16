@@ -10,6 +10,41 @@ function normalizePlan(plan?: string | null): "enterprise" | "pro" | "free" {
   return "free";
 }
 
+function resolvePlanFromMetadata(meta?: Record<string, any> | null) {
+  return normalizePlan(
+    meta?.planType ||
+    meta?.tier ||
+    meta?.plan ||
+    meta?.plan_type ||
+    meta?.subscription_plan
+  );
+}
+
+async function syncProfileTables(userId: string, plan: "enterprise" | "pro" | "free", status: string) {
+  const now = new Date().toISOString();
+  const updates = {
+    subscription_tier: plan,
+    subscription_status: status,
+    updated_at: now,
+  };
+
+  try {
+    await supabaseAdmin
+      .from("profiles")
+      .upsert({ id: userId, ...updates }, { onConflict: "id" });
+  } catch (error) {
+    console.error("[API] Failed to sync profiles table:", error);
+  }
+
+  try {
+    await supabaseAdmin
+      .from("user_profiles")
+      .upsert({ id: userId, ...updates, created_at: now }, { onConflict: "id" });
+  } catch (error) {
+    console.error("[API] Failed to sync user_profiles table:", error);
+  }
+}
+
 export async function POST(request: NextRequest) {
   console.log("[API] POST /api/auth/refresh-subscription - Start");
 
@@ -78,8 +113,8 @@ export async function POST(request: NextRequest) {
     }
 
     // 兜底使用最近一次支付的 planType 元数据（即使 subscription 记录存在但 plan_type 异常，也用支付信息纠正）
-    const paymentPlanType = normalizePlan(latestPayment?.metadata?.planType);
-    if (paymentPlanType !== "free" && (subscriptionPlan === "free" || !subscription)) {
+    const paymentPlanType = resolvePlanFromMetadata(latestPayment?.metadata || null);
+    if (paymentPlanType !== "free" && paymentPlanType !== subscriptionPlan) {
       subscriptionPlan = paymentPlanType;
       if (!subscriptionStatus || subscriptionStatus === "inactive") {
         subscriptionStatus = "active";
@@ -134,6 +169,8 @@ export async function POST(request: NextRequest) {
       // Don't return error immediately, continue with response
       console.log("[API] Will continue despite metadata update exception");
     }
+
+    await syncProfileTables(user.id, subscriptionPlan, subscriptionStatus);
 
     console.log("[API] Sending response:", {
       success: true,

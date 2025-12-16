@@ -14,6 +14,7 @@ export interface WebhookEvent {
 }
 
 type AppSubscriptionStatus = "active" | "expired" | "cancelled";
+type PlanTier = "free" | "pro" | "enterprise";
 
 function resolveBillingCycleFromInterval(
   interval?: Stripe.Price.Recurring.Interval | string
@@ -33,6 +34,112 @@ function mapStripeStatusToAppStatus(status?: string): AppSubscriptionStatus {
       return "expired";
     default:
       return "active";
+  }
+}
+
+function normalizePlanType(value?: string | null): PlanTier {
+  const normalized = (value || "").toLowerCase();
+  if (normalized.includes("enterprise")) return "enterprise";
+  if (normalized.includes("pro")) return "pro";
+  return "free";
+}
+
+function resolvePlanType(params: {
+  metadata?: Record<string, any>;
+  amount?: number;
+  billingCycle?: string | null;
+  priceNickname?: string | null;
+  priceId?: string | null;
+}): PlanTier {
+  const { metadata, amount = 0, billingCycle, priceNickname, priceId } = params;
+
+  const metaPlan = normalizePlanType(
+    metadata?.planType ||
+      metadata?.tier ||
+      metadata?.plan ||
+      metadata?.plan_type ||
+      metadata?.subscription_plan ||
+      metadata?.product_tier
+  );
+  if (metaPlan !== "free") return metaPlan;
+
+  const nicknamePlan = normalizePlanType(priceNickname);
+  if (nicknamePlan !== "free") return nicknamePlan;
+
+  const priceIdFromMeta =
+    (metadata?.priceId as string | undefined) ||
+    (metadata?.price_id as string | undefined) ||
+    (metadata?.price as string | undefined) ||
+    priceId ||
+    null;
+
+  if (priceIdFromMeta) {
+    if (
+      process.env.STRIPE_ENTERPRISE_PRICE_ID &&
+      priceIdFromMeta === process.env.STRIPE_ENTERPRISE_PRICE_ID
+    ) {
+      return "enterprise";
+    }
+    if (
+      process.env.STRIPE_PRO_PRICE_ID &&
+      priceIdFromMeta === process.env.STRIPE_PRO_PRICE_ID
+    ) {
+      return "pro";
+    }
+  }
+
+  const normalizedAmount = Math.max(0, amount);
+  if (billingCycle === "yearly") {
+    return normalizedAmount >= 300 ? "enterprise" : "pro";
+  }
+  if (billingCycle === "monthly") {
+    return normalizedAmount >= 30 ? "enterprise" : "pro";
+  }
+
+  if (normalizedAmount >= 300) return "enterprise";
+  if (normalizedAmount >= 30) return "enterprise";
+  return "pro";
+}
+
+async function syncProfileTables(
+  userId: string,
+  planType: PlanTier,
+  status: AppSubscriptionStatus
+) {
+  const now = new Date().toISOString();
+  const profileUpdates = {
+    subscription_tier: planType,
+    subscription_status: status,
+    updated_at: now,
+  };
+
+  try {
+    await supabaseAdmin
+      .from("profiles")
+      .upsert(
+        {
+          id: userId,
+          ...profileUpdates,
+        },
+        { onConflict: "id" }
+      );
+  } catch (error) {
+    console.error("[Webhook] Failed to sync profiles table:", error);
+  }
+
+  try {
+    await supabaseAdmin
+      .from("user_profiles")
+      .upsert(
+        {
+          id: userId,
+          ...profileUpdates,
+          created_at: now,
+        },
+        { onConflict: "id" }
+      );
+  } catch (error) {
+    console.error("[Webhook] Failed to sync user_profiles table:", error);
   }
 }
 
@@ -537,8 +644,15 @@ async function updateUserSubscription(userId: string, amount: number, currency: 
     }
 
     // 从元数据或金额判断订阅类型
-    const billingCycle = metadata?.billingCycle || (amount >= 99 ? "yearly" : "monthly");
-    const planType = metadata?.planType || (amount >= 199 ? "enterprise" : "pro");
+    const billingCycle =
+      metadata?.billingCycle ||
+      metadata?.billing_cycle ||
+      (amount >= 99 ? "yearly" : "monthly");
+    const planType = resolvePlanType({
+      metadata,
+      amount,
+      billingCycle,
+    });
     const daysToAdd = billingCycle === "yearly" ? 365 : 30;
     const requestedEnd = metadata?.subscriptionEnd ? new Date(metadata.subscriptionEnd) : null;
     const statusToSet: AppSubscriptionStatus = metadata?.status || "active";
@@ -621,6 +735,7 @@ async function updateUserSubscription(userId: string, amount: number, currency: 
           subscription_plan: planType,
           subscription_status: statusToSet,
           subscription_end: subscriptionEnd.toISOString(),
+          subscription_billing_cycle: billingCycle,
         }
       }
     );
@@ -629,6 +744,8 @@ async function updateUserSubscription(userId: string, amount: number, currency: 
       console.error("Error updating user metadata:", updateError);
       // 不抛出错误，因为订阅已经成功更新
     }
+
+    await syncProfileTables(userId, planType, statusToSet);
 
     console.log(`${isNewSubscription ? 'Created' : 'Extended'} subscription for user ${userId}: ${planType} plan ${daysToAdd} days, expires at ${subscriptionEnd.toISOString()}`);
   } catch (error) {
@@ -678,28 +795,34 @@ async function handleStripeCheckoutSessionCompleted(session: Stripe.Checkout.Ses
 
   let billingCycle: "monthly" | "yearly" | undefined =
     (metadata.billingCycle as any) || undefined;
-  let planType =
-    metadata.planType ||
-    metadata.tier ||
-    metadata.plan ||
-    (amount >= 199 ? "enterprise" : "pro");
   let subscriptionEnd: string | undefined;
+  let priceNickname: string | null = null;
+  let priceId: string | null = null;
+  let planType = resolvePlanType({
+    metadata,
+    amount,
+    billingCycle,
+  });
 
   if (subscriptionId) {
     try {
       const subscription = await stripe.subscriptions.retrieve(subscriptionId);
 
+      const subscriptionPrice = subscription.items?.data?.[0]?.price;
       billingCycle =
         billingCycle ||
         resolveBillingCycleFromInterval(
-          subscription.items?.data?.[0]?.price?.recurring?.interval
+          subscriptionPrice?.recurring?.interval
         );
-      planType =
-        planType ||
-        subscription.metadata?.planType ||
-        subscription.metadata?.tier ||
-        subscription.items?.data?.[0]?.price?.nickname?.toLowerCase() ||
-        planType;
+      priceNickname = subscriptionPrice?.nickname || null;
+      priceId = subscriptionPrice?.id || null;
+      planType = resolvePlanType({
+        metadata: { ...metadata, ...(subscription.metadata || {}) },
+        amount: amount || (subscriptionPrice?.unit_amount ? subscriptionPrice.unit_amount / 100 : 0),
+        billingCycle,
+        priceNickname,
+        priceId,
+      });
       subscriptionEnd = subscription.current_period_end
         ? new Date(subscription.current_period_end * 1000).toISOString()
         : undefined;
@@ -721,6 +844,14 @@ async function handleStripeCheckoutSessionCompleted(session: Stripe.Checkout.Ses
       paymentIntentId,
     });
   }
+
+  planType = resolvePlanType({
+    metadata,
+    amount,
+    billingCycle,
+    priceNickname,
+    priceId,
+  });
 
   await upsertStripePaymentRecord({
     transactionId: paymentIntentId || session.id,
@@ -770,11 +901,13 @@ async function handleStripeSubscriptionUpdated(
   const currency = (price?.currency || subscription.currency || "usd").toUpperCase();
 
   const billingCycle = resolveBillingCycleFromInterval(price?.recurring?.interval);
-  const planType =
-    subscription.metadata?.planType ||
-    subscription.metadata?.tier ||
-    price?.nickname?.toLowerCase() ||
-    (amount >= 199 ? "enterprise" : "pro");
+  const planType = resolvePlanType({
+    metadata: subscription.metadata || undefined,
+    amount,
+    billingCycle,
+    priceNickname: price?.nickname || null,
+    priceId: price?.id || null,
+  });
   const subscriptionEnd = subscription.current_period_end
     ? new Date(subscription.current_period_end * 1000).toISOString()
     : undefined;
@@ -816,11 +949,13 @@ async function handleStripeSubscriptionDeleted(subscription: Stripe.Subscription
   const amount = price?.unit_amount ? price.unit_amount / 100 : 0;
   const currency = (price?.currency || subscription.currency || "usd").toUpperCase();
   const billingCycle = resolveBillingCycleFromInterval(price?.recurring?.interval);
-  const planType =
-    subscription.metadata?.planType ||
-    subscription.metadata?.tier ||
-    price?.nickname?.toLowerCase() ||
-    (amount >= 199 ? "enterprise" : "pro");
+  const planType = resolvePlanType({
+    metadata: subscription.metadata || undefined,
+    amount,
+    billingCycle,
+    priceNickname: price?.nickname || null,
+    priceId: price?.id || null,
+  });
 
   const subscriptionEnd =
     subscription.cancel_at_period_end && subscription.current_period_end
@@ -875,11 +1010,13 @@ async function handleStripeInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
 
   const line = invoice.lines?.data?.[0];
   const billingCycle = resolveBillingCycleFromInterval(line?.price?.recurring?.interval);
-  const planType =
-    invoice.metadata?.planType ||
-    invoice.metadata?.tier ||
-    line?.price?.nickname?.toLowerCase() ||
-    (line?.price?.unit_amount && line.price.unit_amount / 100 >= 199 ? "enterprise" : "pro");
+  const planType = resolvePlanType({
+    metadata: invoice.metadata || undefined,
+    amount: amount || (line?.price?.unit_amount ? line.price.unit_amount / 100 : 0),
+    billingCycle,
+    priceNickname: line?.price?.nickname || null,
+    priceId: line?.price?.id || null,
+  });
   const subscriptionEnd = line?.period?.end
     ? new Date(line.period.end * 1000).toISOString()
     : undefined;
@@ -964,11 +1101,13 @@ async function handleStripeInvoicePaymentFailed(invoice: Stripe.Invoice) {
   const currency = (invoice.currency || "usd").toUpperCase();
   const line = invoice.lines?.data?.[0];
   const billingCycle = resolveBillingCycleFromInterval(line?.price?.recurring?.interval);
-  const planType =
-    invoice.metadata?.planType ||
-    invoice.metadata?.tier ||
-    line?.price?.nickname?.toLowerCase() ||
-    (line?.price?.unit_amount && line.price.unit_amount / 100 >= 199 ? "enterprise" : "pro");
+  const planType = resolvePlanType({
+    metadata: invoice.metadata || undefined,
+    amount: amount || (line?.price?.unit_amount ? line.price.unit_amount / 100 : 0),
+    billingCycle,
+    priceNickname: line?.price?.nickname || null,
+    priceId: line?.price?.id || null,
+  });
   const subscriptionEnd = line?.period?.end
     ? new Date(line.period.end * 1000).toISOString()
     : new Date().toISOString();

@@ -98,8 +98,21 @@ export async function POST(request: NextRequest) {
       : paymentIntent.amount / 100;
     const currency = (paymentIntent.currency || "usd").toUpperCase();
     const metadata = paymentIntent.metadata || {};
-    const billingCycle = metadata.billingCycle || (amount >= 99 ? "yearly" : "monthly");
-    const planType = metadata.planType || (amount >= 199 ? "enterprise" : "pro");
+    const billingCycle =
+      (metadata as any).billingCycle ||
+      (metadata as any).billing_cycle ||
+      (amount >= 99 ? "yearly" : "monthly");
+    const planType =
+      (metadata as any).planType ||
+      (metadata as any).tier ||
+      (metadata as any).plan ||
+      (billingCycle === "yearly"
+        ? amount >= 300
+          ? "enterprise"
+          : "pro"
+        : amount >= 30
+        ? "enterprise"
+        : "pro");
 
     if (existingPayment) {
       // 更新现有记录
@@ -230,11 +243,29 @@ export async function POST(request: NextRequest) {
           subscription_plan: planType,
           subscription_status: "active",
           subscription_end: subscriptionEnd.toISOString(),
+          subscription_billing_cycle: billingCycle,
         },
       });
       console.log(`[Payment Confirm] User metadata updated`);
     } catch (metaError) {
       console.error("[Payment Confirm] Error updating user metadata:", metaError);
+    }
+
+    try {
+      const profileUpdates = {
+        subscription_tier: planType,
+        subscription_status: "active",
+        updated_at: new Date().toISOString(),
+      };
+
+      await supabaseAdmin
+        .from("profiles")
+        .upsert({ id: user.id, ...profileUpdates }, { onConflict: "id" });
+      await supabaseAdmin
+        .from("user_profiles")
+        .upsert({ id: user.id, ...profileUpdates, created_at: new Date().toISOString() }, { onConflict: "id" });
+    } catch (profileError) {
+      console.error("[Payment Confirm] Failed to sync profile tables:", profileError);
     }
 
     console.log(`[Payment Confirm] ✅ Payment ${targetTransactionId} confirmed successfully`);
