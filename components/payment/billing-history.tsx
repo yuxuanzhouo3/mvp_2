@@ -238,38 +238,46 @@ export function BillingHistory() {
             {language === "zh" ? "暂无账单记录" : "No billing records found"}
           </div>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{language === "zh" ? "日期" : "Date"}</TableHead>
-                <TableHead>
-                  {language === "zh" ? "描述" : "Description"}
-                </TableHead>
-                <TableHead>{language === "zh" ? "金额" : "Amount"}</TableHead>
-                <TableHead>
-                  {language === "zh" ? "支付方式" : "Payment Method"}
-                </TableHead>
-                <TableHead>{language === "zh" ? "状态" : "Status"}</TableHead>
-                <TableHead>{language === "zh" ? "操作" : "Actions"}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {visibleRecords.map((record) => (
-                <TableRow key={record.id}>
-                  <TableCell>{formatDate(record.date)}</TableCell>
-                  <TableCell>{record.description}</TableCell>
-                  <TableCell className="font-medium">
-                    {formatAmount(record.amount, record.currency)}
-                  </TableCell>
-                  <TableCell>{record.paymentMethod}</TableCell>
-                  <TableCell>{getStatusBadge(record.status)}</TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2" />
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <div className="space-y-4">
+            {/* 显示记录总数 */}
+            <div className="text-sm text-muted-foreground">
+              {language === "zh"
+                ? `共 ${visibleRecords.length} 条记录`
+                : `${visibleRecords.length} record${visibleRecords.length > 1 ? "s" : ""} found`}
+            </div>
+
+            {/* 表格容器，添加最大高度和滚动 */}
+            <div className="max-h-[500px] overflow-auto border rounded-md">
+              <Table>
+                <TableHeader className="sticky top-0 bg-background z-10">
+                  <TableRow>
+                    <TableHead>{language === "zh" ? "日期" : "Date"}</TableHead>
+                    <TableHead>
+                      {language === "zh" ? "描述" : "Description"}
+                    </TableHead>
+                    <TableHead>{language === "zh" ? "金额" : "Amount"}</TableHead>
+                    <TableHead>
+                      {language === "zh" ? "支付方式" : "Payment Method"}
+                    </TableHead>
+                    <TableHead>{language === "zh" ? "状态" : "Status"}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {visibleRecords.map((record) => (
+                    <TableRow key={record.id}>
+                      <TableCell>{formatDate(record.date)}</TableCell>
+                      <TableCell>{record.description}</TableCell>
+                      <TableCell className="font-medium">
+                        {formatAmount(record.amount, record.currency)}
+                      </TableCell>
+                      <TableCell>{record.paymentMethod}</TableCell>
+                      <TableCell>{getStatusBadge(record.status)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
         )}
       </CardContent>
     </Card>

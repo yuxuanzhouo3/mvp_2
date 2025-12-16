@@ -91,6 +91,73 @@ export async function GET(request: NextRequest) {
       console.log("[/api/profile] No user_profiles table or profile not found");
     }
 
+    // 获取用户的实际订阅状态（从 user_subscriptions 表）
+    let subscriptionData: any = null;
+    try {
+      const supabaseAdmin = getSupabaseAdmin();
+      const { data: subscription } = await supabaseAdmin
+        .from("user_subscriptions")
+        .select("*")
+        .eq("user_id", user.id)
+        .eq("status", "active")
+        .gte("subscription_end", new Date().toISOString())
+        .single();
+
+      subscriptionData = subscription;
+      console.log("[/api/profile] Found active subscription:", subscription?.plan_type);
+    } catch (error) {
+      console.log("[/api/profile] No active subscription found or table doesn't exist");
+    }
+
+    // 获取最近一次成功支付的信息作为兜底
+    let latestPayment: any = null;
+    try {
+      const supabaseAdmin = getSupabaseAdmin();
+      const { data: payment } = await supabaseAdmin
+        .from("payments")
+        .select("metadata, status, created_at")
+        .eq("user_id", user.id)
+        .eq("status", "completed")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      latestPayment = payment;
+    } catch (error) {
+      console.log("[/api/profile] Failed to fetch latest payment");
+    }
+
+    // 确定正确的订阅计划
+    const normalizePlan = (plan?: string | null): string => {
+      const val = (plan || "").toLowerCase();
+      if (val.includes("enterprise")) return "enterprise";
+      if (val.includes("pro")) return "pro";
+      return "free";
+    };
+
+    // 优先级：user_subscriptions > payments metadata > user_profiles > default
+    let resolvedPlan = "free";
+    let resolvedStatus = "inactive";
+
+    if (subscriptionData) {
+      resolvedPlan = normalizePlan(subscriptionData.plan_type);
+      resolvedStatus = subscriptionData.status || "active";
+    } else if (latestPayment?.metadata) {
+      const meta = latestPayment.metadata;
+      const paymentPlan = normalizePlan(
+        meta?.planType || meta?.tier || meta?.plan || meta?.plan_type || meta?.subscription_plan
+      );
+      if (paymentPlan !== "free") {
+        resolvedPlan = paymentPlan;
+        resolvedStatus = "active";
+      }
+    } else if (profileData?.subscription_tier) {
+      resolvedPlan = normalizePlan(profileData.subscription_tier);
+      resolvedStatus = profileData.subscription_status || "inactive";
+    }
+
+    console.log("[/api/profile] Resolved subscription plan:", resolvedPlan, "status:", resolvedStatus);
+
     // Update or create user_profiles record
     try {
       const supabaseAdmin = getSupabaseAdmin();
@@ -148,9 +215,9 @@ export async function GET(request: NextRequest) {
       email: user.email || "",
       name: latestProfileData?.full_name || user.user_metadata?.full_name || user.user_metadata?.name || "",
       avatar: latestProfileData?.avatar || latestProfileData?.avatar_url || user.user_metadata?.avatar_url || "",
-      subscription_plan: latestProfileData?.subscription_tier || "free",
-      subscription_status: latestProfileData?.subscription_status || "active",
-      membership_expires_at: latestProfileData?.membership_expires_at || user.user_metadata?.membership_expires_at || null,
+      subscription_plan: resolvedPlan,
+      subscription_status: resolvedStatus,
+      membership_expires_at: subscriptionData?.subscription_end || latestProfileData?.membership_expires_at || user.user_metadata?.membership_expires_at || null,
     };
 
     console.log("[/api/profile] Returning profile for user:", user.id);
