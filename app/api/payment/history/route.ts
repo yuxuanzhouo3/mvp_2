@@ -15,8 +15,14 @@ export async function GET(request: NextRequest) {
     // 验证用户认证
     const authResult = await requireAuth(request);
     if (!authResult) {
+      // 添加更详细的认证失败日志
+      console.error("[Payment History] Authentication failed");
       return NextResponse.json(
-        { error: "Unauthorized" },
+        {
+          error: "Unauthorized",
+          message: "Authentication required to access payment history",
+          code: "AUTH_FAILED"
+        },
         { status: 401 }
       );
     }

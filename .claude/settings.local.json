@@ -34,7 +34,9 @@
       "Bash(del:*)",
       "Bash(set:*)",
       "Bash(npx next build:*)",
-      "Bash(npx supabase --help:*)"
+      "Bash(npx supabase --help:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ],
     "deny": [],
     "ask": []
