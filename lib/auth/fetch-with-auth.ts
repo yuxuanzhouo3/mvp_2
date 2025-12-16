@@ -34,7 +34,7 @@ export async function getAuthHeaders(): Promise<Record<string, string>> {
         }
       }
     } catch (error) {
-      console.warn("Failed to refresh session:", error);
+      console.error("Failed to refresh session:", error);
     }
   }
 

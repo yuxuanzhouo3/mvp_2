@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/integrations/supabase-admin";
 import { requireAuth } from "@/lib/auth/auth";
+import { extractTokenFromRequest, verifyAuthToken } from "@/lib/auth/auth-utils";
 
 // Force dynamic rendering for this route
 export const dynamic = 'force-dynamic';
@@ -32,20 +33,7 @@ export async function GET(request: NextRequest) {
     const from = (page - 1) * pageSize;
     const to = from + pageSize - 1;
 
-    console.log(`[Payment History] Fetching history for user: ${userId} (type: ${typeof userId}, email: ${user.email})`);
-
-    // 调试：先查询所有该用户的记录（不分页）
-    const { data: allUserPayments } = await supabaseAdmin
-      .from("payments")
-      .select("id, user_id, created_at, status, amount, transaction_id")
-      .eq("user_id", userId);
-
-    console.log(`[Payment History] Debug - Total payments for user ${userId}:`, allUserPayments?.length || 0);
-    console.log(`[Payment History] Debug - Payment records:`, allUserPayments);
-
-    // 调试：查询该用户在auth.users表中的信息
-    const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(userId);
-    console.log(`[Payment History] Debug - Auth user for ${userId}:`, authUser?.user?.email, authUser?.user?.id);
+    console.log(`[Payment History] Fetching history for user: ${userId}`);
 
     // 查询支付记录 - 只显示已完成(completed)的支付记录
     const { data: payments, error } = await supabaseAdmin
@@ -64,28 +52,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    console.log(`[Payment History] Found ${payments?.length || 0} records for user: ${userId} (page ${page}, range ${from}-${to})`);
-    console.log(`[Payment History] Paginated records:`, payments);
-
-    // 调试：查询最近的所有支付记录看看 user_id 格式
-    const { data: allPayments } = await supabaseAdmin
-      .from("payments")
-      .select("id, user_id, transaction_id, created_at, status, amount, metadata")
-      .order("created_at", { ascending: false })
-      .limit(10);
-    console.log("[Payment History] Debug - Recent payments in DB:", allPayments);
-
-    // 检查metadata中的userId是否匹配
-    allPayments?.forEach((p: any) => {
-      if (p.metadata) {
-        try {
-          const metadata = JSON.parse(p.metadata);
-          console.log(`[Payment History] Payment ${p.id}: user_id=${p.user_id}, metadata.userId=${metadata.userId}`);
-        } catch (e) {
-          console.log(`[Payment History] Could not parse metadata for payment ${p.id}`);
-        }
-      }
-    });
+    console.log(`[Payment History] Found ${payments?.length || 0} completed records for user: ${userId}`);
 
     // 格式化支付记录
     const records = (payments || []).map((p: any) => {
@@ -125,28 +92,19 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    // 调试：获取该用户的已完成支付记录总数
+    // 获取该用户的已完成支付记录总数
     const { count: totalCount } = await supabaseAdmin
       .from("payments")
       .select("*", { count: "exact", head: true })
       .eq("user_id", userId)
       .eq("status", "completed");
 
-    console.log(`[Payment History] Total payment count for user ${userId}: ${totalCount}`);
-
     return NextResponse.json({
       page,
       pageSize,
       count: records.length,
       totalCount: totalCount || 0,
-      records,
-      debug: {
-        userId,
-        queriedFrom: from,
-        queriedTo: to,
-        returnedCount: records.length,
-        totalInDb: totalCount || 0,
-      }
+      records
     });
   } catch (error) {
     console.error("Payment history handler error:", error);
