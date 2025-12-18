@@ -1,6 +1,9 @@
 // app/api/subscription/export/route.ts - 历史记录导出API
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth/auth";
+
+// 强制动态渲染，因为使用了request.headers
+export const dynamic = 'force-dynamic';
 import { canExportData, getUserRecommendationHistory } from "@/lib/subscription/usage-tracker";
 
 /**
