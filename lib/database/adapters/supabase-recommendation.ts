@@ -254,6 +254,11 @@ export class SupabaseRecommendationAdapter implements RecommendationDatabaseAdap
       tags?: string[];
       incrementClick?: boolean;
       incrementView?: boolean;
+      // 用户画像相关字段
+      onboarding_completed?: boolean;
+      profile_completeness?: number;
+      ai_profile_summary?: string;
+      personality_tags?: string[];
     }
   ): Promise<SingleResult<UserPreference>> {
     try {
@@ -272,50 +277,86 @@ export class SupabaseRecommendationAdapter implements RecommendationDatabaseAdap
           : existing.preferences;
 
         const newTags = updates.tags
-          ? [...new Set([...existing.tags, ...updates.tags])]
+          ? [...new Set([...(existing.tags || []), ...updates.tags])]
           : existing.tags;
+
+        // 构建更新对象
+        const updateData: Record<string, any> = {
+          preferences: newPreferences,
+          tags: newTags,
+          click_count: updates.incrementClick ? (existing.click_count || 0) + 1 : existing.click_count,
+          view_count: updates.incrementView ? (existing.view_count || 0) + 1 : existing.view_count,
+          last_activity: new Date().toISOString(),
+        };
+
+        // 添加画像相关字段（如果提供）
+        if (updates.onboarding_completed !== undefined) {
+          updateData.onboarding_completed = updates.onboarding_completed;
+        }
+        if (updates.profile_completeness !== undefined) {
+          updateData.profile_completeness = updates.profile_completeness;
+        }
+        if (updates.ai_profile_summary !== undefined) {
+          updateData.ai_profile_summary = updates.ai_profile_summary;
+        }
+        if (updates.personality_tags !== undefined) {
+          updateData.personality_tags = updates.personality_tags;
+        }
 
         const { data, error } = await this.supabase
           .from('user_preferences')
-          .update({
-            preferences: newPreferences,
-            tags: newTags,
-            click_count: updates.incrementClick ? existing.click_count + 1 : existing.click_count,
-            view_count: updates.incrementView ? existing.view_count + 1 : existing.view_count,
-            last_activity: new Date().toISOString(),
-          })
+          .update(updateData)
           .eq('id', existing.id)
           .select()
           .single();
 
         if (error) {
+          console.error('[Supabase] 更新用户偏好失败:', error);
           return { data: null, error: new Error(error.message) };
         }
 
         return { data, error: null };
       } else {
         // 创建新记录
+        const insertData: Record<string, any> = {
+          user_id: userId,
+          category,
+          preferences: updates.preferences || {},
+          tags: updates.tags || [],
+          click_count: updates.incrementClick ? 1 : 0,
+          view_count: updates.incrementView ? 1 : 0,
+          last_activity: new Date().toISOString(),
+        };
+
+        // 添加画像相关字段（如果提供）
+        if (updates.onboarding_completed !== undefined) {
+          insertData.onboarding_completed = updates.onboarding_completed;
+        }
+        if (updates.profile_completeness !== undefined) {
+          insertData.profile_completeness = updates.profile_completeness;
+        }
+        if (updates.ai_profile_summary !== undefined) {
+          insertData.ai_profile_summary = updates.ai_profile_summary;
+        }
+        if (updates.personality_tags !== undefined) {
+          insertData.personality_tags = updates.personality_tags;
+        }
+
         const { data, error } = await this.supabase
           .from('user_preferences')
-          .insert({
-            user_id: userId,
-            category,
-            preferences: updates.preferences || {},
-            tags: updates.tags || [],
-            click_count: updates.incrementClick ? 1 : 0,
-            view_count: updates.incrementView ? 1 : 0,
-            last_activity: new Date().toISOString(),
-          })
+          .insert(insertData)
           .select()
           .single();
 
         if (error) {
+          console.error('[Supabase] 创建用户偏好失败:', error);
           return { data: null, error: new Error(error.message) };
         }
 
         return { data, error: null };
       }
     } catch (error) {
+      console.error('[Supabase] upsertUserPreference 异常:', error);
       return { data: null, error: error as Error };
     }
   }

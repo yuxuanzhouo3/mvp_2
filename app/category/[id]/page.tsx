@@ -1,12 +1,15 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { RecommendationCard, RecommendationList } from "@/components/RecommendationCard"
+import { FeedbackDialog } from "@/components/FeedbackDialog"
+import { OnboardingPrompt } from "@/components/OnboardingPrompt"
+import { useOnboarding, useFeedbackTrigger, usePageVisibility } from "@/hooks/use-onboarding"
 import type {
   AIRecommendation,
   RecommendationCategory,
@@ -171,6 +174,36 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
   // 使用环境变量中的地区设置
   const [locale] = useState<"zh" | "en">(() => getClientLocale())
 
+  // 用户画像状态
+  const {
+    loading: onboardingLoading,
+    completed: onboardingCompleted,
+    profileCompleteness,
+    redirectToOnboarding,
+    shouldShowOnboardingPrompt
+  } = useOnboarding(userId)
+
+  // 反馈触发管理
+  const {
+    trackClick,
+    trackReturn,
+    pendingFeedback,
+    feedbackDialogOpen,
+    closeFeedbackDialog,
+    triggerFeedback
+  } = useFeedbackTrigger(userId)
+
+  // 记录最近点击的推荐，用于返回时追踪
+  const lastClickedRef = useRef<{
+    recommendationId: string;
+    title: string;
+    category: string;
+    clickTime: number;
+  } | null>(null)
+
+  // 会话 ID
+  const sessionIdRef = useRef<string>(`session_${Date.now()}`)
+
   const categoryId = params.id as RecommendationCategory
   const category = categoryConfig[categoryId]
   const historyProvider = RegionConfig.database.provider
@@ -181,6 +214,31 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
       setUserId(resolvedId)
     }
   }, [])
+
+  // 页面可见性追踪 - 当用户从外部网站返回时触发
+  usePageVisibility(
+    useCallback(async (timeAway: number) => {
+      if (!lastClickedRef.current || !userId) return
+      
+      const { recommendationId, title, category: recCategory, clickTime } = lastClickedRef.current
+      
+      // 只有离开时间超过 5 秒才认为是真正的外部访问
+      if (timeAway < 5) return
+
+      console.log(`[Return] 用户返回，离开时间: ${timeAway}秒`)
+
+      // 追踪返回并可能触发反馈
+      const result = await trackReturn(recommendationId, timeAway, sessionIdRef.current)
+      
+      if (result.triggerFeedback && result.recommendation) {
+        // 反馈弹窗已经由 trackReturn 内部处理
+        console.log('[Feedback] 触发反馈弹窗')
+      }
+
+      // 清除上次点击记录
+      lastClickedRef.current = null
+    }, [userId, trackReturn])
+  )
 
   const loadLocalHistory = useCallback(() => {
     const savedHistory = localStorage.getItem(`ai_history_${params.id}`)
@@ -371,12 +429,28 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
     }
   }, [categoryId, locale, history, params.id, recordAction, fetchRemoteHistory, userId])
 
-  // 处理链接点击
+  // 处理链接点击 - 增强版，包含追踪功能
   const handleLinkClick = useCallback(
-    (recommendation: AIRecommendation) => {
-      recordAction(recommendation, "click")
+    async (recommendation: AIRecommendation) => {
+      // 记录原有的行为
+      const historyId = await recordAction(recommendation, "click")
+
+      // 记录点击时间和推荐信息，用于返回时追踪
+      lastClickedRef.current = {
+        recommendationId: historyId || recommendation.title, // 使用 historyId 或 title 作为标识
+        title: recommendation.title,
+        category: categoryId,
+        clickTime: Date.now()
+      }
+
+      // 如果用户已登录，追踪点击行为
+      if (userId && historyId) {
+        trackClick(historyId, sessionIdRef.current).then(result => {
+          console.log(`[Track] 点击追踪结果:`, result)
+        })
+      }
     },
-    [recordAction]
+    [recordAction, userId, trackClick, categoryId]
   )
 
   // 处理保存
@@ -419,28 +493,52 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
     <div className="min-h-screen bg-[#F7F9FC] p-4">
       <div className="max-w-md mx-auto">
         {/* 头部 */}
-        <div className="flex items-center mb-6 pt-8">
-          <Link href="/">
-            <Button variant="ghost" size="sm" className="mr-4">
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
-                <path
-                  fillRule="evenodd"
-                  d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
-                  clipRule="evenodd"
-                />
-              </svg>
-            </Button>
-          </Link>
-          <div className="flex items-center space-x-3">
-            <span className="text-3xl">{category.icon}</span>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-800">
-                {category.title[locale]}
-              </h1>
-              <p className="text-sm text-gray-500">{category.description[locale]}</p>
+        <div className="flex items-center justify-between mb-6 pt-8">
+          <div className="flex items-center">
+            <Link href="/">
+              <Button variant="ghost" size="sm" className="mr-4">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+                  <path
+                    fillRule="evenodd"
+                    d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+              </Button>
+            </Link>
+            <div className="flex items-center space-x-3">
+              <span className="text-3xl">{category.icon}</span>
+              <div>
+                <h1 className="text-2xl font-bold text-gray-800">
+                  {category.title[locale]}
+                </h1>
+                <p className="text-sm text-gray-500">{category.description[locale]}</p>
+              </div>
             </div>
           </div>
         </div>
+
+        {/* Onboarding Prompt - 引导新用户完成问卷 */}
+        <AnimatePresence>
+          {shouldShowOnboardingPrompt() && (
+            <motion.div
+              initial={{ opacity: 0, height: 0, marginBottom: 0 }}
+              animate={{ opacity: 1, height: "auto", marginBottom: 16 }}
+              exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+              transition={{ duration: 0.3 }}
+            >
+              <OnboardingPrompt
+                profileCompleteness={profileCompleteness}
+                onStartOnboarding={redirectToOnboarding}
+                variant="banner"
+                onDismiss={() => {
+                  // 记录关闭时间，24小时后可再次显示
+                  localStorage.setItem('onboarding_prompt_dismissed', Date.now().toString())
+                }}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* 摇一摇按钮 */}
         <div className="text-center mb-8">
@@ -651,6 +749,14 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
           </p>
         </div>
       </div>
+
+      {/* 反馈弹窗 */}
+      <FeedbackDialog
+        open={feedbackDialogOpen}
+        onClose={closeFeedbackDialog}
+        recommendation={pendingFeedback}
+        userId={userId || ""}
+      />
     </div>
   )
 }

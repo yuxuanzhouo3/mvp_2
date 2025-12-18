@@ -58,7 +58,7 @@ export type LinkType =
   | 'course' 
   | 'search';
 
-export type UserAction = 'view' | 'click' | 'save' | 'share' | 'dismiss';
+export type UserAction = 'view' | 'click' | 'save' | 'share' | 'dismiss' | 'return' | 'feedback';
 
 export interface RecommendationHistory {
   id: string;
@@ -87,6 +87,11 @@ export interface UserPreference {
   last_activity: string;
   created_at: string;
   updated_at: string;
+  // 用户画像相关字段
+  onboarding_completed?: boolean;
+  profile_completeness?: number;
+  ai_profile_summary?: string;
+  personality_tags?: string[];
 }
 
 export interface RecommendationClick {
@@ -230,6 +235,11 @@ export interface RecommendationDatabaseAdapter {
       tags?: string[];
       incrementClick?: boolean;
       incrementView?: boolean;
+      // 用户画像相关字段
+      onboarding_completed?: boolean;
+      profile_completeness?: number;
+      ai_profile_summary?: string;
+      personality_tags?: string[];
     }
   ): Promise<SingleResult<UserPreference>>;
 

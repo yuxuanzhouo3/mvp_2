@@ -8,6 +8,9 @@ export type Locale = 'zh' | 'en';
 /**
  * 获取当前地区设置
  * Get current locale based on deployment region
+ * 
+ * INTL = English (default)
+ * CN = Chinese
  */
 export function getLocale(): Locale {
   // 优先从环境变量获取
@@ -17,33 +20,27 @@ export function getLocale(): Locale {
     return 'zh';
   }
 
-  if (region === 'INTL') {
-    return 'en';
-  }
-
-  // 默认返回中文
-  return 'zh';
+  // INTL or default = English
+  return 'en';
 }
 
 /**
  * 获取客户端地区设置
  * Get client-side locale
+ * 
+ * INTL = English (default)
+ * CN = Chinese
  */
 export function getClientLocale(): Locale {
   // 服务器端获取的环境变量在客户端也可以访问
-  if (typeof window !== 'undefined') {
-    const region = process.env.NEXT_PUBLIC_DEPLOYMENT_REGION;
+  const region = process.env.NEXT_PUBLIC_DEPLOYMENT_REGION;
 
-    if (region === 'CN') {
-      return 'zh';
-    }
-
-    if (region === 'INTL') {
-      return 'en';
-    }
+  if (region === 'CN') {
+    return 'zh';
   }
 
-  return 'zh';
+  // INTL or default = English
+  return 'en';
 }
 
 /**
