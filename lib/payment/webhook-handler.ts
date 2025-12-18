@@ -411,6 +411,24 @@ async function handlePayPalOrderCompleted(data: any) {
 
   console.log(`PayPal order completed: ${orderId}, amount: ${amount} ${currency}`);
 
+  // 先查找支付记录以检查状态，防止重复处理
+  const { data: existingPayment, error: checkError } = await supabaseAdmin
+    .from("payments")
+    .select("user_id, metadata, status")
+    .eq("transaction_id", orderId)
+    .single();
+
+  if (checkError && checkError.code !== 'PGRST116') {
+    console.error("Error checking payment record:", checkError);
+    throw checkError;
+  }
+
+  // 如果支付已经完成，跳过处理（防止重复更新订阅）
+  if (existingPayment?.status === "completed") {
+    console.log(`Payment ${orderId} already completed via ORDER.COMPLETED, skipping subscription update...`);
+    return;
+  }
+
   // 更新支付记录状态为 "completed"
   const { error } = await supabaseAdmin
     .from("payments")
@@ -427,14 +445,8 @@ async function handlePayPalOrderCompleted(data: any) {
   }
 
   // 获取用户ID并更新订阅
-  const { data: paymentRecord, error: fetchError } = await supabaseAdmin
-    .from("payments")
-    .select("user_id")
-    .eq("transaction_id", orderId)
-    .single();
-
-  if (!fetchError && paymentRecord) {
-    await updateUserSubscription(paymentRecord.user_id, amount, currency, paymentRecord.metadata);
+  if (existingPayment?.user_id) {
+    await updateUserSubscription(existingPayment.user_id, amount, currency, existingPayment.metadata);
   }
 
   console.log(`PayPal order completed status updated: ${orderId}`);

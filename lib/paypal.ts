@@ -22,15 +22,43 @@ function environment() {
 
 export const paypalClient = new paypal.core.PayPalHttpClient(environment())
 
+/**
+ * PayPal 计划配置 - 国际版 (INTL)
+ *
+ * 定价方案：
+ * - Pro: $2.99/月, $29.99/年
+ * - Enterprise: $6.99/月, $69.99/年
+ */
 export const PAYPAL_PLANS = {
   pro: {
-    planId: process.env.PAYPAL_PRO_PLAN_ID || 'P-demo-pro-plan',
-    amount: '9.99',
-    currency: 'USD',
+    monthly: {
+      planId: process.env.PAYPAL_PRO_MONTHLY_PLAN_ID || 'P-demo-pro-monthly-plan',
+      amount: '2.99',
+      currency: 'USD',
+    },
+    yearly: {
+      planId: process.env.PAYPAL_PRO_YEARLY_PLAN_ID || 'P-demo-pro-yearly-plan',
+      amount: '29.99',
+      currency: 'USD',
+    },
   },
   enterprise: {
-    planId: process.env.PAYPAL_ENTERPRISE_PLAN_ID || 'P-demo-enterprise-plan',
-    amount: '49.99',
-    currency: 'USD',
+    monthly: {
+      planId: process.env.PAYPAL_ENTERPRISE_MONTHLY_PLAN_ID || 'P-demo-enterprise-monthly-plan',
+      amount: '6.99',
+      currency: 'USD',
+    },
+    yearly: {
+      planId: process.env.PAYPAL_ENTERPRISE_YEARLY_PLAN_ID || 'P-demo-enterprise-yearly-plan',
+      amount: '69.99',
+      currency: 'USD',
+    },
   },
+}
+
+/**
+ * 根据计划类型和账单周期获取 PayPal 计划配置
+ */
+export function getPayPalPlan(planType: 'pro' | 'enterprise', billingCycle: 'monthly' | 'yearly') {
+  return PAYPAL_PLANS[planType][billingCycle]
 }

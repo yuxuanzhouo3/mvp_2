@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useAuth } from "@/hooks/use-auth"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
@@ -31,6 +31,7 @@ export default function SettingsPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [overridePlan, setOverridePlan] = useState<"free" | "pro" | "enterprise" | null>(null)
+  const [subscriptionEnd, setSubscriptionEnd] = useState<string | null>(null)
   const [isEditingName, setIsEditingName] = useState(false)
   const [editedName, setEditedName] = useState("")
   const [isUpdatingName, setIsUpdatingName] = useState(false)
@@ -51,6 +52,40 @@ export default function SettingsPage() {
   const subscriptionSubtitle = isEnterprise
     ? t.settingsPage.subscription.enterpriseDescription || t.settingsPage.subscription.subtitle
     : t.settingsPage.subscription.subtitle
+
+  // Fetch subscription info on mount for paid users
+  useEffect(() => {
+    const fetchSubscriptionInfo = async () => {
+      if (!isAuthenticated || !user) return
+
+      const plan = user?.subscriptionTier ? normalizePlan(user.subscriptionTier) : "free"
+      if (plan === "free") return
+
+      try {
+        const response = await fetchWithAuth("/api/auth/refresh-subscription", {
+          method: "POST",
+        })
+
+        const contentType = response.headers.get("content-type")
+        if (!contentType || !contentType.includes("application/json")) return
+
+        const data = await response.json()
+        if (response.ok && data.success) {
+          const planFromDb = normalizePlan(data.subscription?.plan_type)
+          const resolvedPlan = planFromDb !== "free" ? planFromDb : normalizePlan(data.subscriptionPlan)
+          setOverridePlan(resolvedPlan)
+
+          if (data.subscription?.subscription_end) {
+            setSubscriptionEnd(data.subscription.subscription_end)
+          }
+        }
+      } catch (error) {
+        console.error("Failed to fetch subscription info:", error)
+      }
+    }
+
+    fetchSubscriptionInfo()
+  }, [isAuthenticated, user])
 
   if (isLoading) {
     return (
@@ -100,6 +135,11 @@ export default function SettingsPage() {
         const planFromDb = normalizePlan(data.subscription?.plan_type)
         const resolvedPlan = planFromDb !== "free" ? planFromDb : normalizePlan(data.subscriptionPlan)
         setOverridePlan(resolvedPlan)
+
+        // 保存订阅到期时间
+        if (data.subscription?.subscription_end) {
+          setSubscriptionEnd(data.subscription.subscription_end)
+        }
 
         // 更新本地缓存
         const { updateSupabaseUserCache, clearSupabaseUserCache } = await import("@/lib/auth/auth-state-manager-intl")
@@ -389,6 +429,25 @@ export default function SettingsPage() {
                       </span>
                     )}
                   </div>
+                  {/* Subscription Expiry Date */}
+                  {(currentPlan === "pro" || currentPlan === "enterprise") && (
+                    <div className="text-sm text-gray-600 mt-2">
+                      {subscriptionEnd ? (
+                        <span>
+                          {language === "zh" ? "到期时间：" : "Expires: "}
+                          {new Date(subscriptionEnd).toLocaleDateString(language === "zh" ? "zh-CN" : "en-US", {
+                            year: "numeric",
+                            month: "long",
+                            day: "numeric",
+                          })}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">
+                          {language === "zh" ? "点击\"刷新状态\"查看到期时间" : "Click \"Refresh Status\" to see expiry date"}
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
