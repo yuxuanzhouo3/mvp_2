@@ -8,6 +8,9 @@ import { canExportData, getUserRecommendationHistory } from "@/lib/subscription/
 
 // PDF生成函数
 async function generatePDF(history: { data: any[]; total: number; retentionDays: number }) {
+  console.log('[PDF Export] Starting PDF generation...');
+  console.log('[PDF Export] History data count:', history.data.length);
+
   // 动态导入pdfmake
   const PdfPrinter = require('pdfmake');
 
@@ -72,6 +75,8 @@ async function generatePDF(history: { data: any[]; total: number; retentionDays:
       { text: content, style: 'tableCell' },
     ]);
   }
+
+  console.log('[PDF Export] Table body rows:', tableBody.length);
 
   // 定义PDF文档
   const docDefinition: any = {
@@ -163,6 +168,8 @@ async function generatePDF(history: { data: any[]; total: number; retentionDays:
     pageMargins: [40, 60, 40, 60]
   };
 
+  console.log('[PDF Export] Creating PDF document...');
+
   // 生成PDF Buffer
   return new Promise<Buffer>((resolve, reject) => {
     try {
@@ -174,16 +181,19 @@ async function generatePDF(history: { data: any[]; total: number; retentionDays:
       });
 
       pdfDoc.on('end', () => {
+        console.log('[PDF Export] PDF generation completed');
         const result = Buffer.concat(chunks);
         resolve(result);
       });
 
       pdfDoc.on('error', (err: Error) => {
+        console.error('[PDF Export] PDF generation error:', err);
         reject(err);
       });
 
       pdfDoc.end();
     } catch (err) {
+      console.error('[PDF Export] Exception during PDF creation:', err);
       reject(err);
     }
   });
@@ -235,7 +245,9 @@ export async function GET(request: NextRequest) {
     }
 
     // 获取历史记录
+    console.log(`[Export API] Fetching history for user ${userId}, format: ${format}`);
     const history = await getUserRecommendationHistory(userId, { limit: 1000 });
+    console.log(`[Export API] History fetched: ${history.total} records, ${history.data.length} data items`);
 
     if (format === "json") {
       return NextResponse.json({
@@ -281,7 +293,9 @@ export async function GET(request: NextRequest) {
     // PDF 格式
     if (format === "pdf") {
       try {
+        console.log('[Export API] Starting PDF generation...');
         const pdfBuffer = await generatePDF(history);
+        console.log('[Export API] PDF generated successfully, size:', pdfBuffer.length);
 
         return new NextResponse(new Uint8Array(pdfBuffer), {
           headers: {
@@ -290,12 +304,17 @@ export async function GET(request: NextRequest) {
             "Content-Length": pdfBuffer.length.toString(),
           },
         });
-      } catch (pdfError) {
-        console.error("PDF generation error:", pdfError);
+      } catch (pdfError: any) {
+        console.error("[Export API] PDF generation error:", {
+          message: pdfError?.message,
+          stack: pdfError?.stack,
+          error: pdfError
+        });
         return NextResponse.json(
           {
             success: false,
-            error: "Failed to generate PDF. Please try JSON or CSV format.",
+            error: `Failed to generate PDF: ${pdfError?.message || 'Unknown error'}`,
+            details: pdfError?.stack
           },
           { status: 500 }
         );
