@@ -19,7 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Receipt, RefreshCw, CreditCard, X } from "lucide-react";
+import { Receipt, RefreshCw, CreditCard, X, CheckCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useLanguage } from "@/components/language-provider";
 import { useTranslations } from "@/lib/i18n";
@@ -33,6 +33,7 @@ interface BillingRecord {
   description: string;
   paymentMethod: string;
   invoiceUrl?: string;
+  transactionId?: string;
 }
 
 export function BillingHistory() {
@@ -168,6 +169,56 @@ export function BillingHistory() {
     );
   };
 
+  // 确认PayPal支付
+  const handleConfirmPayPal = async (record: BillingRecord) => {
+    if (!record.transactionId) {
+      toast({
+        title: language === "zh" ? "错误" : "Error",
+        description: language === "zh" ? "缺少交易ID" : "Missing transaction ID",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setProcessingId(record.id);
+    try {
+      const response = await fetch("/api/paypal/capture-order", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ orderId: record.transactionId }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        toast({
+          title: language === "zh" ? "成功" : "Success",
+          description: language === "zh" ? "支付已确认" : "Payment confirmed successfully",
+        });
+
+        // 更新本地记录状态
+        setRecords((prev) =>
+          prev.map((r) =>
+            r.id === record.id ? { ...r, status: "paid" as const } : r
+          )
+        );
+      } else {
+        throw new Error(result.error || "Failed to confirm payment");
+      }
+    } catch (error: any) {
+      console.error("Confirm PayPal error:", error);
+      toast({
+        title: language === "zh" ? "错误" : "Error",
+        description: error.message || (language === "zh" ? "确认支付失败" : "Failed to confirm payment"),
+        variant: "destructive",
+      });
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
   // 取消订单
   const handleCancelOrder = async (recordId: string) => {
     setProcessingId(recordId);
@@ -273,6 +324,13 @@ export function BillingHistory() {
                 : `${visibleRecords.length} record${visibleRecords.length > 1 ? "s" : ""} found`}
             </div>
 
+            {/* 调试信息 - 显示所有支付记录状态 */}
+            {process.env.NODE_ENV === "development" && records.length === 0 && (
+              <div className="text-xs text-amber-600 bg-amber-50 p-2 rounded">
+                <p className="font-medium">Debug: Check browser console for all payment records</p>
+              </div>
+            )}
+
             {/* 表格容器，添加最大高度和滚动 */}
             <div className="max-h-[500px] overflow-auto border rounded-md">
               <Table>
@@ -287,6 +345,7 @@ export function BillingHistory() {
                       {language === "zh" ? "支付方式" : "Payment Method"}
                     </TableHead>
                     <TableHead>{language === "zh" ? "状态" : "Status"}</TableHead>
+                    <TableHead>{language === "zh" ? "操作" : "Actions"}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -299,6 +358,23 @@ export function BillingHistory() {
                       </TableCell>
                       <TableCell>{record.paymentMethod}</TableCell>
                       <TableCell>{getStatusBadge(record.status)}</TableCell>
+                      <TableCell>
+                        {record.status === "pending" && record.paymentMethod === "PayPal" && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleConfirmPayPal(record)}
+                            disabled={processingId === record.id}
+                          >
+                            {processingId === record.id ? (
+                              <RefreshCw className="h-3 w-3 animate-spin mr-1" />
+                            ) : (
+                              <CheckCircle className="h-3 w-3 mr-1" />
+                            )}
+                            {language === "zh" ? "确认支付" : "Confirm"}
+                          </Button>
+                        )}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

@@ -34,12 +34,21 @@ export async function GET(request: NextRequest) {
 
     console.log(`[Payment History] Fetching history for user: ${userId}`);
 
-    // 查询支付记录 - 只显示已完成(completed)的支付记录
+    // 先调试查询：获取该用户的所有支付记录（不管状态）
+    const { data: allPayments, error: allError } = await supabaseAdmin
+      .from("payments")
+      .select("id, created_at, amount, currency, status, payment_method, transaction_id")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false });
+
+    console.log(`[Payment History DEBUG] All payments for user ${userId}:`, JSON.stringify(allPayments, null, 2));
+
+    // 查询支付记录 - 显示completed状态和PayPal的pending状态（可能需要手动确认）
     const { data: payments, error } = await supabaseAdmin
       .from("payments")
       .select("id, created_at, amount, currency, status, payment_method, transaction_id, user_id")
       .eq("user_id", userId)
-      .eq("status", "completed")
+      .or("status.eq.completed,and(status.eq.pending,payment_method.eq.paypal)")
       .order("created_at", { ascending: false })
       .range(from, to);
 
@@ -87,6 +96,7 @@ export async function GET(request: NextRequest) {
         status: uiStatus,
         description: "Subscription payment",
         paymentMethod,
+        transactionId: p.transaction_id,
         invoiceUrl: null as string | null,
       };
     });
@@ -98,12 +108,29 @@ export async function GET(request: NextRequest) {
       .eq("user_id", userId)
       .eq("status", "completed");
 
+    // 统计各状态的数量
+    const statusCounts = (allPayments || []).reduce((acc: Record<string, number>, p: any) => {
+      acc[p.status] = (acc[p.status] || 0) + 1;
+      return acc;
+    }, {});
+
     return NextResponse.json({
       page,
       pageSize,
       count: records.length,
       totalCount: totalCount || 0,
-      records
+      records,
+      debug: {
+        allPaymentsCount: allPayments?.length || 0,
+        statusCounts,
+        paymentMethods: (allPayments || []).map((p: any) => ({
+          id: p.id,
+          method: p.payment_method,
+          status: p.status,
+          amount: p.amount,
+          date: p.created_at,
+        })),
+      },
     });
   } catch (error) {
     console.error("Payment history handler error:", error);
