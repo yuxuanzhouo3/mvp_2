@@ -8,9 +8,8 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { ArrowLeft, CreditCard, User, Crown, History, Edit2, Save, X } from "lucide-react"
+import { ArrowLeft, CreditCard, User, Crown, Edit2, Save, X } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useLanguage } from "@/components/language-provider"
 import { useTranslations } from "@/lib/i18n"
@@ -24,11 +23,6 @@ export default function SettingsPage() {
   const { language } = useLanguage()
   const t = useTranslations(language)
 
-  const [cardNumber, setCardNumber] = useState("")
-  const [cardName, setCardName] = useState("")
-  const [expiryDate, setExpiryDate] = useState("")
-  const [cvv, setCvv] = useState("")
-  const [isSaving, setIsSaving] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [overridePlan, setOverridePlan] = useState<"free" | "pro" | "enterprise" | null>(null)
   const [subscriptionEnd, setSubscriptionEnd] = useState<string | null>(null)
@@ -98,21 +92,6 @@ export default function SettingsPage() {
   if (!isAuthenticated) {
     router.push("/login")
     return null
-  }
-
-  const handleSavePayment = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsSaving(true)
-
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1500))
-
-    toast({
-      title: t.settingsPage.paymentTab.savedTitle,
-      description: t.settingsPage.paymentTab.savedDescription,
-    })
-
-    setIsSaving(false)
   }
 
   const handleRefreshSubscription = async () => {
@@ -282,31 +261,6 @@ export default function SettingsPage() {
     }
   }
 
-  const formatCardNumber = (value: string) => {
-    const v = value.replace(/\s+/g, "").replace(/[^0-9]/gi, "")
-    const matches = v.match(/\d{4,16}/g)
-    const match = (matches && matches[0]) || ""
-    const parts = []
-
-    for (let i = 0, len = match.length; i < len; i += 4) {
-      parts.push(match.substring(i, i + 4))
-    }
-
-    if (parts.length) {
-      return parts.join(" ")
-    } else {
-      return value
-    }
-  }
-
-  const formatExpiryDate = (value: string) => {
-    const v = value.replace(/\s+/g, "").replace(/[^0-9]/gi, "")
-    if (v.length >= 2) {
-      return v.slice(0, 2) + "/" + v.slice(2, 4)
-    }
-    return v
-  }
-
   return (
     <div className="min-h-screen bg-[#F7F9FC] p-4">
       <div className="max-w-2xl mx-auto">
@@ -459,72 +413,39 @@ export default function SettingsPage() {
               <CardHeader>
                 <CardTitle>{t.settingsPage.paymentTab.title}</CardTitle>
                 <CardDescription>
-                  {t.settingsPage.paymentTab.subtitle}
+                  {language === "zh"
+                    ? "管理您的订阅和支付方式"
+                    : "Manage your subscription and payment methods"}
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <form onSubmit={handleSavePayment} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="cardNumber">{t.settingsPage.paymentTab.cardNumber}</Label>
-                    <Input
-                      id="cardNumber"
-                      placeholder={t.settingsPage.paymentTab.cardNumberPlaceholder}
-                      value={cardNumber}
-                      onChange={(e) => setCardNumber(formatCardNumber(e.target.value))}
-                      maxLength={19}
-                      required
-                    />
+                <div className="text-center py-8">
+                  <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-100 mb-4">
+                    <CreditCard className="h-8 w-8 text-blue-600" />
                   </div>
+                  <h3 className="text-xl font-semibold mb-2">
+                    {language === "zh" ? "安全支付" : "Secure Payment"}
+                  </h3>
+                  <p className="text-gray-600 mb-6 max-w-md mx-auto">
+                    {language === "zh"
+                      ? "我们使用 Stripe 和 PayPal 进行安全支付处理。您可以在订阅页面选择您偏好的支付方式。"
+                      : "We use Stripe and PayPal for secure payment processing. You can choose your preferred payment method on the subscription page."}
+                  </p>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="cardName">{t.settingsPage.paymentTab.cardholderName}</Label>
-                    <Input
-                      id="cardName"
-                      placeholder={t.settingsPage.paymentTab.cardholderNamePlaceholder}
-                      value={cardName}
-                      onChange={(e) => setCardName(e.target.value)}
-                      required
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="expiryDate">{t.settingsPage.paymentTab.expiryDate}</Label>
-                      <Input
-                        id="expiryDate"
-                        placeholder={t.settingsPage.paymentTab.expiryDatePlaceholder}
-                        value={expiryDate}
-                        onChange={(e) => setExpiryDate(formatExpiryDate(e.target.value))}
-                        maxLength={5}
-                        required
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="cvv">{t.settingsPage.paymentTab.cvv}</Label>
-                      <Input
-                        id="cvv"
-                        placeholder={t.settingsPage.paymentTab.cvvPlaceholder}
-                        type="password"
-                        value={cvv}
-                        onChange={(e) => setCvv(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                        maxLength={4}
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <Separator className="my-4" />
-
-                  <div className="bg-blue-50 p-4 rounded-lg">
+                  <div className="bg-blue-50 p-4 rounded-lg mb-6">
                     <p className="text-sm text-blue-800">
                       {t.settingsPage.paymentTab.securityNote}
                     </p>
                   </div>
 
-                  <Button type="submit" className="w-full" disabled={isSaving}>
-                    {isSaving ? t.settingsPage.paymentTab.saving : t.settingsPage.paymentTab.saveButton}
-                  </Button>
-                </form>
+                  <Link href="/pro">
+                    <Button className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700">
+                      {currentPlan === "free"
+                        ? (language === "zh" ? "升级到 Pro" : "Upgrade to Pro")
+                        : (language === "zh" ? "管理订阅" : "Manage Subscription")}
+                    </Button>
+                  </Link>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
