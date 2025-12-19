@@ -190,9 +190,10 @@ export async function getUserRecommendationHistory(
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
 
+  // 查询 recommendation_history 表（这是存储推荐数据的正确表）
   const { data, error, count } = await supabase
-    .from("recommendations")
-    .select("id, recommendation, created_at", { count: "exact" })
+    .from("recommendation_history")
+    .select("id, category, title, description, link, link_type, metadata, reason, created_at", { count: "exact" })
     .eq("user_id", userId)
     .gte("created_at", cutoffDate.toISOString())
     .order("created_at", { ascending: false })
@@ -201,8 +202,28 @@ export async function getUserRecommendationHistory(
       (options?.offset || 0) + (options?.limit || 20) - 1
     );
 
+  if (error) {
+    console.error("[getUserRecommendationHistory] Error:", error);
+  }
+
+  // 转换数据格式以兼容导出API
+  const formattedData = (data || []).map((item: any) => ({
+    id: item.id,
+    recommendation: {
+      category: item.category,
+      title: item.title,
+      description: item.description,
+      link: item.link,
+      linkType: item.link_type,
+      metadata: item.metadata,
+      reason: item.reason,
+      content: item.title, // 为PDF导出添加content字段
+    },
+    created_at: item.created_at,
+  }));
+
   return {
-    data: data || [],
+    data: formattedData,
     total: count || 0,
     retentionDays,
   };
