@@ -1,7 +1,7 @@
 /**
  * 用户反馈提交 API
  * POST /api/recommend/submit-feedback
- * 
+ *
  * 处理用户对推荐内容的反馈（感兴趣、已购买、评分等）
  * 更新用户画像权重
  */
@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getRecommendationAdapter } from '@/lib/database';
 import { calculateProfileWeightUpdates } from '@/lib/ai/profile-based-recommendation';
 import { isValidUserId } from '@/lib/utils';
+import { supabaseAdmin } from '@/lib/integrations/supabase-admin';
 
 export const dynamic = 'force-dynamic';
 
@@ -63,6 +64,33 @@ export async function POST(request: NextRequest) {
     console.log(`[Feedback] 用户 ${userId.slice(0, 8)}... 提交反馈: ${feedbackType}`);
 
     const adapter = await getRecommendationAdapter();
+
+    // 0. 直接保存反馈到 user_feedbacks 表
+    try {
+      const feedbackRecord = {
+        user_id: userId,
+        recommendation_id: recommendationId,
+        feedback_type: feedbackType,
+        is_interested: isInterested ?? null,
+        has_purchased: hasPurchased ?? null,
+        rating: rating ?? null,
+        comment: comment ?? null,
+        triggered_by: triggeredBy,
+        created_at: new Date().toISOString(),
+      };
+
+      const { error: insertError } = await supabaseAdmin
+        .from('user_feedbacks')
+        .insert(feedbackRecord);
+
+      if (insertError) {
+        console.error('[Feedback] 保存反馈到user_feedbacks表失败:', insertError);
+      } else {
+        console.log('[Feedback] 反馈已保存到user_feedbacks表');
+      }
+    } catch (saveError) {
+      console.error('[Feedback] 保存反馈异常:', saveError);
+    }
 
     // 1. 获取推荐详情以获取标签和分类
     let recommendationCategory = 'entertainment';

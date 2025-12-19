@@ -528,9 +528,8 @@ export function generateSearchLink(
 
       case 'game':
         // 游戏类：确保搜索到游戏下载/购买页面
-        if (platform === 'Steam' && !finalQuery.includes('Steam')) {
-          finalQuery = `${finalQuery} Steam`;
-        } else if ((platform === '淘宝' || platform === '京东') && !finalQuery.includes('购买') && !finalQuery.includes('下载')) {
+        // Steam 不再添加后缀，直接使用游戏名搜索
+        if ((platform === '淘宝' || platform === '京东') && !finalQuery.includes('购买') && !finalQuery.includes('下载')) {
           finalQuery = `${finalQuery} 购买 下载`;
         }
         break;

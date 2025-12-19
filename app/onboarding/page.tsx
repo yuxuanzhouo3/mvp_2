@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
@@ -29,6 +29,61 @@ export default function OnboardingPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [aiProfile, setAiProfile] = useState<any>(null);
+  const [isLoadingProgress, setIsLoadingProgress] = useState(true);
+  const [hasRestoredProgress, setHasRestoredProgress] = useState(false);
+
+  // 保存进度到数据库
+  const saveProgress = useCallback(async (
+    newAnswers: Record<string, any>,
+    catIndex: number,
+    qIndex: number
+  ) => {
+    if (!user?.id) return;
+
+    try {
+      await fetch('/api/onboarding/progress', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          answers: newAnswers,
+          currentCategoryIndex: catIndex,
+          currentQuestionIndex: qIndex,
+        })
+      });
+    } catch (error) {
+      console.error('保存问卷进度失败:', error);
+    }
+  }, [user?.id]);
+
+  // 恢复进度
+  useEffect(() => {
+    const loadProgress = async () => {
+      if (!user?.id || hasRestoredProgress) {
+        setIsLoadingProgress(false);
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/onboarding/progress?userId=${user.id}`);
+        const data = await response.json();
+
+        if (data.success && data.hasProgress && !data.data.isCompleted) {
+          setAnswers(data.data.answers || {});
+          setCurrentCategoryIndex(data.data.currentCategoryIndex || 0);
+          setCurrentQuestionIndex(data.data.currentQuestionIndex || 0);
+          console.log('[Onboarding] 进度已恢复');
+        }
+      } catch (error) {
+        console.error('恢复问卷进度失败:', error);
+      } finally {
+        setIsLoadingProgress(false);
+        setHasRestoredProgress(true);
+      }
+    };
+
+    loadProgress();
+  }, [user?.id, hasRestoredProgress]);
 
   // 当前分类和问题
   const currentCategory = allQuestions[currentCategoryIndex];
@@ -49,6 +104,7 @@ export default function OnboardingPage() {
     if (!currentQuestion || !currentCategory) return;
 
     const key = getAnswerKey(currentCategory, currentQuestion);
+    let newAnswers: Record<string, any>;
 
     if (currentQuestion.type === 'multiple') {
       // 多选
@@ -56,19 +112,32 @@ export default function OnboardingPage() {
       const updated = current.includes(optionId)
         ? current.filter((id: string) => id !== optionId)
         : [...current, optionId];
-      setAnswers({ ...answers, [key]: updated });
+      newAnswers = { ...answers, [key]: updated };
+      setAnswers(newAnswers);
+      // 保存进度
+      saveProgress(newAnswers, currentCategoryIndex, currentQuestionIndex);
     } else {
       // 单选或量表
-      setAnswers({ ...answers, [key]: optionId });
+      newAnswers = { ...answers, [key]: optionId };
+      setAnswers(newAnswers);
 
       // 自动跳转到下一题
       setTimeout(() => {
+        let nextCatIndex = currentCategoryIndex;
+        let nextQIndex = currentQuestionIndex;
+
         if (currentQuestionIndex < currentCategory.questions.length - 1) {
-          setCurrentQuestionIndex(prev => prev + 1);
+          nextQIndex = currentQuestionIndex + 1;
+          setCurrentQuestionIndex(nextQIndex);
         } else if (currentCategoryIndex < allQuestions.length - 1) {
-          setCurrentCategoryIndex(prev => prev + 1);
+          nextCatIndex = currentCategoryIndex + 1;
+          nextQIndex = 0;
+          setCurrentCategoryIndex(nextCatIndex);
           setCurrentQuestionIndex(0);
         }
+
+        // 保存进度
+        saveProgress(newAnswers, nextCatIndex, nextQIndex);
       }, 300);
     }
   };
@@ -145,10 +214,19 @@ export default function OnboardingPage() {
         setAiProfile(data.profile);
         setShowSuccess(true);
 
-        // Redirect to home after 3 seconds
+        // Mark progress as completed
+        try {
+          await fetch(`/api/onboarding/progress?userId=${user.id}`, {
+            method: 'DELETE',
+          });
+        } catch (e) {
+          console.error('Failed to mark progress as completed:', e);
+        }
+
+        // Redirect to home after 5 seconds (give user time to view profile)
         setTimeout(() => {
           router.push('/');
-        }, 3000);
+        }, 5000);
       } else {
         throw new Error(data.error || t.onboarding.page.submitFailed);
       }

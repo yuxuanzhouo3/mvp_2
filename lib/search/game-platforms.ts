@@ -157,7 +157,7 @@ export const intlGamePlatforms: GamePlatformConfig[] = [
   {
     id: 'gog',
     name: 'GOG',
-    searchUrl: (q) => `https://www.gog.com/search?query=${encodeURIComponent(q)}`,
+    searchUrl: (q) => `https://www.gog.com/games?query=${encodeURIComponent(q)}`,
     region: 'INTL',
     type: 'pc',
     description: 'DRM-free games',

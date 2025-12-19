@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { ArrowLeft } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -67,7 +68,20 @@ export default function RegisterPage() {
       })
 
       if (result.error) {
-        setError(result.error.message || t.auth.registerFailed)
+        // Check for email already exists error
+        const errorMessage = result.error.message || '';
+        if (
+          errorMessage.includes('already registered') ||
+          errorMessage.includes('already exists') ||
+          errorMessage.includes('User already registered') ||
+          result.error.code === 'user_already_exists'
+        ) {
+          setError(isChineseLanguage
+            ? '该邮箱已被注册，请直接登录或使用其他邮箱'
+            : 'This email is already registered. Please login or use a different email.');
+        } else {
+          setError(errorMessage || t.auth.registerFailed);
+        }
         setLoading(false)
         return
       }
@@ -138,6 +152,14 @@ export default function RegisterPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-4 py-12">
+      {/* Back to Home Button */}
+      <Link href="/" className="fixed top-4 left-4">
+        <Button variant="ghost" size="sm" className="gap-2">
+          <ArrowLeft className="h-4 w-4" />
+          {isChineseLanguage ? '返回首页' : 'Back to Home'}
+        </Button>
+      </Link>
+
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
           <CardTitle className="text-2xl font-bold text-center">

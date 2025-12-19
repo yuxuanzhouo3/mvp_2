@@ -119,13 +119,28 @@ export async function POST(request: NextRequest) {
 
     console.log(`[DEBUG] Extracted capture info:`, { captureId, amount, currency });
 
+    // 获取原有的支付记录以保留metadata
+    const { data: originalPayment } = await supabaseAdmin
+      .from("payments")
+      .select("metadata")
+      .eq("transaction_id", orderId)
+      .single();
+
+    const existingMetadata = originalPayment?.metadata || {};
+
     // 更新支付记录状态
     const { error: updateError } = await supabaseAdmin
       .from("payments")
       .update({
         status: "completed",
         completed_at: new Date().toISOString(),
-        transaction_id: captureId,
+        // Keep original orderId as transaction_id for consistency
+        // Merge existing metadata with captureId
+        metadata: {
+          ...existingMetadata,
+          captureId: captureId,
+          orderId: orderId,
+        },
       })
       .eq("transaction_id", orderId);
 
@@ -141,7 +156,7 @@ export async function POST(request: NextRequest) {
     const { data: paymentRecord, error: paymentRecordError } = await supabaseAdmin
       .from("payments")
       .select("user_id, metadata")
-      .eq("transaction_id", captureId)
+      .eq("transaction_id", orderId)
       .single();
 
     if (paymentRecordError) {

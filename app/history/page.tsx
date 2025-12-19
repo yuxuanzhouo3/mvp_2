@@ -14,11 +14,20 @@ import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { HistoryCard } from "@/components/HistoryCard"
-import { ArrowLeft, Trash2, Search } from "lucide-react"
+import { ArrowLeft, Trash2, Search, Download, FileJson, FileText, FileType2, Loader2, Lock, Crown } from "lucide-react"
 import { useAuth } from "@/hooks/use-auth"
 import { useLanguage } from "@/components/language-provider"
 import { useTranslations } from "@/lib/i18n"
 import type { RecommendationHistory, RecommendationCategory } from "@/lib/types/recommendation"
+import { fetchWithAuth } from "@/lib/auth/fetch-with-auth"
+import { useToast } from "@/hooks/use-toast"
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+    DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu"
 
 /**
  * 分类配置
@@ -75,6 +84,84 @@ export default function HistoryPage() {
         deletingId: null,
     })
     const [showClearAll, setShowClearAll] = useState(false)
+    const [exportLoading, setExportLoading] = useState<string | null>(null)
+    const { toast } = useToast()
+
+    // 获取用户订阅等级
+    const userTier = user?.subscriptionTier || "free"
+    const canExportCSV = userTier === "pro" || userTier === "enterprise"
+    const canExportJSON = userTier === "pro" || userTier === "enterprise"
+    const canExportPDF = userTier === "enterprise"
+
+    // 导出数据
+    const handleExport = async (format: "json" | "csv" | "pdf") => {
+        if (!isAuthenticated || !user?.id) return
+
+        setExportLoading(format)
+        try {
+            const response = await fetchWithAuth(`/api/subscription/export?format=${format}`)
+
+            if (!response.ok) {
+                const data = await response.json()
+                if (data.upgradeRequired) {
+                    toast({
+                        title: locale === "zh" ? "需要升级" : "Upgrade Required",
+                        description: locale === "zh"
+                            ? "请升级到Pro或Enterprise以使用导出功能"
+                            : "Please upgrade to Pro or Enterprise to use export feature",
+                        variant: "destructive",
+                    })
+                    return
+                }
+                throw new Error(data.error || "Export failed")
+            }
+
+            if (format === "json") {
+                const data = await response.json()
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" })
+                downloadBlob(blob, `recommendations_${new Date().toISOString().split("T")[0]}.json`)
+            } else if (format === "csv") {
+                const blob = await response.blob()
+                downloadBlob(blob, `recommendations_${new Date().toISOString().split("T")[0]}.csv`)
+            } else if (format === "pdf") {
+                // PDF export - for now show not implemented
+                toast({
+                    title: locale === "zh" ? "即将推出" : "Coming Soon",
+                    description: locale === "zh"
+                        ? "PDF导出功能正在开发中"
+                        : "PDF export feature is under development",
+                })
+                return
+            }
+
+            toast({
+                title: locale === "zh" ? "导出成功" : "Export Successful",
+                description: locale === "zh"
+                    ? `数据已导出为 ${format.toUpperCase()} 格式`
+                    : `Data exported as ${format.toUpperCase()} format`,
+            })
+        } catch (error: any) {
+            console.error("Export error:", error)
+            toast({
+                title: locale === "zh" ? "导出失败" : "Export Failed",
+                description: error.message || (locale === "zh" ? "请重试" : "Please try again"),
+                variant: "destructive",
+            })
+        } finally {
+            setExportLoading(null)
+        }
+    }
+
+    const downloadBlob = (blob: Blob, filename: string) => {
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement("a")
+        a.href = url
+        a.download = filename
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+    }
 
     // 获取历史记录
     const fetchHistory = useCallback(async () => {
@@ -313,24 +400,97 @@ export default function HistoryPage() {
                         </div>
                     </div>
 
-                    {/* 清空按钮 */}
-                    {history.length > 0 && (
-                        <motion.div
-                            animate={{
-                                opacity: showClearAll ? 1 : 0.5,
-                            }}
-                        >
-                            <Button
-                                variant="destructive"
-                                size="sm"
-                                onClick={() => setShowClearAll(!showClearAll)}
-                                disabled={deleteState.isDeleting}
+                    {/* 清空和导出按钮 */}
+                    <div className="flex items-center gap-2">
+                        {/* 导出按钮 */}
+                        {history.length > 0 && (
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        disabled={!canExportCSV && !canExportJSON}
+                                        className={!canExportCSV && !canExportJSON ? "opacity-50" : ""}
+                                    >
+                                        {exportLoading ? (
+                                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                        ) : (
+                                            <Download className="h-4 w-4 mr-2" />
+                                        )}
+                                        {locale === "zh" ? "导出" : "Export"}
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                    {!canExportCSV && !canExportJSON ? (
+                                        <>
+                                            <DropdownMenuItem
+                                                disabled
+                                                className="text-gray-500"
+                                            >
+                                                <Lock className="h-4 w-4 mr-2" />
+                                                {locale === "zh" ? "需要Pro或Enterprise" : "Pro or Enterprise required"}
+                                            </DropdownMenuItem>
+                                            <DropdownMenuSeparator />
+                                            <DropdownMenuItem asChild>
+                                                <Link href="/pro" className="cursor-pointer">
+                                                    <Crown className="h-4 w-4 mr-2 text-amber-500" />
+                                                    {locale === "zh" ? "升级计划" : "Upgrade Plan"}
+                                                </Link>
+                                            </DropdownMenuItem>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <DropdownMenuItem
+                                                onClick={() => handleExport("csv")}
+                                                disabled={!canExportCSV || exportLoading === "csv"}
+                                            >
+                                                <FileText className="h-4 w-4 mr-2" />
+                                                CSV
+                                                {!canExportCSV && <Lock className="h-3 w-3 ml-2 text-gray-400" />}
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem
+                                                onClick={() => handleExport("json")}
+                                                disabled={!canExportJSON || exportLoading === "json"}
+                                            >
+                                                <FileJson className="h-4 w-4 mr-2" />
+                                                JSON
+                                                {!canExportJSON && <Lock className="h-3 w-3 ml-2 text-gray-400" />}
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem
+                                                onClick={() => handleExport("pdf")}
+                                                disabled={!canExportPDF || exportLoading === "pdf"}
+                                            >
+                                                <FileType2 className="h-4 w-4 mr-2" />
+                                                PDF
+                                                {!canExportPDF && (
+                                                    <Badge variant="outline" className="ml-2 text-xs">Enterprise</Badge>
+                                                )}
+                                            </DropdownMenuItem>
+                                        </>
+                                    )}
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        )}
+
+                        {/* 清空按钮 */}
+                        {history.length > 0 && (
+                            <motion.div
+                                animate={{
+                                    opacity: showClearAll ? 1 : 0.5,
+                                }}
                             >
-                                <Trash2 className="h-4 w-4 mr-2" />
-                                {locale === "zh" ? "清空" : "Clear"}
-                            </Button>
-                        </motion.div>
-                    )}
+                                <Button
+                                    variant="destructive"
+                                    size="sm"
+                                    onClick={() => setShowClearAll(!showClearAll)}
+                                    disabled={deleteState.isDeleting}
+                                >
+                                    <Trash2 className="h-4 w-4 mr-2" />
+                                    {locale === "zh" ? "清空" : "Clear"}
+                                </Button>
+                            </motion.div>
+                        )}
+                    </div>
                 </div>
 
                 {/* 搜索框 */}

@@ -556,7 +556,7 @@ export default function SettingsPage() {
                           {t.settingsPage.subscription.enterprisePlan || t.settingsPage.subscription.proPlan}
                         </h4>
                         <div className="text-right">
-                          <div className="text-2xl font-bold text-purple-700">$49.99</div>
+                          <div className="text-2xl font-bold text-purple-700">$6.99</div>
                           <div className="text-sm text-purple-600">{t.settingsPage.subscription.perMonth}</div>
                         </div>
                       </div>
@@ -586,6 +586,37 @@ export default function SettingsPage() {
                     <p className="text-gray-600 mb-4">
                       {t.settingsPage.subscription.proDescription}
                     </p>
+                    {/* Current Plan Details */}
+                    <div className="mt-4 p-4 bg-green-50 rounded-lg">
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="text-lg font-bold text-green-800">
+                          {t.settingsPage.subscription.proPlan}
+                        </h4>
+                        <div className="text-right">
+                          <div className="text-2xl font-bold text-green-700">$2.99</div>
+                          <div className="text-sm text-green-600">{t.settingsPage.subscription.perMonth}</div>
+                        </div>
+                      </div>
+                      {subscriptionEnd && (
+                        <div className="text-sm text-green-800 mb-3 p-2 bg-green-100 rounded">
+                          {language === "zh" ? "到期时间：" : "Expires: "}
+                          <span className="font-semibold">
+                            {new Date(subscriptionEnd).toLocaleDateString(language === "zh" ? "zh-CN" : "en-US", {
+                              year: "numeric",
+                              month: "long",
+                              day: "numeric",
+                            })}
+                          </span>
+                        </div>
+                      )}
+                      <ul className="space-y-2 text-left text-sm text-green-800">
+                        <li>✓ {t.settingsPage.subscription.features.unlimited}</li>
+                        <li>✓ {t.settingsPage.subscription.features.aiPersonalization}</li>
+                        <li>✓ {t.settingsPage.subscription.features.favorites}</li>
+                        <li>✓ {t.settingsPage.subscription.features.support}</li>
+                        <li>✓ {t.settingsPage.subscription.features.adFree}</li>
+                      </ul>
+                    </div>
                     <div className="mt-6 p-4 bg-blue-50 rounded-lg">
                       <p className="text-sm text-blue-800 mb-3">
                         {language === "zh"
@@ -612,7 +643,7 @@ export default function SettingsPage() {
                       <div className="flex items-center justify-between mb-4">
                         <h3 className="text-xl font-bold">{t.settingsPage.subscription.proPlan}</h3>
                         <div className="text-right">
-                          <div className="text-3xl font-bold text-blue-600">$9.99</div>
+                          <div className="text-3xl font-bold text-blue-600">$2.99</div>
                           <div className="text-sm text-gray-600">{t.settingsPage.subscription.perMonth}</div>
                         </div>
                       </div>
