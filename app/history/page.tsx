@@ -124,14 +124,8 @@ export default function HistoryPage() {
                 const blob = await response.blob()
                 downloadBlob(blob, `recommendations_${new Date().toISOString().split("T")[0]}.csv`)
             } else if (format === "pdf") {
-                // PDF export - for now show not implemented
-                toast({
-                    title: locale === "zh" ? "即将推出" : "Coming Soon",
-                    description: locale === "zh"
-                        ? "PDF导出功能正在开发中"
-                        : "PDF export feature is under development",
-                })
-                return
+                const blob = await response.blob()
+                downloadBlob(blob, `recommendations_${new Date().toISOString().split("T")[0]}.pdf`)
             }
 
             toast({
