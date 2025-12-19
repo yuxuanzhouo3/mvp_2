@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
 
     // 使用 upsert 来保存或更新进度
     const { error } = await supabaseAdmin
-      .from('onboarding_responses')
+      .from('onboarding_progress')
       .upsert(
         {
           user_id: userId,
@@ -81,7 +81,7 @@ export async function GET(request: NextRequest) {
     }
 
     const { data, error } = await supabaseAdmin
-      .from('onboarding_responses')
+      .from('onboarding_progress')
       .select('*')
       .eq('user_id', userId)
       .single();
@@ -142,7 +142,7 @@ export async function DELETE(request: NextRequest) {
 
     // 标记为已完成而不是删除
     const { error } = await supabaseAdmin
-      .from('onboarding_responses')
+      .from('onboarding_progress')
       .update({ is_completed: true, updated_at: new Date().toISOString() })
       .eq('user_id', userId);
 
