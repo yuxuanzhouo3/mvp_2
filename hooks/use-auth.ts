@@ -145,7 +145,8 @@ export function useAuth(): AuthSessionData & {
       if (
         e.key === "supabase-user-cache" ||
         e.key === "auth-state" ||
-        e.key === "auth-token"
+        e.key === "auth-token" ||
+        e.key === "app-auth-state"  // CN 环境的认证状态 key
       ) {
         loadUser();
       }
@@ -158,10 +159,12 @@ export function useAuth(): AuthSessionData & {
 
     window.addEventListener("storage", handleStorageChange);
     window.addEventListener("supabase-user-changed", handleUserChanged);
+    window.addEventListener("auth-state-changed", handleUserChanged);  // CN 环境的认证状态变化事件
 
     return () => {
       window.removeEventListener("storage", handleStorageChange);
       window.removeEventListener("supabase-user-changed", handleUserChanged);
+      window.removeEventListener("auth-state-changed", handleUserChanged);
     };
   }, [loadUser]);
 

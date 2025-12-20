@@ -33,6 +33,9 @@ export default function HomePage() {
   const { user, isAuthenticated, signOut } = useAuth()
   const { language, toggleLanguage } = useLanguage()
   const t = useTranslations(language)
+  const subscriptionTierLabel =
+    (user?.subscriptionTier && t.settingsPage.account.tiers[user.subscriptionTier]) ||
+    t.settingsPage.account.tiers.free
   
   // 用户画像状态
   const {
@@ -135,15 +138,15 @@ export default function HomePage() {
                     )}
                     {user?.subscriptionTier === "enterprise" ? (
                       <span className="px-2 py-1 text-xs font-medium rounded-full bg-purple-100 text-purple-700 whitespace-nowrap">
-                        Enterprise
+                        {subscriptionTierLabel}
                       </span>
                     ) : user?.subscriptionTier === "pro" ? (
                       <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-700 whitespace-nowrap">
-                        Pro
+                        {subscriptionTierLabel}
                       </span>
                     ) : (
                       <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-600 whitespace-nowrap">
-                        Free
+                        {subscriptionTierLabel}
                       </span>
                     )}
                   </div>

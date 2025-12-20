@@ -2,22 +2,198 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth/auth";
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
+import * as fontkit from '@pdf-lib/fontkit';
+import { isChinaRegion } from "@/lib/config/region";
+import * as fs from 'fs';
+import * as path from 'path';
 
 // 强制动态渲染，因为使用了request.headers
 export const dynamic = 'force-dynamic';
 import { canExportData, getUserRecommendationHistory } from "@/lib/subscription/usage-tracker";
 
+// 检测文本是否包含非 ASCII 字符（中文等）
+function hasNonAscii(text: string): boolean {
+  return /[^\x00-\x7F]/.test(text);
+}
+
+// 分类名映射（支持中英文）
+const categoryMapZh: Record<string, string> = {
+  'entertainment': '娱乐',
+  'shopping': '购物',
+  'food': '美食',
+  'travel': '旅行',
+  'fitness': '健身',
+  '娱乐': '娱乐',
+  '购物': '购物',
+  '美食': '美食',
+  '旅游': '旅行',
+  '健身': '健身',
+};
+
+const categoryMapEn: Record<string, string> = {
+  'entertainment': 'Entertainment',
+  'shopping': 'Shopping',
+  'food': 'Food',
+  'travel': 'Travel',
+  'fitness': 'Fitness',
+  '娱乐': 'Entertainment',
+  '购物': 'Shopping',
+  '美食': 'Food',
+  '旅游': 'Travel',
+  '健身': 'Fitness',
+};
+
+// 安全过滤文本，移除无法编码的字符
+function sanitizeTextForPdf(text: string, useChinese: boolean): string {
+  if (!text) return useChinese ? '无' : 'N/A';
+
+  // 如果支持中文字体，直接返回
+  if (useChinese) return text;
+
+  // 否则移除非 ASCII 字符，用描述性文本替代
+  if (hasNonAscii(text)) {
+    // 尝试提取英文部分
+    const asciiPart = text.replace(/[^\x00-\x7F]/g, '').trim();
+    if (asciiPart.length > 3) {
+      return asciiPart;
+    }
+    return '[Chinese Content]';
+  }
+  return text;
+}
+
+// 获取中文字体（优先本地，备用网络CDN）
+async function fetchChineseFont(): Promise<ArrayBuffer | null> {
+  // 1. 首先尝试从本地文件系统读取字体（优先 OTF 格式）
+  const localFontPaths = [
+    path.join(process.cwd(), 'public', 'fonts', 'NotoSansSC-Regular.otf'),
+    path.join(process.cwd(), 'public', 'fonts', 'SourceHanSansSC-Regular.otf'),
+    path.join(process.cwd(), 'public', 'fonts', 'chinese-font.otf'),
+  ];
+
+  for (const fontPath of localFontPaths) {
+    try {
+      if (fs.existsSync(fontPath)) {
+        console.log('[PDF Export] Found local font file:', fontPath);
+        const fontBuffer = fs.readFileSync(fontPath);
+
+        // 验证字体文件大小（至少 50KB）
+        if (fontBuffer.byteLength >= 50000) {
+          console.log('[PDF Export] Local font loaded, size:', fontBuffer.byteLength);
+          return fontBuffer.buffer.slice(
+            fontBuffer.byteOffset,
+            fontBuffer.byteOffset + fontBuffer.byteLength
+          );
+        } else {
+          console.warn('[PDF Export] Local font too small:', fontBuffer.byteLength);
+        }
+      }
+    } catch (error) {
+      console.warn('[PDF Export] Error reading local font:', fontPath, error);
+    }
+  }
+
+  // 2. 如果本地没有字体，尝试从网络获取
+  console.log('[PDF Export] No local font found, trying CDN sources...');
+
+  const fontUrls = [
+    // 阿里云 CDN - 思源黑体
+    'https://at.alicdn.com/t/webfont_exmzz0mq6a9.ttf',
+    // 字节跳动 CDN
+    'https://lf3-cdn-tos.bytecdntp.com/cdn/expire-1-M/lxgw-wenkai-webfont/1.233/LXGWWenKai-Regular.ttf',
+    // 75CDN - 思源黑体
+    'https://lib.baomitu.com/fonts/noto-sans-sc/NotoSansSC-Regular.ttf',
+    // Google Fonts (国际用户后备)
+    'https://fonts.gstatic.com/s/notosanssc/v36/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG-0.ttf',
+  ];
+
+  for (const fontUrl of fontUrls) {
+    try {
+      console.log('[PDF Export] Trying font source:', fontUrl);
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+      const response = await fetch(fontUrl, {
+        headers: {
+          'Accept': 'font/ttf,application/font-sfnt,application/x-font-ttf,*/*',
+        },
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        console.warn('[PDF Export] Font source returned:', response.status, fontUrl);
+        continue;
+      }
+
+      const fontBuffer = await response.arrayBuffer();
+
+      if (fontBuffer.byteLength < 100000) {
+        console.warn('[PDF Export] Font file too small, skipping:', fontBuffer.byteLength, fontUrl);
+        continue;
+      }
+
+      console.log('[PDF Export] Chinese font loaded from CDN, size:', fontBuffer.byteLength);
+      return fontBuffer;
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        console.warn('[PDF Export] Font fetch timeout:', fontUrl);
+      } else {
+        console.warn('[PDF Export] Error fetching font:', fontUrl, error.message);
+      }
+      continue;
+    }
+  }
+
+  console.error('[PDF Export] All font sources failed');
+  return null;
+}
+
 // PDF生成函数 - 使用pdf-lib（纯JavaScript，无需文件系统访问）
-async function generatePDF(history: { data: any[]; total: number; retentionDays: number }) {
+async function generatePDF(history: { data: any[]; total: number; retentionDays: number }): Promise<Buffer> {
   console.log('[PDF Export] Starting PDF generation with pdf-lib...');
   console.log('[PDF Export] History data count:', history.data.length);
+
+  // 根据部署区域决定语言（CN环境强制使用中文）
+  const isCN = isChinaRegion();
+  console.log('[PDF Export] Is China Region:', isCN);
 
   // 创建PDF文档
   const pdfDoc = await PDFDocument.create();
 
-  // 加载标准字体
+  // 注册 fontkit 以支持自定义字体
+  pdfDoc.registerFontkit(fontkit.default || fontkit);
+
+  // 中文环境：必须加载中文字体
+  let chineseFont: any = null;
+  let useChinese = false;
+
+  if (isCN) {
+    // CN环境：强制使用中文，必须加载中文字体
+    console.log('[PDF Export] CN environment: Chinese is required');
+    const fontData = await fetchChineseFont();
+    if (!fontData) {
+      throw new Error('无法加载中文字体，请稍后重试');
+    }
+    chineseFont = await pdfDoc.embedFont(fontData);
+    useChinese = true;
+    console.log('[PDF Export] Chinese font embedded successfully for CN environment');
+  } else {
+    // INTL环境：使用英文
+    console.log('[PDF Export] INTL environment: Using English');
+    useChinese = false;
+  }
+
+  // 加载标准字体作为后备
   const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
   const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
+
+  // 选择使用的字体
+  const titleFont = useChinese ? chineseFont : helveticaBold;
+  const bodyFont = useChinese ? chineseFont : helvetica;
+  const headerFont = useChinese ? chineseFont : helveticaBold;
 
   // 页面设置
   const pageWidth = 595; // A4 width in points
@@ -35,41 +211,41 @@ async function generatePDF(history: { data: any[]; total: number; retentionDays:
   let yPosition = pageHeight - margin;
 
   // 绘制标题
-  const title = 'Recommendation History Export';
-  const titleWidth = helveticaBold.widthOfTextAtSize(title, 22);
+  const title = useChinese ? '推荐历史导出' : 'Recommendation History Export';
+  const titleWidth = titleFont.widthOfTextAtSize(title, 22);
   page.drawText(title, {
     x: (pageWidth - titleWidth) / 2,
     y: yPosition,
     size: 22,
-    font: helveticaBold,
+    font: titleFont,
     color: textColor,
   });
   yPosition -= 30;
 
   // 绘制导出时间
-  const exportDate = `Exported on: ${new Date().toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  })}`;
-  const exportDateWidth = helvetica.widthOfTextAtSize(exportDate, 12);
+  const exportDate = useChinese
+    ? `导出时间: ${new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })}`
+    : `Exported on: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`;
+  const exportDateWidth = bodyFont.widthOfTextAtSize(exportDate, 12);
   page.drawText(exportDate, {
     x: (pageWidth - exportDateWidth) / 2,
     y: yPosition,
     size: 12,
-    font: helvetica,
+    font: bodyFont,
     color: grayColor,
   });
   yPosition -= 20;
 
   // 绘制统计信息
-  const stats = `Total Records: ${history.total} | Retention: ${history.retentionDays} days`;
-  const statsWidth = helvetica.widthOfTextAtSize(stats, 10);
+  const stats = useChinese
+    ? `总记录数: ${history.total} | 保留天数: ${history.retentionDays} 天`
+    : `Total Records: ${history.total} | Retention: ${history.retentionDays} days`;
+  const statsWidth = bodyFont.widthOfTextAtSize(stats, 10);
   page.drawText(stats, {
     x: (pageWidth - statsWidth) / 2,
     y: yPosition,
     size: 10,
-    font: helvetica,
+    font: bodyFont,
     color: grayColor,
   });
   yPosition -= 40;
@@ -90,14 +266,14 @@ async function generatePDF(history: { data: any[]; total: number; retentionDays:
   });
 
   // 表头文字
-  const headers = ['Date', 'Category', 'Recommendation'];
+  const headers = useChinese ? ['日期', '分类', '推荐内容'] : ['Date', 'Category', 'Recommendation'];
   let xPos = margin + cellPadding;
   for (let i = 0; i < headers.length; i++) {
     page.drawText(headers[i], {
       x: xPos,
       y: headerY - rowHeight + 8,
       size: 11,
-      font: helveticaBold,
+      font: headerFont,
       color: rgb(1, 1, 1), // white
     });
     xPos += colWidths[i];
@@ -112,13 +288,15 @@ async function generatePDF(history: { data: any[]; total: number; retentionDays:
     // 检查是否需要新页面
     if (yPosition - rowHeight < margin + 50) {
       // 添加页脚
-      const footer = 'Generated by RandomLife - Your Personal Discovery Platform';
-      const footerWidth = helvetica.widthOfTextAtSize(footer, 9);
+      const footer = useChinese
+        ? 'RandomLife 生成 - 您的个人发现平台'
+        : 'Generated by RandomLife - Your Personal Discovery Platform';
+      const footerWidth = bodyFont.widthOfTextAtSize(footer, 9);
       page.drawText(footer, {
         x: (pageWidth - footerWidth) / 2,
         y: margin / 2,
         size: 9,
-        font: helvetica,
+        font: bodyFont,
         color: grayColor,
       });
 
@@ -139,20 +317,27 @@ async function generatePDF(history: { data: any[]; total: number; retentionDays:
     }
 
     // 提取数据
-    const date = new Date(item.created_at).toLocaleDateString('en-US', {
+    const dateLocale = useChinese ? 'zh-CN' : 'en-US';
+    const date = new Date(item.created_at).toLocaleDateString(dateLocale, {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
     });
-    const category = (recommendation?.category as string) || 'N/A';
 
+    // 处理分类名
+    let categoryRaw = (recommendation?.category as string) || 'N/A';
+    const categoryMap = useChinese ? categoryMapZh : categoryMapEn;
+    let category = categoryMap[categoryRaw.toLowerCase()] || categoryMap[categoryRaw] || categoryRaw;
+    category = sanitizeTextForPdf(category, useChinese);
+
+    // 处理推荐内容
     let content = '';
     if (recommendation?.title) {
       content = recommendation.title as string;
     } else if (recommendation?.content) {
       content = String(recommendation.content);
     } else {
-      content = 'N/A';
+      content = useChinese ? '无' : 'N/A';
     }
 
     // 截断过长内容
@@ -160,6 +345,7 @@ async function generatePDF(history: { data: any[]; total: number; retentionDays:
     if (content.length > maxContentLength) {
       content = content.substring(0, maxContentLength - 3) + '...';
     }
+    content = sanitizeTextForPdf(content, useChinese);
 
     // 绘制单元格内容
     xPos = margin + cellPadding;
@@ -169,7 +355,7 @@ async function generatePDF(history: { data: any[]; total: number; retentionDays:
       // 截断文本以适应列宽
       let text = rowData[i];
       const maxWidth = colWidths[i] - cellPadding * 2;
-      while (helvetica.widthOfTextAtSize(text, 10) > maxWidth && text.length > 3) {
+      while (bodyFont.widthOfTextAtSize(text, 10) > maxWidth && text.length > 3) {
         text = text.substring(0, text.length - 4) + '...';
       }
 
@@ -177,7 +363,7 @@ async function generatePDF(history: { data: any[]; total: number; retentionDays:
         x: xPos,
         y: yPosition - rowHeight + 8,
         size: 10,
-        font: helvetica,
+        font: bodyFont,
         color: textColor,
       });
       xPos += colWidths[i];
@@ -187,13 +373,15 @@ async function generatePDF(history: { data: any[]; total: number; retentionDays:
   }
 
   // 添加最后的页脚
-  const footer = 'Generated by RandomLife - Your Personal Discovery Platform';
-  const footerWidth = helvetica.widthOfTextAtSize(footer, 9);
+  const footer = useChinese
+    ? 'RandomLife 生成 - 您的个人发现平台'
+    : 'Generated by RandomLife - Your Personal Discovery Platform';
+  const footerWidth = bodyFont.widthOfTextAtSize(footer, 9);
   page.drawText(footer, {
     x: (pageWidth - footerWidth) / 2,
     y: margin / 2,
     size: 9,
-    font: helvetica,
+    font: bodyFont,
     color: grayColor,
   });
 

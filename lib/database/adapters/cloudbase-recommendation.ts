@@ -40,6 +40,7 @@ export class CloudBaseRecommendationAdapter implements RecommendationDatabaseAda
 
   /**
    * 获取推荐历史
+   * 注意：只返回初始生成的推荐记录，并根据标题去重（只保留最新的一条）
    */
   async getRecommendationHistory(
     userId: string,
@@ -56,24 +57,41 @@ export class CloudBaseRecommendationAdapter implements RecommendationDatabaseAda
         query.category = category;
       }
 
+      // 获取更多记录以便去重后仍有足够数据
+      const fetchLimit = Math.min((limit + offset) * 3, 500);
+
       const result = await collection
         .where(query)
         .orderBy(orderBy, ascending ? 'asc' : 'desc')
-        .skip(offset)
-        .limit(limit)
+        .limit(fetchLimit)
         .get();
 
       // 转换 CloudBase 的 _id 为 id
-      const data = (result.data || []).map((item: any) => ({
+      let data = (result.data || []).map((item: any) => ({
         ...item,
         id: item._id || item.id,
       }));
 
-      return { data, error: null, count: data.length };
+      // 根据 title + category 去重，只保留最新的一条记录
+      // 这样可以避免同一推荐因多次刷新而重复展示
+      const seen = new Map<string, any>();
+      for (const item of data) {
+        const key = `${item.category}-${item.title}`;
+        if (!seen.has(key)) {
+          seen.set(key, item);
+        }
+        // 由于数据已按时间倒序排列，第一条就是最新的，所以不需要比较时间
+      }
+
+      // 转换回数组并应用分页
+      const uniqueData = Array.from(seen.values());
+      const paginatedData = uniqueData.slice(offset, offset + limit);
+
+      return { data: paginatedData, error: null, count: paginatedData.length };
     } catch (error) {
-      return { 
-        data: null, 
-        error: handleCloudBaseError(error, 'getRecommendationHistory') 
+      return {
+        data: null,
+        error: handleCloudBaseError(error, 'getRecommendationHistory')
       };
     }
   }
@@ -264,6 +282,11 @@ export class CloudBaseRecommendationAdapter implements RecommendationDatabaseAda
       tags?: string[];
       incrementClick?: boolean;
       incrementView?: boolean;
+      // 用户画像相关字段
+      onboarding_completed?: boolean;
+      profile_completeness?: number;
+      ai_profile_summary?: string;
+      personality_tags?: string[];
     }
   ): Promise<SingleResult<UserPreference>> {
     try {
@@ -284,10 +307,11 @@ export class CloudBaseRecommendationAdapter implements RecommendationDatabaseAda
           : existing.preferences;
 
         const newTags = updates.tags
-          ? [...new Set([...existing.tags, ...updates.tags])]
+          ? [...new Set([...(existing.tags || []), ...updates.tags])]
           : existing.tags;
 
-        const updateData = {
+        // 构建更新对象
+        const updateData: Record<string, any> = {
           preferences: newPreferences,
           tags: newTags,
           click_count: updates.incrementClick ? (existing.click_count || 0) + 1 : existing.click_count,
@@ -295,6 +319,20 @@ export class CloudBaseRecommendationAdapter implements RecommendationDatabaseAda
           last_activity: now,
           updated_at: now,
         };
+
+        // 添加画像相关字段（如果提供）
+        if (updates.onboarding_completed !== undefined) {
+          updateData.onboarding_completed = updates.onboarding_completed;
+        }
+        if (updates.profile_completeness !== undefined) {
+          updateData.profile_completeness = updates.profile_completeness;
+        }
+        if (updates.ai_profile_summary !== undefined) {
+          updateData.ai_profile_summary = updates.ai_profile_summary;
+        }
+        if (updates.personality_tags !== undefined) {
+          updateData.personality_tags = updates.personality_tags;
+        }
 
         await collection.doc(existing._id).update(updateData);
 
@@ -308,7 +346,7 @@ export class CloudBaseRecommendationAdapter implements RecommendationDatabaseAda
         };
       } else {
         // 创建新记录
-        const newDoc = {
+        const newDoc: Record<string, any> = {
           user_id: userId,
           category,
           preferences: updates.preferences || {},
@@ -319,6 +357,20 @@ export class CloudBaseRecommendationAdapter implements RecommendationDatabaseAda
           created_at: now,
           updated_at: now,
         };
+
+        // 添加画像相关字段（如果提供）
+        if (updates.onboarding_completed !== undefined) {
+          newDoc.onboarding_completed = updates.onboarding_completed;
+        }
+        if (updates.profile_completeness !== undefined) {
+          newDoc.profile_completeness = updates.profile_completeness;
+        }
+        if (updates.ai_profile_summary !== undefined) {
+          newDoc.ai_profile_summary = updates.ai_profile_summary;
+        }
+        if (updates.personality_tags !== undefined) {
+          newDoc.personality_tags = updates.personality_tags;
+        }
 
         const result = await collection.add(newDoc);
 

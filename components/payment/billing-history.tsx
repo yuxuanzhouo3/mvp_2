@@ -19,10 +19,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Receipt, RefreshCw, CreditCard, X, CheckCircle } from "lucide-react";
+import { Receipt, RefreshCw, CreditCard, X, CheckCircle, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useLanguage } from "@/components/language-provider";
 import { useTranslations } from "@/lib/i18n";
+import { isChinaDeployment } from "@/lib/config/deployment.config";
+
+// 检测是否CN环境
+const isCN = isChinaDeployment();
 
 interface BillingRecord {
   id: string;
@@ -225,31 +229,40 @@ export function BillingHistory() {
     try {
       const { fetchWithAuth } = await import("@/lib/auth/fetch-with-auth");
 
-      const response = await fetchWithAuth(`/api/payment/cancel`, {
+      // 根据环境选择不同的API端点
+      const apiEndpoint = isCN ? "/api/payment/cn/cancel" : "/api/payment/cancel";
+
+      const response = await fetchWithAuth(apiEndpoint, {
         method: "POST",
         body: JSON.stringify({ paymentId: recordId }),
       });
 
       if (!response.ok) {
-        throw new Error("Failed to cancel order");
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to cancel order");
       }
 
       toast({
-        title: "Success",
-        description: "Payment cancelled successfully",
+        title: language === "zh" ? "成功" : "Success",
+        description: language === "zh" ? "订单已取消" : "Payment cancelled successfully",
       });
 
-      // 刷新账单列表
-      setRecords((prev) =>
-        prev.map((r) =>
-          r.id === recordId ? { ...r, status: "failed" as const } : r
-        )
-      );
-    } catch (error) {
+      // 在CN环境，删除记录后直接从列表中移除
+      if (isCN) {
+        setRecords((prev) => prev.filter((r) => r.id !== recordId));
+      } else {
+        // 在INTL环境，更新状态为failed
+        setRecords((prev) =>
+          prev.map((r) =>
+            r.id === recordId ? { ...r, status: "failed" as const } : r
+          )
+        );
+      }
+    } catch (error: any) {
       console.error("Cancel order error:", error);
       toast({
-        title: "Error",
-        description: "Failed to cancel payment",
+        title: language === "zh" ? "错误" : "Error",
+        description: error.message || (language === "zh" ? "取消订单失败" : "Failed to cancel payment"),
         variant: "destructive",
       });
     } finally {
@@ -359,7 +372,7 @@ export function BillingHistory() {
                       <TableCell>{record.paymentMethod}</TableCell>
                       <TableCell>{getStatusBadge(record.status)}</TableCell>
                       <TableCell>
-                        {record.status === "pending" && record.paymentMethod === "PayPal" && (
+                        {record.status === "pending" && record.paymentMethod === "PayPal" && !isCN && (
                           <Button
                             variant="outline"
                             size="sm"
@@ -372,6 +385,22 @@ export function BillingHistory() {
                               <CheckCircle className="h-3 w-3 mr-1" />
                             )}
                             {language === "zh" ? "确认支付" : "Confirm"}
+                          </Button>
+                        )}
+                        {record.status === "pending" && isCN && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleCancelOrder(record.id)}
+                            disabled={processingId === record.id}
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                          >
+                            {processingId === record.id ? (
+                              <RefreshCw className="h-3 w-3 animate-spin mr-1" />
+                            ) : (
+                              <Trash2 className="h-3 w-3 mr-1" />
+                            )}
+                            {language === "zh" ? "取消订单" : "Cancel"}
                           </Button>
                         )}
                       </TableCell>

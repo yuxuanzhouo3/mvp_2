@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -19,6 +20,7 @@ import type {
 import { RegionConfig } from "@/lib/config/region"
 import { getClientLocale } from "@/lib/utils/locale"
 import { isValidUserId } from "@/lib/utils"
+import { fetchWithAuth } from "@/lib/auth/fetch-with-auth"
 
 // 分类配置
 const categoryConfig: Record<
@@ -92,35 +94,75 @@ function dedupeHistory(items: HistoryItem[]): HistoryItem[] {
 // èŽ·å–ç”¨æˆ· ID
 function getUserId(): string {
   if (typeof window !== "undefined") {
-    // 尝试 Supabase 国际版缓存 (新方式)
-    try {
-      const supabaseCache = localStorage.getItem("supabase-user-cache");
-      if (supabaseCache) {
-        const cache = JSON.parse(supabaseCache);
-        if (cache?.user?.id) {
-          console.log(`[Auth] Got userId from Supabase cache: ${cache.user.id.slice(0, 8)}...`);
-          return cache.user.id;
+    const isCN = RegionConfig.database.provider === "cloudbase";
+
+    if (isCN) {
+      // CN 环境：优先使用 CloudBase 认证状态
+      // 1. 新的统一认证状态 (app-auth-state)
+      try {
+        const authState = localStorage.getItem("app-auth-state");
+        if (authState) {
+          const state = JSON.parse(authState);
+          if (state?.user?.id) {
+            console.log(`[Auth] Got userId from app-auth-state (CN): ${state.user.id.slice(0, 8)}...`);
+            return state.user.id;
+          }
         }
+      } catch (error) {
+        console.warn("[Auth] Failed to parse app-auth-state:", error);
       }
-    } catch (error) {
-      console.warn("[Auth] Failed to parse Supabase cache:", error);
+
+      // 2. 旧的 CloudBase 缓存 (auth-state)
+      try {
+        const cloudbaseCache = localStorage.getItem("auth-state");
+        if (cloudbaseCache) {
+          const state = JSON.parse(cloudbaseCache);
+          if (state?.user?.id) {
+            console.log(`[Auth] Got userId from CloudBase cache (CN): ${state.user.id.slice(0, 8)}...`);
+            return state.user.id;
+          }
+        }
+      } catch (error) {
+        console.warn("[Auth] Failed to parse CloudBase cache:", error);
+      }
+    } else {
+      // INTL 环境：优先使用 Supabase 认证状态
+      // 1. Supabase 用户缓存
+      try {
+        const supabaseCache = localStorage.getItem("supabase-user-cache");
+        if (supabaseCache) {
+          const cache = JSON.parse(supabaseCache);
+          if (cache?.user?.id) {
+            console.log(`[Auth] Got userId from Supabase cache (INTL): ${cache.user.id.slice(0, 8)}...`);
+            return cache.user.id;
+          }
+        }
+      } catch (error) {
+        console.warn("[Auth] Failed to parse Supabase cache:", error);
+      }
+
+      // 2. Supabase SDK 的默认存储 (sb-<project-ref>-auth-token)
+      try {
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith("sb-") && key.endsWith("-auth-token")) {
+            const tokenData = localStorage.getItem(key);
+            if (tokenData) {
+              const parsed = JSON.parse(tokenData);
+              const userId = parsed?.user?.id;
+              if (userId) {
+                console.log(`[Auth] Got userId from Supabase SDK storage (INTL): ${userId.slice(0, 8)}...`);
+                return userId;
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.warn("[Auth] Failed to parse Supabase SDK storage:", error);
+      }
     }
 
-    // 尝试 CloudBase 中国版缓存 (备选)
-    try {
-      const cloudbaseCache = localStorage.getItem("auth-state");
-      if (cloudbaseCache) {
-        const state = JSON.parse(cloudbaseCache);
-        if (state?.user?.id) {
-          console.log(`[Auth] Got userId from CloudBase cache: ${state.user.id.slice(0, 8)}...`);
-          return state.user.id;
-        }
-      }
-    } catch (error) {
-      console.warn("[Auth] Failed to parse CloudBase cache:", error);
-    }
-
-    // 备选：旧的用户缓存 key
+    // 备选：旧的用户缓存 key（兼容性）
     try {
       const userStr = localStorage.getItem("user");
       if (userStr) {
@@ -134,27 +176,6 @@ function getUserId(): string {
     } catch (error) {
       console.warn("[Auth] Failed to parse legacy user cache:", error);
     }
-
-    // 最后尝试：Supabase SDK 的默认存储 (sb-<project-ref>-auth-token)
-    try {
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.startsWith("sb-") && key.endsWith("-auth-token")) {
-          const tokenData = localStorage.getItem(key);
-          if (tokenData) {
-            const parsed = JSON.parse(tokenData);
-            // Supabase SDK 存储格式：{ user: { id: "...", ... }, access_token: "...", ... }
-            const userId = parsed?.user?.id;
-            if (userId) {
-              console.log(`[Auth] Got userId from Supabase SDK storage (${key}): ${userId.slice(0, 8)}...`);
-              return userId;
-            }
-          }
-        }
-      }
-    } catch (error) {
-      console.warn("[Auth] Failed to parse Supabase SDK storage:", error);
-    }
   }
 
   console.warn("[Auth] No authenticated user found, using anonymous");
@@ -162,6 +183,7 @@ function getUserId(): string {
 }
 
 export default function CategoryPage({ params }: { params: { id: string } }) {
+  const router = useRouter()
   const [currentRecommendations, setCurrentRecommendations] = useState<AIRecommendation[]>([])
   const [history, setHistory] = useState<HistoryItem[]>([])
   const [historySource, setHistorySource] = useState<"local" | "supabase" | "cloudbase">("local")
@@ -241,6 +263,12 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
   )
 
   const loadLocalHistory = useCallback(() => {
+    // 在CN环境下，未登录用户不显示历史记录
+    if (!userId || userId === "anonymous") {
+      setHistory([])
+      return
+    }
+    
     const savedHistory = localStorage.getItem(`ai_history_${params.id}`)
     if (savedHistory) {
       try {
@@ -251,19 +279,22 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
         // ignore parse errors
       }
     }
-  }, [params.id])
+  }, [params.id, userId])
 
   const fetchRemoteHistory = useCallback(
     async (targetUserId: string) => {
-      if (!isValidUserId(targetUserId)) {
+      // 在CN环境下，未登录用户不获取历史记录
+      if (!isValidUserId(targetUserId) || targetUserId === "anonymous") {
+        setHistory([])
         setHistorySource("local")
         return
       }
 
       setIsHistoryLoading(true)
       try {
-        const response = await fetch(
-          `/api/recommend/history?userId=${targetUserId}&category=${categoryId}&limit=10`
+        // 使用 fetchWithAuth 携带认证 token，确保后端能验证用户身份
+        const response = await fetchWithAuth(
+          `/api/recommend/history?userId=${targetUserId}&category=${categoryId}&limit=10&provider=${historyProvider}`
         )
         const result = await response.json()
 
@@ -288,14 +319,18 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
     [categoryId, historyProvider, loadLocalHistory, params.id]
   )
 
-  // 初始化加载本地历史缓存
+  // 初始化加载本地历史缓存（仅对已登录用户）
   useEffect(() => {
-    loadLocalHistory()
-  }, [loadLocalHistory])
+    // 在CN环境下，未登录用户不显示历史记录
+    if (userId && userId !== "anonymous") {
+      loadLocalHistory()
+    }
+  }, [loadLocalHistory, userId])
 
   // 有登录用户时从远端查询历史（Supabase 或 CloudBase）
   useEffect(() => {
-    if (!userId) return
+    // 在CN环境下，未登录用户不获取远程历史记录
+    if (!userId || userId === "anonymous") return
     fetchRemoteHistory(userId)
   }, [userId, fetchRemoteHistory])
 
@@ -310,13 +345,14 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
       const resolvedUserId = userId || getUserId()
       if (item?.historyId && isValidUserId(resolvedUserId)) {
         try {
-          await fetch("/api/recommend/history", {
+          // 使用 fetchWithAuth 携带认证 token
+          await fetchWithAuth("/api/recommend/history", {
             method: "DELETE",
-            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               userId: resolvedUserId,
               historyIds: [item.historyId],
               category: categoryId,
+              provider: historyProvider,
             }),
           })
         } catch (err) {
@@ -324,29 +360,30 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
         }
       }
     },
-    [history, params.id, userId, categoryId]
+    [history, params.id, userId, categoryId, historyProvider]
   )
 
-  const clearHistory = useCallback(async () => {
-    setHistory([])
-    localStorage.removeItem(`ai_history_${params.id}`)
+    const clearHistory = useCallback(async () => {
+      setHistory([])
+      localStorage.removeItem(`ai_history_${params.id}`)
 
-    const resolvedUserId = userId || getUserId()
-    if (isValidUserId(resolvedUserId)) {
-      try {
-        await fetch("/api/recommend/history", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            userId: resolvedUserId,
-            action: "clear-all",
-          }),
-        })
-      } catch (err) {
-        console.error("Failed to clear remote history:", err)
+      const resolvedUserId = userId || getUserId()
+      if (isValidUserId(resolvedUserId)) {
+        try {
+          // 使用 fetchWithAuth 携带认证 token
+          await fetchWithAuth("/api/recommend/history", {
+            method: "PUT",
+            body: JSON.stringify({
+              userId: resolvedUserId,
+              action: "clear-all",
+              provider: historyProvider,
+            }),
+          })
+        } catch (err) {
+          console.error("Failed to clear remote history:", err)
+        }
       }
-    }
-  }, [params.id, userId])
+  }, [params.id, userId, historyProvider])
 
   // 记录用户行为
   const recordAction = useCallback(
@@ -381,6 +418,12 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
 
   // 获取 AI 推荐
   const fetchRecommendations = useCallback(async () => {
+    // 检查用户是否登录，未登录则不获取推荐
+    if (!userId || userId === "anonymous") {
+      router.push("/login");
+      return;
+    }
+
     setIsShaking(true)
     setIsLoading(true)
     setError(null)
@@ -554,7 +597,15 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
             transition={{ duration: 0.5, repeat: isShaking ? Infinity : 0 }}
           >
             <Button
-              onClick={fetchRecommendations}
+              onClick={() => {
+                // 检查用户是否登录，未登录则跳转到登录页
+                if (!userId || userId === "anonymous") {
+                  router.push("/login");
+                  return;
+                }
+                // 已登录用户获取推荐
+                fetchRecommendations();
+              }}
               disabled={isLoading}
               className={`w-32 h-32 rounded-full bg-gradient-to-r ${category.color} hover:opacity-90 text-white text-lg font-semibold shadow-lg`}
             >
@@ -574,9 +625,13 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
             </Button>
           </motion.div>
           <p className="text-gray-600 mt-4">
-            {locale === "zh"
-              ? "点击获取 AI 个性化推荐"
-              : "Tap for AI-powered recommendations"}
+            {!userId || userId === "anonymous"
+              ? locale === "zh"
+                ? "请先登录后使用推荐功能"
+                : "Please log in to use the recommendation feature"
+              : locale === "zh"
+                ? "点击获取 AI 个性化推荐"
+                : "Tap for AI-powered recommendations"}
           </p>
         </div>
 
@@ -653,20 +708,35 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
           >
             <div className="text-6xl mb-4">{category.icon}</div>
             <h3 className="text-lg font-medium text-gray-700 mb-2">
-              {locale === "zh"
-                ? "点击上方按钮获取推荐"
-                : "Tap the button above for recommendations"}
+              {!userId || userId === "anonymous"
+                ? locale === "zh"
+                  ? "请先登录使用推荐功能"
+                  : "Please log in to use recommendations"
+                : locale === "zh"
+                  ? "点击上方按钮获取推荐"
+                  : "Tap the button above for recommendations"}
             </h3>
             <p className="text-gray-500 text-sm">
-              {locale === "zh"
-                ? "AI 将根据你的喜好推荐内容"
-                : "AI will recommend content based on your preferences"}
+              {!userId || userId === "anonymous"
+                ? locale === "zh"
+                  ? "登录后即可享受个性化推荐体验"
+                  : "Log in to enjoy personalized recommendations"
+                : locale === "zh"
+                  ? "AI 将根据你的喜好推荐内容"
+                  : "AI will recommend content based on your preferences"}
             </p>
+            {!userId || userId === "anonymous" && (
+              <Link href="/login" className="inline-block mt-4">
+                <Button>
+                  {locale === "zh" ? "立即登录" : "Log In Now"}
+                </Button>
+              </Link>
+            )}
           </motion.div>
         )}
 
-        {/* 历史记录 */}
-        {history.length > 0 && (
+        {/* 历史记录 - 只对已登录用户显示 */}
+        {userId && userId !== "anonymous" && history.length > 0 && (
           <div className="mt-8">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">

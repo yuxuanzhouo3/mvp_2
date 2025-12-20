@@ -13,6 +13,7 @@ function AuthCallbackContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const code = searchParams.get("code")
+  const stateParam = searchParams.get("state")
   const errorParam = searchParams.get("error")
   const errorDescription = searchParams.get("error_description")
   const redirectPath = searchParams.get("redirect") || searchParams.get("next") || "/"
@@ -24,11 +25,93 @@ function AuthCallbackContent() {
     let cancelled = false
 
     const completeOAuth = async () => {
+      // 中国区域：处理微信 OAuth 回调
       if (isChinaRegion()) {
-        router.replace("/login")
+        try {
+          // 如果有错误参数
+          if (errorParam) {
+            const displayError = errorDescription || "微信授权失败"
+            setStatus("error")
+            setMessage(displayError)
+            setTimeout(() => router.replace("/login"), 1500)
+            return
+          }
+
+          // 如果没有授权码
+          if (!code) {
+            setStatus("error")
+            setMessage("缺少微信授权码")
+            setTimeout(() => router.replace("/login"), 1500)
+            return
+          }
+
+          console.log("[WeChat Callback] Processing code:", code.substring(0, 10) + "...")
+
+          // 解析 state 参数获取 next 路径
+          let nextTarget = "/"
+          if (stateParam) {
+            try {
+              const stateData = JSON.parse(Buffer.from(stateParam, "base64").toString())
+              nextTarget = stateData.next || "/"
+            } catch (e) {
+              console.warn("[WeChat Callback] Failed to parse state:", e)
+            }
+          }
+
+          // 调用后端 API 完成微信登录
+          const response = await fetch("/api/auth/wechat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ code, state: stateParam }),
+          })
+
+          const data = await response.json()
+
+          if (!response.ok || !data.success) {
+            console.error("[WeChat Callback] Login failed:", data)
+            setStatus("error")
+            setMessage(data.error || "微信登录失败，请重试")
+            setTimeout(() => router.replace("/login"), 1500)
+            return
+          }
+
+          console.log("[WeChat Callback] Login successful, user:", data.user?.id)
+
+          // 保存认证状态到 localStorage
+          if (data.accessToken && data.user) {
+            try {
+              const { saveAuthState } = await import("@/lib/auth/auth-state-manager")
+              saveAuthState(
+                data.accessToken,
+                data.refreshToken || data.accessToken,
+                data.user,
+                data.tokenMeta || {
+                  accessTokenExpiresIn: 3600,
+                  refreshTokenExpiresIn: 604800,
+                }
+              )
+            } catch (error) {
+              console.error("[WeChat Callback] Failed to save auth state:", error)
+            }
+          }
+
+          if (!cancelled) {
+            setStatus("success")
+            setMessage("登录成功，正在跳转...")
+            setTimeout(() => router.replace(nextTarget), 200)
+          }
+        } catch (error) {
+          console.error("[WeChat Callback] Error:", error)
+          if (!cancelled) {
+            setStatus("error")
+            setMessage("登录失败，请重试。")
+            setTimeout(() => router.replace("/login"), 1200)
+          }
+        }
         return
       }
 
+      // 国际区域：处理 Supabase OAuth 回调
       try {
         if (errorParam) {
           const displayError =
@@ -124,7 +207,7 @@ function AuthCallbackContent() {
     return () => {
       cancelled = true
     }
-  }, [code, redirectPath, router])
+  }, [code, stateParam, redirectPath, router, errorParam, errorDescription, searchParams])
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-4 py-12">
@@ -135,7 +218,9 @@ function AuthCallbackContent() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center gap-3">
-            <LoadingSpinner />
+            {status === "loading" && <LoadingSpinner />}
+            {status === "success" && <SuccessIcon />}
+            {status === "error" && <ErrorIcon />}
             <p className="text-sm text-muted-foreground">{message}</p>
           </div>
           {status === "error" && (
@@ -169,6 +254,44 @@ function LoadingSpinner() {
         className="opacity-75"
         fill="currentColor"
         d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+      />
+    </svg>
+  )
+}
+
+function SuccessIcon() {
+  return (
+    <svg
+      className="h-4 w-4 text-green-500"
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M5 13l4 4L19 7"
+      />
+    </svg>
+  )
+}
+
+function ErrorIcon() {
+  return (
+    <svg
+      className="h-4 w-4 text-red-500"
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M6 18L18 6M6 6l12 12"
       />
     </svg>
   )

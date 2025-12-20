@@ -3,6 +3,7 @@ import { getSupabaseAdmin } from "@/lib/integrations/supabase-admin";
 import { isChinaRegion } from "@/lib/config/region";
 import { requireAuth } from "@/lib/auth/auth";
 import { z } from "zod";
+import cloudbase from "@cloudbase/node-sdk";
 
 // Force dynamic rendering for this route
 export const dynamic = 'force-dynamic';
@@ -12,20 +13,30 @@ const updateProfileSchema = z.object({
   full_name: z.string().min(1, "Name is required").max(100, "Name too long"),
 });
 
+// CloudBase 应用缓存
+let cachedCloudBaseApp: any = null;
+
+function getCloudBaseApp() {
+  if (cachedCloudBaseApp) {
+    return cachedCloudBaseApp;
+  }
+
+  cachedCloudBaseApp = cloudbase.init({
+    env: process.env.NEXT_PUBLIC_WECHAT_CLOUDBASE_ID,
+    secretId: process.env.CLOUDBASE_SECRET_ID,
+    secretKey: process.env.CLOUDBASE_SECRET_KEY,
+  });
+
+  return cachedCloudBaseApp;
+}
+
 /**
  * PUT /api/profile/update
- * Updates the user's profile information in the user_profiles table
+ * Updates the user's profile information
+ * Supports both INTL (Supabase) and CN (CloudBase) regions
  */
 export async function PUT(request: NextRequest) {
   try {
-    // This endpoint is only for international (Supabase) region
-    if (isChinaRegion()) {
-      return NextResponse.json(
-        { error: "This endpoint is not available in China region" },
-        { status: 400 }
-      );
-    }
-
     // Authenticate the user
     const auth = await requireAuth(request);
     if (!auth) {
@@ -51,51 +62,13 @@ export async function PUT(request: NextRequest) {
 
     const { full_name } = validationResult.data;
 
-    // Get Supabase admin client
-    const supabaseAdmin = getSupabaseAdmin();
-
-    // Update user_profiles table
-    const { error: updateError } = await supabaseAdmin
-      .from("user_profiles")
-      .update({
-        full_name,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", auth.user.id);
-
-    if (updateError) {
-      console.error("[/api/profile/update] Failed to update profile:", updateError);
-      return NextResponse.json(
-        { error: "Failed to update profile" },
-        { status: 500 }
-      );
+    if (isChinaRegion()) {
+      // ==================== CN 环境：CloudBase ====================
+      return await handleChinaProfileUpdate(auth.user, full_name);
+    } else {
+      // ==================== INTL 环境：Supabase ====================
+      return await handleIntlProfileUpdate(auth.user, full_name);
     }
-
-    // Also update user metadata in auth.users
-    const { error: metadataError } = await supabaseAdmin.auth.admin.updateUserById(
-      auth.user.id,
-      {
-        user_metadata: {
-          ...auth.user.user_metadata,
-          full_name,
-        }
-      }
-    );
-
-    if (metadataError) {
-      console.error("[/api/profile/update] Failed to update user metadata:", metadataError);
-      // Don't fail the request if metadata update fails
-    }
-
-    console.log("[/api/profile/update] Profile updated successfully for user:", auth.user.id);
-
-    return NextResponse.json({
-      success: true,
-      message: "Profile updated successfully",
-      data: {
-        full_name,
-      },
-    });
 
   } catch (error: any) {
     console.error("[/api/profile/update] Error:", error);
@@ -104,4 +77,89 @@ export async function PUT(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+/**
+ * CN 环境：使用 CloudBase 更新用户资料
+ */
+async function handleChinaProfileUpdate(user: any, fullName: string) {
+  const userId = user.id || user._id;
+
+  // 获取 CloudBase 数据库
+  const db = getCloudBaseApp().database();
+
+  try {
+    // 更新 users 集合
+    await db.collection("users").doc(userId).update({
+      name: fullName,
+      updatedAt: new Date().toISOString(),
+    });
+
+    console.log("[/api/profile/update CN] Profile updated for user:", userId);
+
+    return NextResponse.json({
+      success: true,
+      message: "Profile updated successfully",
+      data: {
+        full_name: fullName,
+      },
+    });
+  } catch (error: any) {
+    console.error("[/api/profile/update CN] Failed to update profile:", error);
+    return NextResponse.json(
+      { error: "Failed to update profile" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * INTL 环境：使用 Supabase 更新用户资料
+ */
+async function handleIntlProfileUpdate(user: any, fullName: string) {
+  // Get Supabase admin client
+  const supabaseAdmin = getSupabaseAdmin();
+
+  // Update user_profiles table
+  const { error: updateError } = await supabaseAdmin
+    .from("user_profiles")
+    .update({
+      full_name: fullName,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", user.id);
+
+  if (updateError) {
+    console.error("[/api/profile/update] Failed to update profile:", updateError);
+    return NextResponse.json(
+      { error: "Failed to update profile" },
+      { status: 500 }
+    );
+  }
+
+  // Also update user metadata in auth.users
+  const { error: metadataError } = await supabaseAdmin.auth.admin.updateUserById(
+    user.id,
+    {
+      user_metadata: {
+        ...user.user_metadata,
+        full_name: fullName,
+      }
+    }
+  );
+
+  if (metadataError) {
+    console.error("[/api/profile/update] Failed to update user metadata:", metadataError);
+    // Don't fail the request if metadata update fails
+  }
+
+  console.log("[/api/profile/update] Profile updated successfully for user:", user.id);
+
+  return NextResponse.json({
+    success: true,
+    message: "Profile updated successfully",
+    data: {
+      full_name: fullName,
+    },
+  });
 }

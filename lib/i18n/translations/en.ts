@@ -469,6 +469,7 @@ export const en = {
     otpInvalid:
       "Verification code is incorrect or expired, please get a new one",
     loginFailed: "Login failed, please try again later",
+    invalidCredentials: "Invalid email or password",
     registerFailed: "Registration failed, please try again later",
     sendOtpFailed: "Failed to send verification code, please try again later",
     verifyOtpFailed: "Verification failed, please try again later",

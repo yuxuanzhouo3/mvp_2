@@ -128,11 +128,13 @@ export async function GET(
     // 使用新的 AI + 搜索引擎推荐系统
     try {
       // 1. 使用智谱 AI 生成推荐内容（不含链接）
+      // 将用户偏好数据传递给 AI，用于生成更精准的个性化推荐
       const aiRecommendations = await generateRecommendations(
         userHistory || [],
         category,
         locale,
-        count
+        count,
+        userPreference // 传递用户偏好数据（包含问卷画像）
       );
 
       // 2. 处理推荐的多样性
@@ -455,7 +457,7 @@ async function generateFallbackRecommendations(
           reason: '帮助你通过视频课程开始健身之旅',
           tags: ['瑜伽', '视频课程', '初学者'],
           searchQuery: '瑜伽入门视频课程',
-          platform: 'YouTube',
+          platform: 'B站健身',  // 改用B站健身
           fitnessType: 'video'
         },
         {

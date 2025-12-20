@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useAuth } from "@/hooks/use-auth"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
@@ -15,11 +15,34 @@ import { useLanguage } from "@/components/language-provider"
 import { useTranslations } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 import { StripeCheckoutDialog } from "@/components/payment/stripe-checkout-dialog"
+import { CNPaymentDialog } from "@/components/payment/cn-payment-dialog"
 import { fetchWithAuth } from "@/lib/auth/fetch-with-auth"
+import { isChinaDeployment } from "@/lib/config/deployment.config"
 
-type PaymentMethod = "stripe" | "paypal"
+type PaymentMethodINTL = "stripe" | "paypal"
+type PaymentMethodCN = "wechat" | "alipay"
+type PaymentMethod = PaymentMethodINTL | PaymentMethodCN
 type Tier = "free" | "pro" | "enterprise"
 type BillingCycle = "monthly" | "yearly"
+
+// 获取当前环境
+const isCN = isChinaDeployment()
+
+// 定价配置
+const PRICING = {
+  INTL: {
+    pro: { monthly: 2.99, yearly: 29.99 },
+    enterprise: { monthly: 6.99, yearly: 69.99 },
+    currency: "USD",
+    symbol: "$",
+  },
+  CN: {
+    pro: { monthly: 19.9, yearly: 199 },
+    enterprise: { monthly: 49.9, yearly: 499 },
+    currency: "CNY",
+    symbol: "¥",
+  },
+}
 
 export default function PricingPage() {
   const { user, isAuthenticated } = useAuth()
@@ -27,10 +50,16 @@ export default function PricingPage() {
   const { toast } = useToast()
   const { language } = useLanguage()
   const t = useTranslations(language)
-  const [selectedPayment, setSelectedPayment] = useState<PaymentMethod>("stripe")
+  
+  // 根据环境选择默认支付方式
+  const [selectedPayment, setSelectedPayment] = useState<PaymentMethod>(
+    isCN ? "wechat" : "stripe"
+  )
   const [billingCycle, setBillingCycle] = useState<BillingCycle>("yearly")
   const [processingPlan, setProcessingPlan] = useState<Tier | null>(null)
   const [expandedFaq, setExpandedFaq] = useState<number | null>(null)
+  
+  // INTL Stripe 支付状态
   const [stripeCheckout, setStripeCheckout] = useState<{
     clientSecret: string
     orderId: string
@@ -41,7 +70,96 @@ export default function PricingPage() {
   } | null>(null)
   const [isStripeDialogOpen, setIsStripeDialogOpen] = useState(false)
 
-  const currentTier = user?.subscriptionTier || "free"
+  // CN 支付状态
+  const [cnPayment, setCnPayment] = useState<{
+    orderId: string
+    qrCodeUrl?: string
+    paymentUrl?: string
+    mode: "qrcode" | "page"
+    method: PaymentMethodCN
+    amount: number
+    currency: string
+    planName: string
+    billingCycle: BillingCycle
+  } | null>(null)
+  const [isCNDialogOpen, setIsCNDialogOpen] = useState(false)
+
+  // 覆盖订阅层级（从服务器获取的最新值）
+  const [overrideTier, setOverrideTier] = useState<Tier | null>(null)
+
+  // 从服务器获取订阅状态，确保显示最新值
+  useEffect(() => {
+    const fetchSubscriptionStatus = async () => {
+      if (!isAuthenticated || !user) return
+
+      try {
+        const response = await fetchWithAuth("/api/auth/refresh-subscription", {
+          method: "POST",
+        })
+
+        const contentType = response.headers.get("content-type")
+        if (!contentType || !contentType.includes("application/json")) return
+
+        const data = await response.json()
+        if (response.ok && data.success) {
+          const planFromDb = data.subscription?.plan_type?.toLowerCase() || ""
+          const planFromResponse = (data.subscriptionPlan || "").toLowerCase()
+
+          let resolvedPlan: Tier = "free"
+          if (planFromDb.includes("enterprise") || planFromResponse.includes("enterprise")) {
+            resolvedPlan = "enterprise"
+          } else if (planFromDb.includes("pro") || planFromResponse.includes("pro")) {
+            resolvedPlan = "pro"
+          }
+
+          setOverrideTier(resolvedPlan)
+
+          // 更新本地缓存
+          if (isCN) {
+            const { getStoredAuthState, saveAuthState } = await import("@/lib/auth/auth-state-manager")
+            const authState = getStoredAuthState()
+            if (authState && user) {
+              const updatedUser = {
+                ...authState.user,
+                subscription_plan: resolvedPlan,
+                subscription_status: data.subscriptionStatus,
+              }
+              saveAuthState(
+                authState.accessToken,
+                authState.refreshToken,
+                updatedUser,
+                authState.tokenMeta
+              )
+            }
+          } else {
+            const { saveSupabaseUserCache } = await import("@/lib/auth/auth-state-manager-intl")
+            if (user) {
+              saveSupabaseUserCache({
+                id: user.id,
+                email: user.email || "",
+                name: user.name,
+                avatar: user.avatar,
+                subscription_plan: resolvedPlan,
+                subscription_status: data.subscriptionStatus,
+              })
+            }
+          }
+        }
+      } catch (error) {
+        console.error("[Pro Page] Failed to fetch subscription status:", error)
+      }
+    }
+
+    fetchSubscriptionStatus()
+    // 只依赖 user.id 而不是整个 user 对象，避免无限循环
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, user?.id])
+
+  const currentTier = overrideTier ?? (user?.subscriptionTier || "free")
+  
+  // 获取当前定价配置
+  const pricing = isCN ? PRICING.CN : PRICING.INTL
+  const currencySymbol = pricing.symbol
 
   const handleSubscribe = async (tier: Tier, billingCycle: "monthly" | "yearly" = "monthly") => {
     if (!isAuthenticated) {
@@ -60,14 +178,8 @@ export default function PricingPage() {
     setProcessingPlan(tier)
 
     try {
-      // 获取定价信息 - 国际版 (INTL)
-      const pricing = {
-        pro: { monthly: 2.99, yearly: 29.99 },
-        enterprise: { monthly: 6.99, yearly: 69.99 },
-      }
-
       const amount = pricing[tier][billingCycle]
-      const currency = "USD"
+      const currency = pricing.currency
       const planName =
         tier === "pro"
           ? t.pricing.plans.pro.name
@@ -75,56 +187,95 @@ export default function PricingPage() {
           ? t.pricing.plans.enterprise.name
           : t.pricing.plans.free.name
 
-      const response = await fetchWithAuth("/api/payment/create", {
+      // 根据环境选择不同的API端点
+      const apiEndpoint = isCN ? "/api/payment/cn/create" : "/api/payment/create"
+
+      // 支付宝使用电脑网站支付，微信使用二维码支付
+      const paymentMode = selectedPayment === "alipay" ? "page" : "qrcode"
+
+      const response = await fetchWithAuth(apiEndpoint, {
         method: "POST",
         body: JSON.stringify({
           method: selectedPayment,
+          mode: paymentMode,
           amount,
           currency,
           planType: tier,
           billingCycle,
-          description: `${billingCycle === "monthly" ? "1 Month" : "1 Year"} ${tier.charAt(0).toUpperCase() + tier.slice(1)} Membership`,
+          description: `${billingCycle === "monthly" ? "1个月" : "1年"} ${tier.charAt(0).toUpperCase() + tier.slice(1)} 会员`,
         }),
       })
 
       const data = await response.json()
 
       if (!response.ok) {
-        throw new Error(data.error || "Payment creation failed")
+        throw new Error(data.error || "支付创建失败")
       }
 
-      if (selectedPayment === "paypal" && data.paymentUrl) {
-        // 重定向到 PayPal 支付页面
-        toast({
-          title: "PayPal",
-          description: language === "zh" ? "正在跳转到PayPal..." : "Redirecting to PayPal...",
-        })
-        setProcessingPlan(null)  // 重置processing状态
-        window.location.href = data.paymentUrl
-      } else if (selectedPayment === "stripe" && data.clientSecret) {
-        setProcessingPlan(null)  // 重置processing状态
-        setStripeCheckout({
-          clientSecret: data.clientSecret,
-          orderId: data.orderId || data.paymentIntentId || "",
-          amount,
-          currency,
-          planName,
-          billingCycle,
-        })
-        setIsStripeDialogOpen(true)
-        toast({
-          title: "Stripe",
-          description: language === "zh" ? "请输入卡片信息完成支付" : "Complete your payment securely with Stripe",
-        })
-      } else {
-        toast({
-          title: t.pricing.toast.success,
-          description: t.pricing.toast.paymentCompleted,
-        })
+      if (isCN) {
+        // CN 环境 - 根据支付方式处理
+        setProcessingPlan(null)
 
-        setTimeout(() => {
-          router.push("/settings")
-        }, 2000)
+        if (data.paymentUrl) {
+          // 电脑网站支付（支付宝）- 打开支付页面弹窗
+          setCnPayment({
+            orderId: data.orderId,
+            paymentUrl: data.paymentUrl,
+            mode: "page",
+            method: selectedPayment as PaymentMethodCN,
+            amount,
+            currency,
+            planName,
+            billingCycle,
+          })
+          setIsCNDialogOpen(true)
+          toast({
+            title: "支付宝",
+            description: "请在弹出的页面中完成支付",
+          })
+        } else if (data.qrCodeUrl) {
+          // 二维码支付（微信）
+          setCnPayment({
+            orderId: data.orderId,
+            qrCodeUrl: data.qrCodeUrl,
+            mode: "qrcode",
+            method: selectedPayment as PaymentMethodCN,
+            amount,
+            currency,
+            planName,
+            billingCycle,
+          })
+          setIsCNDialogOpen(true)
+          toast({
+            title: "微信支付",
+            description: "请扫描二维码完成支付",
+          })
+        }
+      } else {
+        // INTL 环境
+        if (selectedPayment === "paypal" && data.paymentUrl) {
+          toast({
+            title: "PayPal",
+            description: language === "zh" ? "正在跳转到PayPal..." : "Redirecting to PayPal...",
+          })
+          setProcessingPlan(null)
+          window.location.href = data.paymentUrl
+        } else if (selectedPayment === "stripe" && data.clientSecret) {
+          setProcessingPlan(null)
+          setStripeCheckout({
+            clientSecret: data.clientSecret,
+            orderId: data.orderId || data.paymentIntentId || "",
+            amount,
+            currency,
+            planName,
+            billingCycle,
+          })
+          setIsStripeDialogOpen(true)
+          toast({
+            title: "Stripe",
+            description: language === "zh" ? "请输入卡片信息完成支付" : "Complete your payment securely with Stripe",
+          })
+        }
       }
     } catch (error: any) {
       console.error("Subscription error:", error)
@@ -155,8 +306,8 @@ export default function PricingPage() {
     {
       id: "pro" as Tier,
       name: t.pricing.plans.pro.name,
-      monthlyPrice: 2.99,
-      yearlyPrice: 29.99,
+      monthlyPrice: pricing.pro.monthly,
+      yearlyPrice: pricing.pro.yearly,
       icon: Crown,
       gradient: "from-blue-600 via-indigo-600 to-purple-600",
       lightGradient: "from-blue-50 via-indigo-50 to-purple-50",
@@ -169,8 +320,8 @@ export default function PricingPage() {
     {
       id: "enterprise" as Tier,
       name: t.pricing.plans.enterprise.name,
-      monthlyPrice: 6.99,
-      yearlyPrice: 69.99,
+      monthlyPrice: pricing.enterprise.monthly,
+      yearlyPrice: pricing.enterprise.yearly,
       icon: Building2,
       gradient: "from-amber-500 via-orange-500 to-rose-500",
       lightGradient: "from-amber-50 via-orange-50 to-rose-50",
@@ -183,8 +334,8 @@ export default function PricingPage() {
 
   const plans = basePlans.map(plan => ({
     ...plan,
-    price: plan.id === "free" ? "$0" : `$${billingCycle === "monthly" ? plan.monthlyPrice : plan.yearlyPrice}`,
-    period: plan.id === "free" ? "" : billingCycle === "monthly" ? "/month" : "/year",
+    price: plan.id === "free" ? `${currencySymbol}0` : `${currencySymbol}${billingCycle === "monthly" ? plan.monthlyPrice : plan.yearlyPrice}`,
+    period: plan.id === "free" ? "" : billingCycle === "monthly" ? "/月" : "/年",
     savings: billingCycle === "yearly" && plan.id !== "free" ? Math.round((1 - plan.yearlyPrice / (plan.monthlyPrice * 12)) * 100) : 0,
   }))
 
@@ -193,6 +344,57 @@ export default function PricingPage() {
     { question: t.pricing.faq.paymentMethods.question, answer: t.pricing.faq.paymentMethods.answer },
     { question: t.pricing.faq.freeTrial.question, answer: t.pricing.faq.freeTrial.answer },
   ]
+
+  // 支付方式选项
+  const paymentMethods = isCN
+    ? [
+        {
+          id: "wechat" as PaymentMethodCN,
+          name: "微信支付",
+          description: "使用微信扫码支付",
+          icon: (
+            <div className="p-2 rounded-lg bg-gradient-to-br from-green-500 to-green-600 shadow-lg shadow-green-500/30">
+              <svg viewBox="0 0 24 24" className="h-4 w-4 text-white" fill="currentColor">
+                <path d="M8.691 2.188C3.891 2.188 0 5.476 0 9.53c0 2.212 1.17 4.203 3.002 5.55a.59.59 0 0 1 .213.665l-.39 1.48c-.019.07-.048.141-.048.213 0 .163.13.295.29.295a.326.326 0 0 0 .167-.054l1.903-1.114a.864.864 0 0 1 .717-.098 10.16 10.16 0 0 0 2.837.403c.276 0 .543-.027.811-.05-.857-2.578.157-4.972 1.932-6.446 1.703-1.415 3.882-1.98 5.853-1.838-.576-3.583-4.196-6.348-8.596-6.348z"/>
+              </svg>
+            </div>
+          ),
+        },
+        {
+          id: "alipay" as PaymentMethodCN,
+          name: "支付宝",
+          description: "使用支付宝扫码支付",
+          icon: (
+            <div className="p-2 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/30">
+              <svg viewBox="0 0 24 24" className="h-4 w-4 text-white" fill="currentColor">
+                <path d="M21.422 15.358c-.598-.191-1.218-.374-1.857-.548a24.57 24.57 0 0 0 1.524-5.31h-4.073v-1.717h5.127V6.333h-5.127V4.25h-2.776v2.083H9.098v1.45h5.142v1.717H9.6v1.45h6.86a21.847 21.847 0 0 1-.917 3.19c-1.925-.433-3.91-.749-5.855-.749-3.178 0-5.117 1.342-5.117 3.408 0 2.066 1.939 3.408 5.117 3.408 2.365 0 4.456-.67 6.203-1.99a44.424 44.424 0 0 0 5.993 2.483l1.538-3.34z"/>
+              </svg>
+            </div>
+          ),
+        },
+      ]
+    : [
+        {
+          id: "stripe" as PaymentMethodINTL,
+          name: "Stripe",
+          description: t.pricing.paymentMethod.creditCard,
+          icon: (
+            <div className="p-2 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/30">
+              <CreditCard className="h-4 w-4 text-white" />
+            </div>
+          ),
+        },
+        {
+          id: "paypal" as PaymentMethodINTL,
+          name: "PayPal",
+          description: t.pricing.paymentMethod.paypalAccount,
+          icon: (
+            <div className="p-2 rounded-lg bg-gradient-to-br from-blue-600 to-blue-700 shadow-lg shadow-blue-500/30">
+              <span className="text-white text-sm font-bold">P</span>
+            </div>
+          ),
+        },
+      ]
 
   return (
     <>
@@ -256,7 +458,7 @@ export default function PricingPage() {
                         : "text-gray-600 hover:text-gray-900 hover:bg-gray-100/50"
                     )}
                   >
-                    {t.pricing.billing.monthly || "Monthly"}
+                    {language === "zh" ? "月付" : "Monthly"}
                   </button>
                   <button
                     onClick={() => setBillingCycle("yearly")}
@@ -267,7 +469,7 @@ export default function PricingPage() {
                         : "text-gray-600 hover:text-gray-900 hover:bg-gray-100/50"
                     )}
                   >
-                    {t.pricing.billing.yearly || "Yearly"}
+                    {language === "zh" ? "年付" : "Yearly"}
                     {billingCycle !== "yearly" && (
                       <span className="absolute -top-2 -right-2 text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-500 text-white">
                         -20%
@@ -286,49 +488,37 @@ export default function PricingPage() {
               <div className="max-w-md mx-auto mb-12">
                 <Card className="border-0 shadow-xl shadow-gray-200/50 bg-white/80 backdrop-blur-sm">
                   <CardHeader className="text-center pb-4">
-                    <CardTitle className="text-lg font-semibold">{t.pricing.paymentMethod.title}</CardTitle>
-                    <CardDescription>{t.pricing.paymentMethod.subtitle}</CardDescription>
+                    <CardTitle className="text-lg font-semibold">
+                      {language === "zh" ? "选择支付方式" : "Select Payment Method"}
+                    </CardTitle>
+                    <CardDescription>
+                      {language === "zh" ? "选择您喜欢的支付方式" : "Choose your preferred payment method"}
+                    </CardDescription>
                   </CardHeader>
                   <CardContent>
                     <RadioGroup value={selectedPayment} onValueChange={(v) => setSelectedPayment(v as PaymentMethod)} className="space-y-3">
-                      <div className={cn(
-                        "flex items-center space-x-3 p-4 border-2 rounded-xl cursor-pointer transition-all duration-200",
-                        selectedPayment === "stripe"
-                          ? "border-blue-500 bg-blue-50/50 shadow-md shadow-blue-500/10"
-                          : "border-gray-200 hover:border-gray-300 hover:bg-gray-50/50"
-                      )}>
-                        <RadioGroupItem value="stripe" id="stripe" />
-                        <Label htmlFor="stripe" className="flex-1 cursor-pointer">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                              <div className="p-2 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/30">
-                                <CreditCard className="h-4 w-4 text-white" />
+                      {paymentMethods.map((method) => (
+                        <div
+                          key={method.id}
+                          className={cn(
+                            "flex items-center space-x-3 p-4 border-2 rounded-xl cursor-pointer transition-all duration-200",
+                            selectedPayment === method.id
+                              ? "border-blue-500 bg-blue-50/50 shadow-md shadow-blue-500/10"
+                              : "border-gray-200 hover:border-gray-300 hover:bg-gray-50/50"
+                          )}
+                        >
+                          <RadioGroupItem value={method.id} id={method.id} />
+                          <Label htmlFor={method.id} className="flex-1 cursor-pointer">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                {method.icon}
+                                <span className="font-semibold">{method.name}</span>
                               </div>
-                              <span className="font-semibold">{t.pricing.paymentMethod.stripe}</span>
+                              <span className="text-sm text-gray-500">{method.description}</span>
                             </div>
-                            <span className="text-sm text-gray-500">{t.pricing.paymentMethod.creditCard}</span>
-                          </div>
-                        </Label>
-                      </div>
-                      <div className={cn(
-                        "flex items-center space-x-3 p-4 border-2 rounded-xl cursor-pointer transition-all duration-200",
-                        selectedPayment === "paypal"
-                          ? "border-blue-500 bg-blue-50/50 shadow-md shadow-blue-500/10"
-                          : "border-gray-200 hover:border-gray-300 hover:bg-gray-50/50"
-                      )}>
-                        <RadioGroupItem value="paypal" id="paypal" />
-                        <Label htmlFor="paypal" className="flex-1 cursor-pointer">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                              <div className="p-2 rounded-lg bg-gradient-to-br from-blue-600 to-blue-700 shadow-lg shadow-blue-500/30">
-                                <span className="text-white text-sm font-bold">P</span>
-                              </div>
-                              <span className="font-semibold">{t.pricing.paymentMethod.paypal}</span>
-                            </div>
-                            <span className="text-sm text-gray-500">{t.pricing.paymentMethod.paypalAccount}</span>
-                          </div>
-                        </Label>
-                      </div>
+                          </Label>
+                        </div>
+                      ))}
                     </RadioGroup>
                   </CardContent>
                 </Card>
@@ -450,7 +640,7 @@ export default function PricingPage() {
                           {processingPlan === plan.id ? (
                             <>
                               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              {t.pricing.processing}
+                              {language === "zh" ? "处理中..." : "Processing..."}
                             </>
                           ) : isCurrentPlan ? (
                             <>
@@ -465,7 +655,10 @@ export default function PricingPage() {
                           ) : (
                             <>
                               <CreditCard className="mr-2 h-4 w-4" />
-                              {t.pricing.subscribeWith.replace("{method}", selectedPayment === "stripe" ? "Stripe" : "PayPal")}
+                              {language === "zh" 
+                                ? `使用${selectedPayment === "wechat" ? "微信" : selectedPayment === "alipay" ? "支付宝" : selectedPayment === "stripe" ? "Stripe" : "PayPal"}支付`
+                                : t.pricing.subscribeWith.replace("{method}", selectedPayment === "stripe" ? "Stripe" : "PayPal")
+                              }
                             </>
                           )}
                         </Button>
@@ -548,6 +741,8 @@ export default function PricingPage() {
           </div>
         </div>
       </div>
+      
+      {/* INTL Stripe 支付弹窗 */}
       {stripeCheckout && (
         <StripeCheckoutDialog
           open={isStripeDialogOpen}
@@ -564,6 +759,31 @@ export default function PricingPage() {
           onSucceeded={() => {
             setIsStripeDialogOpen(false)
             setStripeCheckout(null)
+          }}
+        />
+      )}
+      
+      {/* CN 支付弹窗 */}
+      {cnPayment && (
+        <CNPaymentDialog
+          open={isCNDialogOpen}
+          orderId={cnPayment.orderId}
+          qrCodeUrl={cnPayment.qrCodeUrl}
+          paymentUrl={cnPayment.paymentUrl}
+          mode={cnPayment.mode}
+          method={cnPayment.method}
+          amount={cnPayment.amount}
+          currency={cnPayment.currency}
+          planName={cnPayment.planName}
+          billingCycle={cnPayment.billingCycle}
+          onClose={() => {
+            setIsCNDialogOpen(false)
+            setCnPayment(null)
+          }}
+          onSuccess={() => {
+            setIsCNDialogOpen(false)
+            setCnPayment(null)
+            router.push("/settings?tab=subscription")
           }}
         />
       )}

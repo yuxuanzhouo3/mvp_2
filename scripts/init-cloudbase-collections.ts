@@ -90,6 +90,23 @@ const COLLECTIONS = {
       { name: 'expires_at_index', field: 'expires_at' },
     ],
   },
+  RECOMMENDATION_USAGE: {
+    name: 'recommendation_usage',
+    indexes: [
+      { name: 'user_id_index', field: 'user_id' },
+      { name: 'created_at_index', field: 'created_at', order: 'desc' },
+      { name: 'user_id_created_at_index', fields: ['user_id', 'created_at'] },
+    ],
+  },
+
+  // 用户 Onboarding 相关
+  ONBOARDING_PROGRESS: {
+    name: 'onboarding_progress',
+    indexes: [
+      { name: 'user_id_index', field: 'user_id', unique: true },
+      { name: 'updated_at_index', field: 'updated_at', order: 'desc' },
+    ],
+  },
 
   // 订阅和支付相关
   USER_SUBSCRIPTIONS: {
@@ -114,6 +131,17 @@ const COLLECTIONS = {
     indexes: [
       { name: 'user_id_index', field: 'user_id' },
       { name: 'status_index', field: 'status' },
+    ],
+  },
+
+  // 用户反馈相关
+  USER_FEEDBACKS: {
+    name: 'user_feedbacks',
+    indexes: [
+      { name: 'user_id_index', field: 'user_id' },
+      { name: 'recommendation_id_index', field: 'recommendation_id' },
+      { name: 'feedback_type_index', field: 'feedback_type' },
+      { name: 'created_at_index', field: 'created_at', order: 'desc' },
     ],
   },
 };

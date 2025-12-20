@@ -284,8 +284,37 @@ export function clearAuthState(): void {
   if (typeof window === "undefined") return;
 
   try {
+    // 清除新格式的认证状态
     localStorage.removeItem(AUTH_STATE_KEY);
-    console.log("[Auth] Auth state cleared");
+
+    // 清除旧格式的localStorage键
+    const oldKeys = ["auth-token", "auth-user", "auth-logged-in"];
+    oldKeys.forEach((key) => {
+      if (localStorage.getItem(key)) {
+        console.log(`[Auth] Clearing old localStorage key: ${key}`);
+        localStorage.removeItem(key);
+      }
+    });
+
+    // 清除可能的sessionStorage认证相关数据
+    const sessionKeys = ["auth-state", "auth-token", "auth-user"];
+    sessionKeys.forEach((key) => {
+      if (sessionStorage.getItem(key)) {
+        console.log(`[Auth] Clearing sessionStorage key: ${key}`);
+        sessionStorage.removeItem(key);
+      }
+    });
+
+    // 清除用户画像和onboarding相关缓存
+    const cacheKeys = ["user-profile-cache", "onboarding-state", "user-preferences-cache"];
+    cacheKeys.forEach((key) => {
+      if (localStorage.getItem(key)) {
+        console.log(`[Auth] Clearing cache key: ${key}`);
+        localStorage.removeItem(key);
+      }
+    });
+
+    console.log("[Auth] All auth states cleared");
 
     window.dispatchEvent(new CustomEvent("auth-state-changed"));
   } catch (error) {

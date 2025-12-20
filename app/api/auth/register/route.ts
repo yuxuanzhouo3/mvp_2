@@ -5,6 +5,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import * as jwt from "jsonwebtoken";
 import cloudbase from "@cloudbase/node-sdk";
+import { nowISO } from "@/lib/database/cloudbase-client";
 
 const registerSchema = z
   .object({
@@ -86,8 +87,8 @@ export async function POST(request: NextRequest) {
         region: "china",
         subscription_plan: "free",
         subscription_status: "active",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        createdAt: nowISO(),
+        updatedAt: nowISO(),
       };
 
       const result = await usersCollection.add(newUser);

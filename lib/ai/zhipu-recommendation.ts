@@ -177,6 +177,14 @@ interface UserHistory {
   metadata?: any;
 }
 
+export interface UserPreferenceData {
+  preferences?: Record<string, any>;
+  tags?: string[];
+  ai_profile_summary?: string;
+  personality_tags?: string[];
+  onboarding_completed?: boolean;
+}
+
 export interface RecommendationItem {
   title: string;
   description: string;
@@ -195,13 +203,54 @@ export async function generateRecommendations(
   userHistory: UserHistory[],
   category: string,
   locale: string = 'zh',
-  count: number = 5
+  count: number = 5,
+  userPreference?: UserPreferenceData | null
 ): Promise<RecommendationItem[]> {
+
+  // 构建用户画像提示
+  let userProfilePrompt = '';
+  if (userPreference) {
+    const profileParts: string[] = [];
+
+    // 问卷偏好数据
+    if (userPreference.preferences && Object.keys(userPreference.preferences).length > 0) {
+      profileParts.push(locale === 'zh'
+        ? `用户问卷偏好：${JSON.stringify(userPreference.preferences)}`
+        : `User questionnaire preferences: ${JSON.stringify(userPreference.preferences)}`);
+    }
+
+    // AI画像摘要
+    if (userPreference.ai_profile_summary) {
+      profileParts.push(locale === 'zh'
+        ? `用户AI画像：${userPreference.ai_profile_summary}`
+        : `User AI profile: ${userPreference.ai_profile_summary}`);
+    }
+
+    // 个性标签
+    if (userPreference.personality_tags && userPreference.personality_tags.length > 0) {
+      profileParts.push(locale === 'zh'
+        ? `用户个性标签：${userPreference.personality_tags.join('、')}`
+        : `User personality tags: ${userPreference.personality_tags.join(', ')}`);
+    }
+
+    // 用户标签
+    if (userPreference.tags && userPreference.tags.length > 0) {
+      profileParts.push(locale === 'zh'
+        ? `用户兴趣标签：${userPreference.tags.join('、')}`
+        : `User interest tags: ${userPreference.tags.join(', ')}`);
+    }
+
+    if (profileParts.length > 0) {
+      userProfilePrompt = locale === 'zh'
+        ? `\n\n**用户画像信息（请根据以下信息生成更精准的个性化推荐）**：\n${profileParts.join('\n')}\n`
+        : `\n\n**User Profile (please generate more personalized recommendations based on this)**:\n${profileParts.join('\n')}\n`;
+    }
+  }
 
   const categoryConfig = {
     entertainment: {
       platforms: locale === 'zh'
-        ? ['豆瓣', 'B站', '网易云音乐', '爱奇艺', '腾讯视频', '优酷', 'Steam', 'TapTap', 'Epic Games', 'WeGame', '小黑盒', '3DM', '游民星空']
+        ? ['豆瓣', 'B站', 'QQ音乐', '酷狗音乐', '汽水音乐', '爱奇艺', '腾讯视频', '优酷', 'Steam', 'TapTap', 'Epic Games', 'WeGame', '小黑盒', '3DM', '游民星空', '百度']
         : ['IMDb', 'YouTube', 'Spotify', 'Netflix', 'Rotten Tomatoes', 'Steam', 'Epic Games', 'GOG', 'PlayStation Store', 'Xbox Store', 'Nintendo eShop', 'Humble Bundle', 'itch.io'],
       examples: locale === 'zh'
         ? '电影、电视剧、游戏、音乐、综艺、动漫'
@@ -212,11 +261,15 @@ export async function generateRecommendations(
       // 游戏平台专用列表，供 AI 在推荐游戏时选择
       gamePlatforms: locale === 'zh'
         ? ['Steam', 'TapTap', 'Epic Games', 'WeGame', '小黑盒', '3DM', '游民星空', 'B站游戏', '4399小游戏']
-        : ['Steam', 'Epic Games', 'GOG', 'PlayStation Store', 'Xbox Store', 'Nintendo eShop', 'Humble Bundle', 'itch.io', 'Game Pass']
+        : ['Steam', 'Epic Games', 'GOG', 'PlayStation Store', 'Xbox Store', 'Nintendo eShop', 'Humble Bundle', 'itch.io', 'Game Pass'],
+      // 音乐平台专用列表
+      musicPlatforms: locale === 'zh'
+        ? ['QQ音乐', '酷狗音乐', '汽水音乐', '酷我音乐', 'B站']  // 去掉网易云音乐（需登录）
+        : ['Spotify', 'YouTube Music', 'Apple Music', 'SoundCloud']
     },
     shopping: {
       platforms: locale === 'zh'
-        ? ['淘宝', '京东', '天猫', '拼多多']
+        ? ['什么值得买', '苏宁易购', '拼多多', '唯品会', '当当网', '小红书购物', '1688', '淘宝', '京东', '天猫']  // 优先无需登录的平台
         : ['Amazon', 'eBay', 'Walmart', 'Target'],
       examples: locale === 'zh'
         ? '数码产品、服装、家居用品'
@@ -224,7 +277,7 @@ export async function generateRecommendations(
     },
     food: {
       platforms: locale === 'zh'
-        ? ['大众点评', '美团', '下厨房']
+        ? ['百度地图美食', '高德地图美食', '饿了么', '下厨房', '豆果美食']  // 去掉需登录的美团、小红书、大众点评
         : ['Allrecipes', 'Google Maps', 'OpenTable'],
       examples: locale === 'zh'
         ? '餐厅、菜谱、美食'
@@ -232,7 +285,7 @@ export async function generateRecommendations(
     },
     travel: {
       platforms: locale === 'zh'
-        ? ['携程', '马蜂窝', '穷游', 'Booking.com', 'Agoda', 'Airbnb']
+        ? ['携程', '马蜂窝', '穷游', '去哪儿', '飞猪', '途牛', '同程旅行', '驴妈妈', '高德地图旅游', '百度地图旅游', '大麦网', 'Booking.com', 'Agoda', 'Airbnb']  // 去掉小红书
         : ['Booking.com', 'Agoda', 'TripAdvisor', 'Expedia', 'Klook', 'Airbnb'],
       examples: locale === 'zh'
         ? '景点、酒店、旅游攻略、目的地体验'
@@ -240,7 +293,7 @@ export async function generateRecommendations(
     },
     fitness: {
       platforms: locale === 'zh'
-        ? ['B站', 'Keep', '小红书', '淘宝', '京东', '百度地图', '大众点评']
+        ? ['B站健身', '腾讯视频健身', '优酷健身', '百度地图健身', '高德地图健身', '百度健身']  // 去掉需登录的小红书、抖音
         : ['YouTube Fitness', 'MyFitnessPal', 'Peloton', 'Google Maps', 'Amazon', 'Yelp'],
       examples: locale === 'zh'
         ? '健身课程、健身房、健身器材、运动装备'
@@ -255,15 +308,15 @@ export async function generateRecommendations(
   const prompt = locale === 'zh' ? `
 你是一个专业的推荐系统分析师。
 
-任务：基于用户历史行为，生成 ${desiredCount} 个多样化的个性化推荐（覆盖不同子类型和平台）。
+任务：基于用户历史行为和画像，生成 ${desiredCount} 个多样化的个性化推荐（覆盖不同子类型和平台）。
 
 用户历史记录：
 ${JSON.stringify(userHistory.slice(0, 20), null, 2)}
-
+${userProfilePrompt}
 当前分类：${category} (${config.examples})
 
 要求：
-1. 分析用户的偏好特征（风格、类型、主题等）
+1. 分析用户的偏好特征（风格、类型、主题等）${userPreference ? '，优先参考用户画像信息' : ''}
 2. 为每个推荐生成：
    - 标题：具体的推荐名称
    - 描述：简短介绍（1-2句话）
@@ -276,20 +329,26 @@ ${JSON.stringify(userHistory.slice(0, 20), null, 2)}
 - 如果是娱乐分类(entertainment)，必须确保推荐包含以下4种类型：
   * 视频类：电影、电视剧、综艺、动漫等（平台：豆瓣、B站、爱奇艺、腾讯视频、优酷）
   * 游戏类：PC游戏、手机游戏、主机游戏等（平台必须多样化！从以下平台中选择：${(config as any).gamePlatforms?.join('、') || 'Steam、TapTap、Epic Games、WeGame、小黑盒、3DM、游民星空'}）
-  * 音乐类：歌曲、专辑、演唱会等（平台：网易云音乐、B站、豆瓣）
-  * 影评/资讯类：影评、娱乐新闻、明星资讯等（平台：豆瓣、B站、知乎）
+  * 音乐类：歌曲、专辑、演唱会等（平台：${(config as any).musicPlatforms?.join('、') || 'QQ音乐、酷狗音乐、汽水音乐、B站'}，注意：网易云音乐需要登录，请避免使用）
+  * 影评/资讯类：影评、娱乐新闻、明星资讯等（平台：豆瓣、B站、知乎、百度）
   * 每个推荐必须明确标注属于哪种类型
   * 确保生成的推荐涵盖至少3种不同的娱乐类型
-  * **游戏推荐重要要求**：不要总是使用Steam！请根据游戏类型选择合适的平台：
-    - PC游戏：Steam、Epic Games、WeGame、GOG
-    - 手机游戏：TapTap、B站游戏、4399小游戏
-    - 主机游戏：PlayStation Store、Xbox Store、Nintendo eShop
-    - 独立游戏：itch.io、Humble Bundle、GOG
-    - 游戏资讯：小黑盒、3DM、游民星空
+  * **游戏推荐重要要求**：
+    - 不要总是使用Steam！请根据游戏类型选择合适的平台：
+      * PC游戏：Steam、Epic Games、WeGame、GOG
+      * 手机游戏：TapTap、B站游戏、4399小游戏
+      * 主机游戏：PlayStation Store、Xbox Store、Nintendo eShop
+      * 独立游戏：itch.io、Humble Bundle、GOG
+      * 游戏资讯：小黑盒、3DM、游民星空
+    - **搜索词要求**：游戏的searchQuery只写游戏名称，不要添加平台名称后缀！例如：
+      * 正确：searchQuery: "艾尔登法环"
+      * 错误：searchQuery: "艾尔登法环 Steam"
+      * 正确：searchQuery: "原神"
+      * 错误：searchQuery: "原神 TapTap"
   * 推荐内容必须是真实存在的作品或内容，使用准确的作品名称
-  * 搜索关键词必须精确匹配作品名称，例如：
-    - 视频："流浪地球2 豆瓣评分"、"三体 电视剧 观看"
-    - 游戏："艾尔登法环 Steam"、"原神 TapTap"、"塞尔达传说 Nintendo eShop"、"哈迪斯 Epic Games"
+  * 搜索关键词示例：
+    - 视频："流浪地球2"、"三体 电视剧"
+    - 游戏："艾尔登法环"、"原神"、"塞尔达传说"、"哈迪斯"（不要加平台名称！）
     - 音乐："周杰伦 新歌 2024"、"霉霉 Taylor Swift 巡演"
     - 影评："奥本海默 影评解析"、"2024年电影排行榜"
 - 如果是美食分类(food)，**必须严格按照以下三种推荐类型生成内容**：
@@ -328,13 +387,13 @@ ${JSON.stringify(userHistory.slice(0, 20), null, 2)}
 - 如果是健身分类(fitness)，请推荐多样化的健身方式，要求：
   * 推荐类型应包括：健身视频教程、健身房位置、健身器材使用教程等
   * 每个推荐要明确具体并指向正确的内容：
-    - 视频教程：如"30分钟瑜伽入门"、"HIIT燃脂训练"（链接到B站、YouTube的教程）
-    - 健身房：如"附近瑜伽馆推荐"、"24小时健身房"（链接到Google Maps、百度地图等位置服务）
-    - 器材使用教程：如"哑铃训练教程"、"跑步机正确使用方法"（链接到B站、YouTube的教程视频，不是购物链接）
-  * 根据推荐类型选择合适的平台：
-    - 健身视频教程：选择B站、YouTube Fitness等
-    - 健身房位置：选择百度地图、Google Maps、大众点评等
-    - 器材使用教程：选择B站、YouTube Fitness等（教程视频，不是购物）
+    - 视频教程：如"30分钟瑜伽入门"、"HIIT燃脂训练"（链接到B站健身、抖音健身、腾讯视频健身、优酷健身的教程）
+    - 健身房：如"附近瑜伽馆推荐"、"24小时健身房"（链接到百度地图健身、高德地图健身等位置服务）
+    - 器材使用教程：如"哑铃训练教程"、"跑步机正确使用方法"（链接到B站健身、抖音健身、腾讯视频健身的教程视频，不是购物链接）
+  * 根据推荐类型选择合适的平台（从以下平台选择）：
+    - 健身视频教程：选择B站健身、抖音健身、腾讯视频健身、优酷健身、小红书健身
+    - 健身房位置：选择百度地图健身、高德地图健身
+    - 器材使用教程：选择B站健身、抖音健身、腾讯视频健身（教程视频，不是购物）
   * 生成3个推荐时必须满足以下要求：
     - 第一个必须是健身视频教程（video type）
     - 第二个必须是健身房地点推荐（location type）
@@ -361,15 +420,15 @@ ${JSON.stringify(userHistory.slice(0, 20), null, 2)}
 ]` : `
 You are a professional recommendation system analyst.
 
-Task: Generate ${desiredCount} diverse personalized recommendations based on user history (cover different subtypes/platforms).
+Task: Generate ${desiredCount} diverse personalized recommendations based on user history and profile (cover different subtypes/platforms).
 
 User history:
 ${JSON.stringify(userHistory.slice(0, 20), null, 2)}
-
+${userProfilePrompt}
 Current category: ${category} (${config.examples})
 
 Requirements:
-1. Analyze user preferences (style, type, theme, etc.)
+1. Analyze user preferences (style, type, theme, etc.)${userPreference ? ', prioritize user profile information' : ''}
 2. For each recommendation, generate:
    - title: specific recommendation name
    - description: brief introduction (1-2 sentences)
@@ -551,7 +610,7 @@ function getFallbackRecommendations(category: string, locale: string): Recommend
         reason: '根据难度为你推荐',
         tags: ['健身', '课程', '初学者'],
         searchQuery: '健身训练课程 初学者',
-        platform: 'Keep'
+        platform: 'B站健身'  // 改用B站健身
       }]
     },
     en: {

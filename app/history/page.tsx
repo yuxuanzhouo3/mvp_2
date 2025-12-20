@@ -18,6 +18,7 @@ import { ArrowLeft, Trash2, Search, Download, FileJson, FileText, FileType2, Loa
 import { useAuth } from "@/hooks/use-auth"
 import { useLanguage } from "@/components/language-provider"
 import { useTranslations } from "@/lib/i18n"
+import { RegionConfig } from "@/lib/config/region"
 import type { RecommendationHistory, RecommendationCategory } from "@/lib/types/recommendation"
 import { fetchWithAuth } from "@/lib/auth/fetch-with-auth"
 import { useToast } from "@/hooks/use-toast"
@@ -69,6 +70,7 @@ export default function HistoryPage() {
     const { language } = useLanguage()
     const locale = language as "zh" | "en"
     const t = useTranslations(locale)
+    const historyProvider = RegionConfig.database.provider
 
     // 状态管理
     const [history, setHistory] = useState<RecommendationHistory[]>([])
@@ -167,16 +169,17 @@ export default function HistoryPage() {
 
         setIsLoading(true)
         try {
-            const response = await fetch(
-                `/api/recommend/history?userId=${user.id}&limit=500`,
-                {
-                    headers: {
-                        "Content-Type": "application/json",
-                    },
-                }
+            const response = await fetchWithAuth(
+                `/api/recommend/history?userId=${user.id}&limit=500&provider=${historyProvider}`
             )
 
             if (!response.ok) {
+                if (response.status === 401) {
+                    // Token 过期或无效，清空历史并提示用户登录
+                    setHistory([])
+                    console.warn("Auth required to fetch history")
+                    return
+                }
                 throw new Error(`Failed to fetch history: ${response.statusText}`)
             }
 
@@ -236,14 +239,12 @@ export default function HistoryPage() {
 
         setDeleteState({ isDeleting: true, deletingId: itemId })
         try {
-            const response = await fetch("/api/recommend/history", {
+            const response = await fetchWithAuth("/api/recommend/history", {
                 method: "DELETE",
-                headers: {
-                    "Content-Type": "application/json",
-                },
                 body: JSON.stringify({
                     userId: user.id,
                     historyIds: [itemId],
+                    provider: historyProvider,
                 }),
             })
 
@@ -273,14 +274,12 @@ export default function HistoryPage() {
 
         setDeleteState({ isDeleting: true, deletingId: null })
         try {
-            const response = await fetch("/api/recommend/history", {
+            const response = await fetchWithAuth("/api/recommend/history", {
                 method: "PUT",
-                headers: {
-                    "Content-Type": "application/json",
-                },
                 body: JSON.stringify({
                     userId: user.id,
                     action: "clear-all",
+                    provider: historyProvider,
                 }),
             })
 
@@ -311,14 +310,12 @@ export default function HistoryPage() {
 
         setDeleteState({ isDeleting: true, deletingId: null })
         try {
-            const response = await fetch("/api/recommend/history", {
+            const response = await fetchWithAuth("/api/recommend/history", {
                 method: "DELETE",
-                headers: {
-                    "Content-Type": "application/json",
-                },
                 body: JSON.stringify({
                     userId: user.id,
                     category,
+                    provider: historyProvider,
                 }),
             })
 

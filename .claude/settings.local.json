@@ -41,7 +41,8 @@
       "Bash(taskkill:*)",
       "Bash(npm install:*)",
       "Bash(pnpm add:*)",
-      "Bash(pnpm install:*)"
+      "Bash(pnpm install:*)",
+      "Bash(powershell -Command:*)"
     ],
     "deny": [],
     "ask": []

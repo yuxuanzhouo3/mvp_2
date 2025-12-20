@@ -33,6 +33,7 @@ export async function POST(request: NextRequest) {
       { status: 200 }
     );
 
+    // 清除所有可能的认证cookies
     response.cookies.set("sb-access-token", "", {
       httpOnly: true,
       secure: isProduction,
@@ -47,6 +48,26 @@ export async function POST(request: NextRequest) {
       sameSite: "lax",
       path: "/",
       maxAge: 0,
+    });
+
+    // 尝试清除所有可能的Supabase认证cookies
+    // 这些cookies可能存在于不同的路径或域名下
+    const possibleAuthCookies = [
+      "sb-access-token",
+      "sb-refresh-token",
+      "supabase.auth.token",
+      "supabase.auth.expiresAt",
+      "supabase.auth.refreshToken"
+    ];
+
+    possibleAuthCookies.forEach(name => {
+      response.cookies.set(name, "", {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: "lax",
+        path: "/",
+        maxAge: 0,
+      });
     });
 
     return response;
@@ -62,6 +83,7 @@ export async function POST(request: NextRequest) {
       { status: 200 }
     );
 
+    // 清除所有可能的认证cookies
     response.cookies.set("sb-access-token", "", {
       httpOnly: true,
       secure: true,
@@ -76,6 +98,26 @@ export async function POST(request: NextRequest) {
       sameSite: "lax",
       path: "/",
       maxAge: 0,
+    });
+
+    // 尝试清除所有可能的Supabase认证cookies
+    // 这些cookies可能存在于不同的路径或域名下
+    const possibleAuthCookies = [
+      "sb-access-token",
+      "sb-refresh-token",
+      "supabase.auth.token",
+      "supabase.auth.expiresAt",
+      "supabase.auth.refreshToken"
+    ];
+
+    possibleAuthCookies.forEach(name => {
+      response.cookies.set(name, "", {
+        httpOnly: true,
+        secure: true,
+        sameSite: "lax",
+        path: "/",
+        maxAge: 0,
+      });
     });
 
     return response;

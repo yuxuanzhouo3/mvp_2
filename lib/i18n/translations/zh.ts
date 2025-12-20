@@ -457,6 +457,7 @@ export const zh = {
     enterOtpRequired: "请输入验证码",
     otpInvalid: "验证码错误或已过期，请重新获取",
     loginFailed: "登录失败，请稍后重试",
+    invalidCredentials: "用户名或密码错误",
     registerFailed: "注册失败，请稍后重试",
     sendOtpFailed: "发送验证码失败，请稍后重试",
     verifyOtpFailed: "验证码验证失败，请稍后重试",

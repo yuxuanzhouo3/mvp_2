@@ -11,13 +11,22 @@ import * as jwt from 'jsonwebtoken'
 
 interface CloudBaseUser {
   _id?: string
-  email: string
-  password?: string
-  name: string
+  email: string | null
+  password?: string | null
+  name: string | null
+  avatar?: string | null
   pro: boolean
   region: string
   createdAt?: string
   updatedAt?: string
+  lastLoginAt?: string
+  wechatOpenId?: string
+  wechatUnionId?: string | null
+  subscriptionTier?: string
+  plan?: string | null
+  plan_exp?: string | null
+  paymentMethod?: string | null
+  hide_ads?: boolean
 }
 
 /**
@@ -175,5 +184,137 @@ export async function cloudbaseRefreshToken(
   } catch (error) {
     console.error('[CloudBase Refresh] Error:', error)
     return { success: false, message: error instanceof Error ? error.message : 'Token refresh failed' }
+  }
+}
+
+/**
+ * 微信登录
+ * 根据微信 openid 查找或创建用户
+ */
+export async function cloudbaseSignInWithWechat(params: {
+  openid: string
+  unionid?: string | null
+  nickname?: string | null
+  avatar?: string | null
+}): Promise<{
+  success: boolean
+  user?: CloudBaseUser
+  message: string
+  accessToken?: string
+  refreshToken?: string
+  tokenMeta?: { accessTokenExpiresIn: number; refreshTokenExpiresIn: number }
+}> {
+  try {
+    const { openid, unionid, nickname, avatar } = params
+    const app = initCloudBase()
+    const db = app.database()
+    const usersCollection = db.collection('users')
+    const now = new Date().toISOString()
+
+    console.log('[CloudBase WeChat] Looking for user with openid:', openid)
+
+    // 1. 优先按 wechatOpenId 查找现有用户
+    let userResult = await usersCollection.where({ wechatOpenId: openid }).get()
+
+    // 2. 兼容早期用 email 存储 openid 的情况
+    if (!userResult.data || userResult.data.length === 0) {
+      const wechatEmail = `wechat_${openid}@local.wechat`
+      userResult = await usersCollection.where({ email: wechatEmail }).get()
+    }
+
+    let user: CloudBaseUser
+
+    if (userResult.data && userResult.data.length > 0) {
+      // 现有用户：更新登录信息
+      user = userResult.data[0]
+      console.log('[CloudBase WeChat] Found existing user:', user._id)
+
+      // 更新用户信息
+      const updateData: Partial<CloudBaseUser> = {
+        lastLoginAt: now,
+        updatedAt: now,
+      }
+
+      // 更新昵称和头像（如果有新的）
+      if (nickname && nickname !== user.name) {
+        updateData.name = nickname
+      }
+      if (avatar && avatar !== user.avatar) {
+        updateData.avatar = avatar
+      }
+      // 确保 wechatOpenId 已设置
+      if (!user.wechatOpenId) {
+        updateData.wechatOpenId = openid
+      }
+      // 更新 unionid（如果有）
+      if (unionid && !user.wechatUnionId) {
+        updateData.wechatUnionId = unionid
+      }
+
+      await usersCollection.doc(user._id!).update(updateData)
+
+      // 合并更新后的数据
+      user = { ...user, ...updateData }
+    } else {
+      // 新用户：创建用户记录
+      console.log('[CloudBase WeChat] Creating new user for openid:', openid)
+
+      const newUser: Omit<CloudBaseUser, '_id'> = {
+        email: `wechat_${openid}@local.wechat`,
+        password: null,
+        name: nickname || '微信用户',
+        avatar: avatar || null,
+        pro: false,
+        region: 'CN',
+        createdAt: now,
+        updatedAt: now,
+        lastLoginAt: now,
+        wechatOpenId: openid,
+        wechatUnionId: unionid || null,
+        subscriptionTier: 'free',
+        plan: 'free',
+        plan_exp: null,
+        paymentMethod: null,
+        hide_ads: false,
+      }
+
+      const result = await usersCollection.add(newUser)
+      user = { _id: result.id, ...newUser }
+      console.log('[CloudBase WeChat] Created new user:', result.id)
+    }
+
+    // 3. 生成 JWT Token
+    const accessTokenExpiresIn = user.pro ? 90 * 24 * 60 * 60 : 60 * 60 // Pro 用户 90 天，普通用户 1 小时
+    const refreshTokenExpiresIn = 7 * 24 * 60 * 60 // 7 天
+
+    const accessToken = jwt.sign(
+      { userId: user._id, email: user.email, region: 'CN', wechatOpenId: openid },
+      process.env.JWT_SECRET || 'fallback-secret-key-for-development-only',
+      { expiresIn: accessTokenExpiresIn }
+    )
+
+    const refreshToken = jwt.sign(
+      { userId: user._id, type: 'refresh', region: 'CN' },
+      process.env.JWT_SECRET || 'fallback-secret-key-for-development-only',
+      { expiresIn: refreshTokenExpiresIn }
+    )
+
+    return {
+      success: true,
+      message: 'WeChat login successful',
+      user,
+      accessToken,
+      refreshToken,
+      tokenMeta: {
+        accessTokenExpiresIn,
+        refreshTokenExpiresIn,
+      },
+    }
+  } catch (error) {
+    console.error('[CloudBase WeChat] Error:', error)
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : 'WeChat login failed',
+    }
   }
 }

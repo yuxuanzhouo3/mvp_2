@@ -602,8 +602,18 @@ class CloudBaseAuthClient implements AuthClient {
       }
 
       if (typeof window !== "undefined") {
+        // 清除新格式的认证状态
         const { clearAuthState } = await import("@/lib/auth/auth-state-manager");
         clearAuthState();
+        
+        // 清除旧格式的localStorage键
+        const oldKeys = ["auth-token", "auth-user", "auth-logged-in"];
+        oldKeys.forEach((key) => {
+          if (localStorage.getItem(key)) {
+            console.log(`[CloudBase] Clearing old localStorage key on logout: ${key}`);
+            localStorage.removeItem(key);
+          }
+        });
       }
 
       return { error: null };

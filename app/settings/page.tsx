@@ -15,6 +15,22 @@ import { useLanguage } from "@/components/language-provider"
 import { useTranslations } from "@/lib/i18n"
 import { BillingHistory } from "@/components/payment/billing-history"
 import { fetchWithAuth } from "@/lib/auth/fetch-with-auth"
+import { isChinaDeployment } from "@/lib/config/deployment.config"
+
+// 根据区域获取定价配置
+const isCN = isChinaDeployment()
+const PRICING = {
+  pro: {
+    monthly: isCN ? 19.9 : 2.99,
+    yearly: isCN ? 199 : 29.99,
+  },
+  enterprise: {
+    monthly: isCN ? 49.9 : 6.99,
+    yearly: isCN ? 499 : 69.99,
+  },
+  currency: isCN ? "CNY" : "USD",
+  symbol: isCN ? "¥" : "$",
+}
 
 export default function SettingsPage() {
   const { user, isAuthenticated, isLoading, refresh } = useAuth()
@@ -79,7 +95,9 @@ export default function SettingsPage() {
     }
 
     fetchSubscriptionInfo()
-  }, [isAuthenticated, user])
+    // 只依赖 user.id 而不是整个 user 对象，避免无限循环
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, user?.id])
 
   if (isLoading) {
     return (
@@ -120,23 +138,43 @@ export default function SettingsPage() {
           setSubscriptionEnd(data.subscription.subscription_end)
         }
 
-        // 更新本地缓存
-        const { updateSupabaseUserCache, clearSupabaseUserCache } = await import("@/lib/auth/auth-state-manager-intl")
-        
-        // 先清除缓存，确保获取最新数据
-        clearSupabaseUserCache()
-        
-        // 更新缓存中的订阅信息
-        if (user) {
-          const { saveSupabaseUserCache } = await import("@/lib/auth/auth-state-manager-intl")
-          saveSupabaseUserCache({
-            id: user.id,
-            email: user.email || "",
-            name: user.name,
-            avatar: user.avatar,
-            subscription_plan: resolvedPlan,
-            subscription_status: data.subscriptionStatus,
-          })
+        // 更新本地缓存 - 根据环境选择不同的缓存管理器
+        if (isCN) {
+          // CN 环境使用 auth-state-manager
+          const { getStoredAuthState, saveAuthState } = await import("@/lib/auth/auth-state-manager")
+          const authState = getStoredAuthState()
+          if (authState && user) {
+            // 更新用户的订阅信息
+            const updatedUser = {
+              ...authState.user,
+              subscription_plan: resolvedPlan,
+              subscription_status: data.subscriptionStatus,
+            }
+            saveAuthState(
+              authState.accessToken,
+              authState.refreshToken,
+              updatedUser,
+              authState.tokenMeta
+            )
+          }
+        } else {
+          // INTL 环境使用 auth-state-manager-intl
+          const { clearSupabaseUserCache, saveSupabaseUserCache } = await import("@/lib/auth/auth-state-manager-intl")
+
+          // 先清除缓存，确保获取最新数据
+          clearSupabaseUserCache()
+
+          // 更新缓存中的订阅信息
+          if (user) {
+            saveSupabaseUserCache({
+              id: user.id,
+              email: user.email || "",
+              name: user.name,
+              avatar: user.avatar,
+              subscription_plan: resolvedPlan,
+              subscription_status: data.subscriptionStatus,
+            })
+          }
         }
 
         // 刷新用户认证状态
@@ -428,7 +466,9 @@ export default function SettingsPage() {
                   </h3>
                   <p className="text-gray-600 mb-6 max-w-md mx-auto">
                     {language === "zh"
-                      ? "我们使用 Stripe 和 PayPal 进行安全支付处理。您可以在订阅页面选择您偏好的支付方式。"
+                      ? isCN 
+                        ? "我们使用支付宝和微信支付进行安全支付处理。您可以在订阅页面选择您偏好的支付方式。"
+                        : "我们使用 Stripe 和 PayPal 进行安全支付处理。您可以在订阅页面选择您偏好的支付方式。"
                       : "We use Stripe and PayPal for secure payment processing. You can choose your preferred payment method on the subscription page."}
                   </p>
 
@@ -477,7 +517,7 @@ export default function SettingsPage() {
                           {t.settingsPage.subscription.enterprisePlan || t.settingsPage.subscription.proPlan}
                         </h4>
                         <div className="text-right">
-                          <div className="text-2xl font-bold text-purple-700">$6.99</div>
+                          <div className="text-2xl font-bold text-purple-700">{PRICING.symbol}{PRICING.enterprise.monthly}</div>
                           <div className="text-sm text-purple-600">{t.settingsPage.subscription.perMonth}</div>
                         </div>
                       </div>
@@ -514,7 +554,7 @@ export default function SettingsPage() {
                           {t.settingsPage.subscription.proPlan}
                         </h4>
                         <div className="text-right">
-                          <div className="text-2xl font-bold text-green-700">$2.99</div>
+                          <div className="text-2xl font-bold text-green-700">{PRICING.symbol}{PRICING.pro.monthly}</div>
                           <div className="text-sm text-green-600">{t.settingsPage.subscription.perMonth}</div>
                         </div>
                       </div>
@@ -564,7 +604,7 @@ export default function SettingsPage() {
                       <div className="flex items-center justify-between mb-4">
                         <h3 className="text-xl font-bold">{t.settingsPage.subscription.proPlan}</h3>
                         <div className="text-right">
-                          <div className="text-3xl font-bold text-blue-600">$2.99</div>
+                          <div className="text-3xl font-bold text-blue-600">{PRICING.symbol}{PRICING.pro.monthly}</div>
                           <div className="text-sm text-gray-600">{t.settingsPage.subscription.perMonth}</div>
                         </div>
                       </div>

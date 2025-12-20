@@ -34,7 +34,13 @@ export default function LoginPage() {
       const result = await auth.signInWithPassword({ email, password })
 
       if (result.error) {
-        setError(result.error.message || 'Login failed')
+        // 根据错误码显示翻译后的消息
+        const errorMessage = result.error.message || ''
+        if (errorMessage === 'INVALID_CREDENTIALS' || errorMessage.includes('INVALID_CREDENTIALS')) {
+          setError(t.auth.invalidCredentials)
+        } else {
+          setError(t.auth.loginFailed)
+        }
         setLoading(false)
         return
       }
@@ -84,8 +90,17 @@ export default function LoginPage() {
     setError(null)
 
     try {
-      const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL || window.location.origin}/auth/callback`
-      await auth.toDefaultLoginPage?.(callbackUrl)
+      // 获取微信登录二维码 URL
+      const nextPath = '/'
+      const response = await fetch(`/api/auth/wechat/qrcode?next=${encodeURIComponent(nextPath)}`)
+      const data = await response.json()
+
+      if (!response.ok || !data.qrcodeUrl) {
+        throw new Error(data.error || 'Failed to get WeChat login URL')
+      }
+
+      // 重定向到微信授权页面
+      window.location.href = data.qrcodeUrl
     } catch (err) {
       setError(err instanceof Error ? err.message : 'WeChat login failed')
       setOauthLoading(null)

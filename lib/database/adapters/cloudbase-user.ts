@@ -383,9 +383,67 @@ export class CloudBaseUserAdapter implements UserDatabaseAdapter {
 
       return { success: true, id: paymentId };
     } catch (error) {
-      return { 
-        success: false, 
-        error: handleCloudBaseError(error, 'updatePayment') 
+      return {
+        success: false,
+        error: handleCloudBaseError(error, 'updatePayment')
+      };
+    }
+  }
+
+  /**
+   * 获取单个支付记录
+   */
+  async getPaymentById(paymentId: string): Promise<SingleResult<Payment>> {
+    try {
+      const collection = this.db.collection(CloudBaseCollections.PAYMENTS);
+
+      const result = await collection.doc(paymentId).get();
+
+      if (!result.data || result.data.length === 0) {
+        return { data: null, error: null }; // 支付记录不存在
+      }
+
+      const item = result.data[0] || result.data;
+
+      return {
+        data: {
+          id: item._id,
+          user_id: item.user_id,
+          amount: item.amount,
+          currency: item.currency,
+          status: item.status,
+          payment_method: item.payment_method,
+          transaction_id: item.transaction_id,
+          subscription_id: item.subscription_id,
+          metadata: item.metadata,
+          created_at: item.created_at,
+          updated_at: item.updated_at,
+          completed_at: item.completed_at,
+        },
+        error: null,
+      };
+    } catch (error) {
+      return {
+        data: null,
+        error: handleCloudBaseError(error, 'getPaymentById')
+      };
+    }
+  }
+
+  /**
+   * 删除支付记录
+   */
+  async deletePayment(paymentId: string): Promise<MutationResult> {
+    try {
+      const collection = this.db.collection(CloudBaseCollections.PAYMENTS);
+
+      await collection.doc(paymentId).remove();
+
+      return { success: true, id: paymentId };
+    } catch (error) {
+      return {
+        success: false,
+        error: handleCloudBaseError(error, 'deletePayment')
       };
     }
   }

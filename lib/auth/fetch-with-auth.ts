@@ -13,9 +13,16 @@ export async function getAuthHeaders(): Promise<Record<string, string>> {
   let authToken: string | null = null;
 
   if (isChinaRegion()) {
-    // 中国版：从 localStorage 获取
+    // 中国版：从 auth-state-manager 获取有效的 access token
     if (typeof window !== "undefined") {
-      authToken = localStorage.getItem("auth-token");
+      try {
+        const { getValidAccessToken } = await import("@/lib/auth/auth-state-manager");
+        authToken = await getValidAccessToken();
+      } catch (error) {
+        console.error("[fetchWithAuth] Failed to get auth token:", error);
+        // 回退到旧的 auth-token 键（兼容性）
+        authToken = localStorage.getItem("auth-token");
+      }
     }
   } else {
     // 国际版：优先使用当前 session，没有则强制刷新

@@ -1,18 +1,48 @@
 // app/api/subscription/upgrade/route.ts - 会员升级API
+// 支持双环境架构：INTL (Supabase) 和 CN (CloudBase)
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth/auth";
-import { supabaseAdmin } from "@/lib/integrations/supabase-admin";
 import { z } from "zod";
 import { checkPlanTransition, getAmountByCurrency } from "@/lib/payment/payment-config";
 import { getUserPlan } from "@/lib/subscription/usage-tracker";
+import { isChinaDeployment } from "@/lib/config/deployment.config";
+import { getUserAdapter } from "@/lib/database";
 import type { PlanType, BillingCycle } from "@/lib/payment/payment-config";
 
-// 升级请求验证schema
+// 升级请求验证schema - 支持 CN 和 INTL 支付方式
 const upgradeSchema = z.object({
   targetPlan: z.enum(["pro", "enterprise"]),
   billingCycle: z.enum(["monthly", "yearly"]),
-  paymentMethod: z.enum(["stripe", "paypal"]),
+  paymentMethod: z.enum(["stripe", "paypal", "wechat", "alipay"]),
 });
+
+/**
+ * 获取用户当前活跃订阅信息
+ * 支持双环境架构
+ */
+async function getActiveSubscription(userId: string) {
+  const now = new Date().toISOString();
+
+  if (isChinaDeployment()) {
+    // CN 环境：使用 CloudBase
+    const adapter = await getUserAdapter();
+    const result = await adapter.getActiveSubscription(userId);
+    return result.data;
+  } else {
+    // INTL 环境：使用 Supabase
+    const { supabaseAdmin } = await import("@/lib/integrations/supabase-admin");
+    const { data } = await supabaseAdmin
+      .from("user_subscriptions")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("status", "active")
+      .gt("subscription_end", now)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .single();
+    return data;
+  }
+}
 
 /**
  * POST /api/subscription/upgrade
@@ -48,11 +78,39 @@ export async function POST(request: NextRequest) {
 
     const { targetPlan, billingCycle, paymentMethod } = validationResult.data;
 
+    // 验证支付方式与部署环境匹配
+    const isCN = isChinaDeployment();
+    const cnPaymentMethods = ["wechat", "alipay"];
+    const intlPaymentMethods = ["stripe", "paypal"];
+
+    if (isCN && intlPaymentMethods.includes(paymentMethod)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Invalid payment method for China region. Please use WeChat Pay or Alipay.",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (!isCN && cnPaymentMethods.includes(paymentMethod)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Invalid payment method for international region. Please use Stripe or PayPal.",
+        },
+        { status: 400 }
+      );
+    }
+
     // 获取当前计划
     const currentPlan = await getUserPlan(userId);
 
     // 检查计划转换是否允许
     const transition = checkPlanTransition(currentPlan, targetPlan as PlanType);
+
+    // 确定货币类型
+    const currency = isCN ? "CNY" : "USD";
 
     if (transition.isSamePlan) {
       // 同级续订
@@ -61,11 +119,11 @@ export async function POST(request: NextRequest) {
         action: "renew",
         currentPlan,
         targetPlan,
-        amount: getAmountByCurrency("USD", billingCycle, targetPlan as PlanType),
-        currency: "USD",
+        amount: getAmountByCurrency(currency, billingCycle, targetPlan as PlanType),
+        currency,
         billingCycle,
         paymentMethod,
-        message: "You can renew your current plan.",
+        message: isCN ? "您可以续订当前计划。" : "You can renew your current plan.",
       });
     }
 
@@ -73,7 +131,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error: "Downgrade is not allowed. You can only upgrade from Free to Pro, or from Pro to Enterprise.",
+          error: isCN
+            ? "不支持降级。您只能从免费版升级到专业版，或从专业版升级到企业版。"
+            : "Downgrade is not allowed. You can only upgrade from Free to Pro, or from Pro to Enterprise.",
           currentPlan,
           targetPlan,
         },
@@ -82,18 +142,10 @@ export async function POST(request: NextRequest) {
     }
 
     // 获取当前订阅信息以计算剩余时间
-    const { data: currentSubscription } = await supabaseAdmin
-      .from("user_subscriptions")
-      .select("*")
-      .eq("user_id", userId)
-      .eq("status", "active")
-      .gt("subscription_end", new Date().toISOString())
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .single();
+    const currentSubscription = await getActiveSubscription(userId);
 
     let prorateCreditDays = 0;
-    let message = "Upgrade to a higher plan.";
+    let message = isCN ? "升级到更高级计划。" : "Upgrade to a higher plan.";
 
     if (currentSubscription) {
       // 计算剩余天数
@@ -103,12 +155,14 @@ export async function POST(request: NextRequest) {
       prorateCreditDays = Math.max(0, Math.floor(remainingMs / (1000 * 60 * 60 * 24)));
 
       if (prorateCreditDays > 0) {
-        message = `Your current subscription has ${prorateCreditDays} days remaining. After upgrading, these days will be converted to credit towards your new plan.`;
+        message = isCN
+          ? `您当前的订阅还剩 ${prorateCreditDays} 天。升级后，这些天数将转换为新计划的抵扣额度。`
+          : `Your current subscription has ${prorateCreditDays} days remaining. After upgrading, these days will be converted to credit towards your new plan.`;
       }
     }
 
     // 计算升级价格
-    const upgradeAmount = getAmountByCurrency("USD", billingCycle, targetPlan as PlanType);
+    const upgradeAmount = getAmountByCurrency(currency, billingCycle, targetPlan as PlanType);
 
     return NextResponse.json({
       success: true,
@@ -116,7 +170,7 @@ export async function POST(request: NextRequest) {
       currentPlan,
       targetPlan,
       amount: upgradeAmount,
-      currency: "USD",
+      currency,
       billingCycle,
       paymentMethod,
       prorateCreditDays,
@@ -147,6 +201,8 @@ export async function GET(request: NextRequest) {
 
     const { user } = authResult;
     const currentPlan = await getUserPlan(user.id);
+    const isCN = isChinaDeployment();
+    const currency = isCN ? "CNY" : "USD";
 
     // 根据当前计划确定可用的升级选项
     const upgradeOptions: Array<{
@@ -159,43 +215,50 @@ export async function GET(request: NextRequest) {
     if (currentPlan === "free") {
       upgradeOptions.push({
         plan: "pro",
-        monthly: getAmountByCurrency("USD", "monthly", "pro"),
-        yearly: getAmountByCurrency("USD", "yearly", "pro"),
+        monthly: getAmountByCurrency(currency, "monthly", "pro"),
+        yearly: getAmountByCurrency(currency, "yearly", "pro"),
         available: true,
       });
       upgradeOptions.push({
         plan: "enterprise",
-        monthly: getAmountByCurrency("USD", "monthly", "enterprise"),
-        yearly: getAmountByCurrency("USD", "yearly", "enterprise"),
+        monthly: getAmountByCurrency(currency, "monthly", "enterprise"),
+        yearly: getAmountByCurrency(currency, "yearly", "enterprise"),
         available: true,
       });
     } else if (currentPlan === "pro") {
       upgradeOptions.push({
         plan: "pro",
-        monthly: getAmountByCurrency("USD", "monthly", "pro"),
-        yearly: getAmountByCurrency("USD", "yearly", "pro"),
+        monthly: getAmountByCurrency(currency, "monthly", "pro"),
+        yearly: getAmountByCurrency(currency, "yearly", "pro"),
         available: true, // 续订
       });
       upgradeOptions.push({
         plan: "enterprise",
-        monthly: getAmountByCurrency("USD", "monthly", "enterprise"),
-        yearly: getAmountByCurrency("USD", "yearly", "enterprise"),
+        monthly: getAmountByCurrency(currency, "monthly", "enterprise"),
+        yearly: getAmountByCurrency(currency, "yearly", "enterprise"),
         available: true,
       });
     } else {
       // Enterprise 只能续订
       upgradeOptions.push({
         plan: "enterprise",
-        monthly: getAmountByCurrency("USD", "monthly", "enterprise"),
-        yearly: getAmountByCurrency("USD", "yearly", "enterprise"),
+        monthly: getAmountByCurrency(currency, "monthly", "enterprise"),
+        yearly: getAmountByCurrency(currency, "yearly", "enterprise"),
         available: true, // 续订
       });
     }
 
+    // 支付方式
+    const paymentMethods = isCN
+      ? ["wechat", "alipay"]
+      : ["stripe", "paypal"];
+
     return NextResponse.json({
       success: true,
       currentPlan,
+      currency,
       upgradeOptions,
+      paymentMethods,
       rules: {
         canUpgrade: currentPlan !== "enterprise",
         canDowngrade: false,

@@ -4,13 +4,20 @@
  *
  * 处理用户对推荐内容的反馈（感兴趣、已购买、评分等）
  * 更新用户画像权重
+ *
+ * 支持双环境架构：INTL (Supabase) 和 CN (CloudBase)
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getRecommendationAdapter } from '@/lib/database';
 import { calculateProfileWeightUpdates } from '@/lib/ai/profile-based-recommendation';
 import { isValidUserId } from '@/lib/utils';
-import { supabaseAdmin } from '@/lib/integrations/supabase-admin';
+import { isChinaDeployment } from '@/lib/config/deployment.config';
+import {
+  getCloudBaseDatabase,
+  CloudBaseCollections,
+  nowISO,
+} from '@/lib/database/cloudbase-client';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,6 +30,109 @@ export interface FeedbackData {
   rating?: number;
   comment?: string;
   triggeredBy?: string;
+}
+
+/**
+ * 保存用户反馈到数据库
+ * 支持双环境架构
+ */
+async function saveFeedbackToDatabase(feedbackRecord: {
+  user_id: string;
+  recommendation_id: string;
+  feedback_type: string;
+  is_interested: boolean | null;
+  has_purchased: boolean | null;
+  rating: number | null;
+  comment: string | null;
+  triggered_by: string;
+  created_at: string;
+}): Promise<{ success: boolean; error?: string }> {
+  if (isChinaDeployment()) {
+    // CN 环境：使用 CloudBase
+    try {
+      const db = getCloudBaseDatabase();
+      await db.collection(CloudBaseCollections.USER_FEEDBACKS).add(feedbackRecord);
+      return { success: true };
+    } catch (error: any) {
+      console.error('[Feedback] CloudBase 保存反馈失败:', error);
+      return { success: false, error: error.message };
+    }
+  } else {
+    // INTL 环境：使用 Supabase
+    try {
+      const { supabaseAdmin } = await import('@/lib/integrations/supabase-admin');
+      const { error } = await supabaseAdmin
+        .from('user_feedbacks')
+        .insert(feedbackRecord);
+
+      if (error) {
+        return { success: false, error: error.message };
+      }
+      return { success: true };
+    } catch (error: any) {
+      console.error('[Feedback] Supabase 保存反馈失败:', error);
+      return { success: false, error: error.message };
+    }
+  }
+}
+
+/**
+ * 获取用户反馈历史
+ * 支持双环境架构
+ */
+async function getFeedbackHistory(
+  userId: string,
+  limit: number = 10
+): Promise<{ data: any[]; error?: string }> {
+  if (isChinaDeployment()) {
+    // CN 环境：使用 CloudBase
+    try {
+      const db = getCloudBaseDatabase();
+      const result = await db
+        .collection(CloudBaseCollections.USER_FEEDBACKS)
+        .where({ user_id: userId })
+        .orderBy('created_at', 'desc')
+        .limit(limit)
+        .get();
+
+      const data = (result.data || []).map((item: any) => ({
+        id: item._id,
+        user_id: item.user_id,
+        recommendation_id: item.recommendation_id,
+        feedback_type: item.feedback_type,
+        is_interested: item.is_interested,
+        has_purchased: item.has_purchased,
+        rating: item.rating,
+        comment: item.comment,
+        triggered_by: item.triggered_by,
+        created_at: item.created_at,
+      }));
+
+      return { data };
+    } catch (error: any) {
+      console.error('[Feedback] CloudBase 获取反馈历史失败:', error);
+      return { data: [], error: error.message };
+    }
+  } else {
+    // INTL 环境：使用 Supabase
+    try {
+      const { supabaseAdmin } = await import('@/lib/integrations/supabase-admin');
+      const { data, error } = await supabaseAdmin
+        .from('user_feedbacks')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(limit);
+
+      if (error) {
+        return { data: [], error: error.message };
+      }
+      return { data: data || [] };
+    } catch (error: any) {
+      console.error('[Feedback] Supabase 获取反馈历史失败:', error);
+      return { data: [], error: error.message };
+    }
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -66,43 +176,36 @@ export async function POST(request: NextRequest) {
     const adapter = await getRecommendationAdapter();
 
     // 0. 直接保存反馈到 user_feedbacks 表
-    try {
-      const feedbackRecord = {
-        user_id: userId,
-        recommendation_id: recommendationId,
-        feedback_type: feedbackType,
-        is_interested: isInterested ?? null,
-        has_purchased: hasPurchased ?? null,
-        rating: rating ?? null,
-        comment: comment ?? null,
-        triggered_by: triggeredBy,
-        created_at: new Date().toISOString(),
-      };
+    const feedbackRecord = {
+      user_id: userId,
+      recommendation_id: recommendationId,
+      feedback_type: feedbackType,
+      is_interested: isInterested ?? null,
+      has_purchased: hasPurchased ?? null,
+      rating: rating ?? null,
+      comment: comment ?? null,
+      triggered_by: triggeredBy,
+      created_at: nowISO(),
+    };
 
-      const { error: insertError } = await supabaseAdmin
-        .from('user_feedbacks')
-        .insert(feedbackRecord);
-
-      if (insertError) {
-        console.error('[Feedback] 保存反馈到user_feedbacks表失败:', insertError);
-      } else {
-        console.log('[Feedback] 反馈已保存到user_feedbacks表');
-      }
-    } catch (saveError) {
-      console.error('[Feedback] 保存反馈异常:', saveError);
+    const saveResult = await saveFeedbackToDatabase(feedbackRecord);
+    if (!saveResult.success) {
+      console.error('[Feedback] 保存反馈到user_feedbacks表失败:', saveResult.error);
+    } else {
+      console.log('[Feedback] 反馈已保存到user_feedbacks表');
     }
 
     // 1. 获取推荐详情以获取标签和分类
     let recommendationCategory = 'entertainment';
     let recommendationTags: string[] = [];
-    
+
     try {
       // 从历史记录中获取推荐信息
       const historyResult = await adapter.getRecommendationHistory(userId);
       const recommendation = historyResult.data?.find(
         (rec: any) => rec.id === recommendationId
       );
-      
+
       if (recommendation) {
         recommendationCategory = recommendation.category;
         recommendationTags = recommendation.metadata?.tags || [];
@@ -162,9 +265,9 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error('[Feedback] 错误:', error);
     return NextResponse.json(
-      { 
+      {
         error: error.message || '服务器错误',
-        success: false 
+        success: false
       },
       { status: 500 }
     );
@@ -188,12 +291,12 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // 获取用户的反馈历史（通过 click 记录）
-    const adapter = await getRecommendationAdapter();
-    
-    // 注意：这需要适配器支持查询反馈记录
-    // 简化实现：返回空列表
-    const feedbackHistory: any[] = [];
+    // 获取用户的反馈历史
+    const { data: feedbackHistory, error } = await getFeedbackHistory(userId, limit);
+
+    if (error) {
+      console.warn('[Feedback History] 获取反馈历史警告:', error);
+    }
 
     return NextResponse.json({
       success: true,
@@ -204,12 +307,11 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     console.error('[Feedback History] 错误:', error);
     return NextResponse.json(
-      { 
+      {
         error: error.message || '服务器错误',
-        success: false 
+        success: false
       },
       { status: 500 }
     );
   }
 }
-

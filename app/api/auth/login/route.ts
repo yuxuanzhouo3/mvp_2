@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
 
       if (!userResult.data || userResult.data.length === 0) {
         return NextResponse.json(
-          { error: "User not found or password incorrect" },
+          { error: "INVALID_CREDENTIALS" },
           { status: 401 }
         );
       }
@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
 
       if (!isPasswordValid) {
         return NextResponse.json(
-          { error: "User not found or password incorrect" },
+          { error: "INVALID_CREDENTIALS" },
           { status: 401 }
         );
       }

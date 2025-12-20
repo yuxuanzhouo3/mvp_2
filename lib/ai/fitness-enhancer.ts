@@ -55,9 +55,9 @@ export function identifyFitnessType(recommendation: any): FitnessRecommendationT
     const tags = (recommendation.tags || []).map((t: string) => t.toLowerCase());
     const description = recommendation.description?.toLowerCase() || '';
 
-    // 健身视频教程特征 - YouTube视频
+    // 健身视频教程特征 - 视频平台
     const videoKeywords = ['教程', '视频', '课程', '训练', '视频课程', 'tutorial', 'video', 'workout', 'class', 'lesson', 'youtube'];
-    const videoPlatforms = ['youtube', 'youtube fitness', 'b站', 'keep', 'peloton'];
+    const videoPlatforms = ['youtube', 'youtube fitness', 'b站', 'b站健身', '腾讯视频健身', '优酷健身', 'peloton', '腾讯', '优酷'];  // 去掉需登录的抖音、小红书
     const isVideo = videoKeywords.some((kw) => title.includes(kw) || searchQuery.includes(kw)) ||
         videoPlatforms.some((plat) => platform.includes(plat)) ||
         tags.some((tag: string) => videoKeywords.some((kw) => tag.includes(kw)));
@@ -129,7 +129,7 @@ function generateFitnessSupplementRecommendation(
                     reason: '根据初学者需求推荐的热门健身视频课程',
                     tags: ['瑜伽', '初学者', '视频教程', '放松'],
                     searchQuery: '瑜伽入门视频教程',
-                    platform: 'YouTube',
+                    platform: 'B站健身',  // 改用B站健身
                     fitnessType: 'video',
                 };
 
@@ -208,18 +208,18 @@ export function selectFitnessPlatform(
     if (locale === 'zh') {
         switch (fitnessType) {
             case 'video':
-                // 健身视频课程优先使用YouTube
-                const videoVideoPlatforms = ['YouTube', 'YouTube Fitness', 'B站', 'Keep'];
-                return videoVideoPlatforms.includes(currentPlatform) ? currentPlatform : 'YouTube';
+                // 健身视频课程优先使用国内视频平台（去掉需登录的抖音、小红书）
+                const videoVideoPlatforms = ['B站健身', '腾讯视频健身', '优酷健身', 'YouTube', 'YouTube Fitness', 'B站'];
+                return videoVideoPlatforms.includes(currentPlatform) ? currentPlatform : 'B站健身';
 
             case 'plan':
                 // 健身计划优先使用FitnessVolt
-                const planPlatforms = ['FitnessVolt', 'CSDN', 'Medium'];
+                const planPlatforms = ['FitnessVolt', 'B站健身'];
                 return planPlatforms.includes(currentPlatform) ? currentPlatform : 'FitnessVolt';
 
             case 'equipment':
                 // 器材评测优先使用GarageGymReviews
-                const equipmentPlatforms = ['GarageGymReviews', 'Amazon', 'Best Buy'];
+                const equipmentPlatforms = ['GarageGymReviews', 'B站健身'];
                 return equipmentPlatforms.includes(currentPlatform) ? currentPlatform : 'GarageGymReviews';
 
             default:
