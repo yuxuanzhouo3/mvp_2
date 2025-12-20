@@ -6,6 +6,11 @@
  */
 
 import https from "https";
+import { config } from "dotenv";
+import { resolve } from "path";
+
+// 加载 .env.local 文件
+config({ path: resolve(process.cwd(), ".env.local") });
 
 const ZHIPU_API_KEY = process.env.ZHIPU_API_KEY;
 
@@ -20,9 +25,27 @@ if (ZHIPU_API_KEY.includes("your_")) {
   process.exit(1);
 }
 
+// 智谱 v4 API 响应格式（与 OpenAI 兼容）
 interface ZhipuResponse {
-  code: number;
-  msg: string;
+  id?: string;
+  created?: number;
+  model?: string;
+  choices?: Array<{
+    index: number;
+    finish_reason: string;
+    message: {
+      role: string;
+      content: string;
+    };
+  }>;
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
+  // 旧版 API 格式兼容
+  code?: number;
+  msg?: string;
   data?: {
     choices: Array<{
       index: number;
@@ -56,8 +79,8 @@ async function callZhipuAPI(messages: Array<{ role: string; content: string }>):
       method: "POST",
       headers: {
         Authorization: `Bearer ${ZHIPU_API_KEY}`,
-        "Content-Type": "application/json",
-        "Content-Length": data.length,
+        "Content-Type": "application/json; charset=utf-8",
+        "Content-Length": Buffer.byteLength(data, "utf8"),
       },
     };
 
@@ -77,26 +100,40 @@ async function callZhipuAPI(messages: Array<{ role: string; content: string }>):
         try {
           const parsed: ZhipuResponse = JSON.parse(responseData);
 
-          if (parsed.code !== 0) {
+          // 检查旧版 API 错误格式
+          if (parsed.code !== undefined && parsed.code !== 0) {
             reject(new Error(`API Error (code ${parsed.code}): ${parsed.msg}`));
             return;
           }
 
-          if (!parsed.data?.choices || parsed.data.choices.length === 0) {
-            reject(new Error("No choices in response"));
-            return;
+          let content: string | undefined;
+          let usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number } | undefined;
+
+          // 新版 v4 API 格式（与 OpenAI 兼容）
+          if (parsed.choices && parsed.choices.length > 0) {
+            content = parsed.choices[0].message.content;
+            usage = parsed.usage;
+          }
+          // 旧版 API 格式兼容
+          else if (parsed.data?.choices && parsed.data.choices.length > 0) {
+            content = parsed.data.choices[0].message.content;
+            usage = parsed.data.usage;
           }
 
-          const content = parsed.data.choices[0].message.content;
-          const usage = parsed.data.usage;
+          if (!content) {
+            reject(new Error("No content in response"));
+            return;
+          }
 
           console.log("\n✅ Zhipu API Response:");
           console.log("━".repeat(60));
           console.log(`Response: ${content}\n`);
-          console.log(`Tokens Used:`);
-          console.log(`  - Prompt tokens: ${usage.prompt_tokens}`);
-          console.log(`  - Completion tokens: ${usage.completion_tokens}`);
-          console.log(`  - Total tokens: ${usage.total_tokens}`);
+          if (usage) {
+            console.log(`Tokens Used:`);
+            console.log(`  - Prompt tokens: ${usage.prompt_tokens}`);
+            console.log(`  - Completion tokens: ${usage.completion_tokens}`);
+            console.log(`  - Total tokens: ${usage.total_tokens}`);
+          }
           console.log("━".repeat(60));
 
           resolve(content);

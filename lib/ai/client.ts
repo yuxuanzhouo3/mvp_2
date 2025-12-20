@@ -99,9 +99,27 @@ async function callZhipuAPI(request: AIRequest, retryCount: number = 0): Promise
       throw new Error(`Zhipu API error: ${statusCode} - ${errorMessage}`);
     }
 
+    // 智谱 v4 API 响应格式与 OpenAI 兼容
     interface ZhipuResponse {
-      code: number;
-      msg: string;
+      id?: string;
+      created?: number;
+      model?: string;
+      choices?: Array<{
+        index: number;
+        message: {
+          role: string;
+          content: string;
+        };
+        finish_reason: string;
+      }>;
+      usage?: {
+        prompt_tokens: number;
+        completion_tokens: number;
+        total_tokens: number;
+      };
+      // 旧版 API 格式兼容
+      code?: number;
+      msg?: string;
       data?: {
         choices: Array<{
           message: {
@@ -113,16 +131,25 @@ async function callZhipuAPI(request: AIRequest, retryCount: number = 0): Promise
 
     const data: ZhipuResponse = await response.json();
 
-    // 检查 API 返回的状态码
-    if (data.code !== 0) {
+    // 检查是否是旧版 API 响应格式
+    if (data.code !== undefined && data.code !== 0) {
       throw new Error(`Zhipu API returned error code ${data.code}: ${data.msg}`);
     }
 
-    if (!data.data?.choices || data.data.choices.length === 0) {
-      throw new Error("Zhipu API returned no choices");
+    // 新版 v4 API 格式（与 OpenAI 兼容）
+    if (data.choices && data.choices.length > 0) {
+      const content = data.choices[0].message?.content;
+      if (content) {
+        return content;
+      }
     }
 
-    return data.data.choices[0].message.content;
+    // 旧版 API 格式兼容
+    if (data.data?.choices && data.data.choices.length > 0) {
+      return data.data.choices[0].message.content;
+    }
+
+    throw new Error("Zhipu API returned no valid content");
   } catch (error) {
     // 重新抛出已知的错误
     if (error instanceof Error) {
