@@ -1,8 +1,10 @@
+# ========== CloudBase 云托管优化版 Dockerfile ==========
 # 使用多阶段构建减小镜像大小
 FROM node:20-alpine AS base
 
-# 安装pnpm
-RUN npm install -g pnpm
+# 安装必要工具和 pnpm
+RUN apk add --no-cache libc6-compat && \
+    npm install -g pnpm
 
 # 设置工作目录
 WORKDIR /app
@@ -46,25 +48,27 @@ RUN pnpm build
 # 生产阶段
 FROM node:20-alpine AS production
 
-# 安装pnpm
-RUN npm install -g pnpm
+# 安装必要工具和 pnpm
+RUN apk add --no-cache libc6-compat && \
+    npm install -g pnpm
 
 # 设置工作目录
 WORKDIR /app
 
 # ========== 运行时配置说明 ==========
-# 你的思路是正确的：真实的配置通过环境变量注入到容器中，
-# 然后前端通过 /api/auth/config 接口在运行时获取这些 MY_NEXT_PUBLIC_... 变量。
+# CloudBase 云托管会通过环境变量注入配置
+# 前端通过 /api/auth/config 接口在运行时获取 MY_NEXT_PUBLIC_... 变量
 
 ARG NODE_ENV=production
 ARG NEXT_PUBLIC_DEPLOYMENT_REGION=CN
-ARG PORT=3000
 ARG DISABLE_REACT_PROFILING_ALIAS=true
+
 ENV NODE_ENV=$NODE_ENV
 ENV NEXT_PUBLIC_DEPLOYMENT_REGION=$NEXT_PUBLIC_DEPLOYMENT_REGION
-ENV HOST=0.0.0.0
-ENV PORT=$PORT
 ENV DISABLE_REACT_PROFILING_ALIAS=$DISABLE_REACT_PROFILING_ALIAS
+# CloudBase 云托管固定监听端口 3000
+ENV HOST=0.0.0.0
+ENV PORT=3000
 
 # 从构建阶段复制必要的文件
 COPY --from=base /app/package.json /app/pnpm-lock.yaml ./
@@ -75,16 +79,20 @@ COPY --from=base /app/next.config.mjs ./
 # 安装生产依赖
 RUN pnpm install --frozen-lockfile --prod
 
-# 创建非root用户
-RUN addgroup -g 1001 -S nodejs
-RUN adduser -S nextjs -u 1001
+# 创建非root用户（提高安全性）
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nextjs -u 1001
 
 # 更改文件所有权
 RUN chown -R nextjs:nodejs /app
 USER nextjs
 
-# 暴露端口
+# 暴露端口 3000（CloudBase 云托管要求）
 EXPOSE 3000
+
+# 健康检查（CloudBase 云托管推荐）
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:3000/ || exit 1
 
 # 启动应用
 CMD ["pnpm", "start"]
