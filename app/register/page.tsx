@@ -7,9 +7,10 @@ import { ArrowLeft } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { auth } from '@/lib/auth/client'
-import { RegionConfig } from '@/lib/config/region'
+import { RegionConfig, isChinaRegion } from '@/lib/config/region'
 import { useLanguage } from '@/components/language-provider'
 import { useTranslations } from '@/lib/i18n'
 
@@ -25,10 +26,18 @@ export default function RegisterPage() {
   const [oauthLoading, setOauthLoading] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const [agreeToPrivacy, setAgreeToPrivacy] = useState(false)
   const isChineseLanguage = language === 'zh'
   const isChinaDeployment = RegionConfig.auth.provider === 'cloudbase'
+  const isChina = isChinaRegion()
 
   const validateForm = (): boolean => {
+    // 中国区域必须同意隐私政策
+    if (isChina && !agreeToPrivacy) {
+      setError(isChineseLanguage ? '请阅读并同意隐私政策和服务条款' : 'Please read and agree to the Privacy Policy and Terms of Service')
+      return false
+    }
+
     if (password.length < 6) {
       setError(t.auth.passwordTooShort)
       return false
@@ -232,6 +241,62 @@ export default function RegisterPage() {
                 minLength={6}
                 disabled={loading || !!oauthLoading}
               />
+            </div>
+
+            {/* 隐私政策同意 - 中国版本强制同意 */}
+            <div className="flex items-start gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+              <Checkbox
+                id="privacy-agree"
+                checked={agreeToPrivacy}
+                onCheckedChange={(checked) => setAgreeToPrivacy(checked as boolean)}
+                disabled={loading || !!oauthLoading}
+                className="mt-1"
+              />
+              <label
+                htmlFor="privacy-agree"
+                className="text-sm text-gray-700 dark:text-gray-300 cursor-pointer flex-1"
+              >
+                {isChineseLanguage ? (
+                  <>
+                    我已阅读并同意{' '}
+                    <Link
+                      href="/privacy"
+                      className="text-primary hover:underline"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      《隐私政策》
+                    </Link>
+                    {' '}和{' '}
+                    <Link
+                      href="/privacy"
+                      className="text-primary hover:underline"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      《服务条款》
+                    </Link>
+                    {isChina && <span className="text-red-600 ml-1">*</span>}
+                  </>
+                ) : (
+                  <>
+                    I agree to the{' '}
+                    <Link
+                      href="/privacy"
+                      className="text-primary hover:underline"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      Privacy Policy
+                    </Link>
+                    {' '}and{' '}
+                    <Link
+                      href="/privacy"
+                      className="text-primary hover:underline"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      Terms of Service
+                    </Link>
+                  </>
+                )}
+              </label>
             </div>
 
             {error && (

@@ -7,9 +7,10 @@ import { ArrowLeft } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { auth } from '@/lib/auth/client'
-import { RegionConfig } from '@/lib/config/region'
+import { RegionConfig, isChinaRegion } from '@/lib/config/region'
 import { useLanguage } from '@/components/language-provider'
 import { useTranslations } from '@/lib/i18n'
 
@@ -22,13 +23,22 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [oauthLoading, setOauthLoading] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [agreeToPrivacy, setAgreeToPrivacy] = useState(false)
   const isChineseLanguage = language === 'zh'
   const isChinaDeployment = RegionConfig.auth.provider === 'cloudbase'
+  const isChina = isChinaRegion()
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setLoading(true)
     setError(null)
+
+    // 中国区域必须同意隐私政策
+    if (isChina && !agreeToPrivacy) {
+      setError(isChineseLanguage ? '请阅读并同意隐私政策' : 'Please read and agree to the Privacy Policy')
+      return
+    }
+
+    setLoading(true)
 
     try {
       const result = await auth.signInWithPassword({ email, password })
@@ -153,6 +163,41 @@ export default function LoginPage() {
                 disabled={loading || !!oauthLoading}
               />
             </div>
+
+            {/* 隐私政策同意 - 中国版本强制同意 */}
+            {isChina && (
+              <div className="flex items-start gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                <Checkbox
+                  id="privacy-agree-login"
+                  checked={agreeToPrivacy}
+                  onCheckedChange={(checked) => setAgreeToPrivacy(checked as boolean)}
+                  disabled={loading || !!oauthLoading}
+                  className="mt-1"
+                />
+                <label
+                  htmlFor="privacy-agree-login"
+                  className="text-sm text-gray-700 dark:text-gray-300 cursor-pointer flex-1"
+                >
+                  我已阅读并同意{' '}
+                  <Link
+                    href="/privacy"
+                    className="text-primary hover:underline"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    《隐私政策》
+                  </Link>
+                  {' '}和{' '}
+                  <Link
+                    href="/privacy"
+                    className="text-primary hover:underline"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    《服务条款》
+                  </Link>
+                  <span className="text-red-600 ml-1">*</span>
+                </label>
+              </div>
+            )}
 
             {error && (
               <div className="p-3 rounded-md bg-destructive/10 text-destructive text-sm">

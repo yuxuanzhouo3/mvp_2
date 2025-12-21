@@ -8,13 +8,18 @@ import { Toaster } from "@/components/ui/toaster"
 
 const inter = Inter({ subsets: ["latin"] })
 
+// 根据部署环境动态设置网站名称和图标
+const isCN = process.env.NEXT_PUBLIC_DEPLOYMENT_REGION === "CN"
+
 export const metadata: Metadata = {
-  title: "RandomLife - Daily Discovery",
-  description: "Discover something new every day with AI-powered recommendations",
+  title: isCN ? "辰汇个性推荐平台" : "RandomLife-DailyDiscovory",
+  description: isCN
+    ? "辰汇个性推荐平台 - AI驱动的个性化推荐服务"
+    : "Discover something new every day with AI-powered recommendations",
   generator: 'v0.dev',
   icons: {
-    icon: '/logo.png',
-    apple: '/logo.png',
+    icon: isCN ? '/logo1.png' : '/logo0.png',
+    apple: isCN ? '/logo1.png' : '/logo0.png',
   },
 }
 

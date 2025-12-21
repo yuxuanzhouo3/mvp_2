@@ -672,8 +672,8 @@ export const zh = {
 
   // ==================== Pricing Page ====================
   pricing: {
-    title: "选择您的计划",
-    subtitle: "解锁 RandomLife 的全部功能",
+    title: "解锁辰汇个性推荐平台",
+    subtitle: "解锁辰汇个性推荐平台的全部功能",
     back: "返回",
     current: "当前",
     currentPlan: "当前计划",
@@ -742,11 +742,11 @@ export const zh = {
       },
       paymentMethods: {
         question: "接受哪些支付方式？",
-        answer: "我们通过 Stripe 接受所有主要信用卡，以及 PayPal 支付。",
+        answer: "我们支持微信支付和支付宝支付。",
       },
       freeTrial: {
         question: "有免费试用吗？",
-        answer: "免费计划让您无需信用卡即可试用我们的服务。每月可获得30次推荐。随时升级以解锁更多功能。",
+        answer: "免费计划让您无需支付即可试用我们的服务。每月可获得30次推荐。随时升级以解锁更多功能。",
       },
     },
     toast: {
