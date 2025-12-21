@@ -4,7 +4,7 @@
  * 定义各个订阅等级的功能限制和权限
  */
 
-import { PlanType } from "./payment-config";
+import { PlanType } from "../payment/payment-config";
 
 /**
  * 功能限制配置接口

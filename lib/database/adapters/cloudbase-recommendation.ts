@@ -383,9 +383,9 @@ export class CloudBaseRecommendationAdapter implements RecommendationDatabaseAda
         };
       }
     } catch (error) {
-      return { 
-        data: null, 
-        error: handleCloudBaseError(error, 'upsertUserPreference') 
+      return {
+        data: null,
+        error: handleCloudBaseError(error, 'upsertUserPreference')
       };
     }
   }

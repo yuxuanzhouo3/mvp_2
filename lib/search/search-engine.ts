@@ -52,14 +52,6 @@ export const GAME_PLATFORMS: GamePlatform[] = [
     searchUrl: (q) => `https://www.taptap.cn/search?kw=${encodeURIComponent(q)}`
   },
   {
-    id: 'epic-cn',
-    name: 'Epic Games',
-    url: 'https://www.epicgames.com/store',
-    region: 'cn',
-    gameTypes: ['pc'],
-    searchUrl: (q) => `https://www.epicgames.com/store/zh-CN/browse?q=${encodeURIComponent(q)}`
-  },
-  {
     id: 'wegame',
     name: 'WeGame',
     url: 'https://www.wegame.com.cn',
@@ -399,7 +391,7 @@ export function generateSearchLink(
       '拼多多': (q) => `https://mobile.yangkeduo.com/search_result.html?search_key=${encodeURIComponent(q)}`,
       '什么值得买': (q) => `https://search.smzdm.com/?c=home&s=${encodeURIComponent(q)}`,  // 无需登录，好价推荐
       '苏宁易购': (q) => `https://search.suning.com/${encodeURIComponent(q)}/`,  // 无需登录
-      '唯品会': (q) => `https://category.vip.com/search?q=${encodeURIComponent(q)}`,  // 品牌折扣
+      '唯品会': (q) => `https://category.vip.com/suggest.php?keyword=${encodeURIComponent(q)}`,  // 品牌折扣
       '当当网': (q) => `http://search.dangdang.com/?key=${encodeURIComponent(q)}`,  // 图书为主
       '小红书购物': (q) => `https://www.xiaohongshu.com/search_result?keyword=${encodeURIComponent(q)}&type=goods`,  // 种草购物
       '1688': (q) => `https://s.1688.com/selloffer/offer_search.htm?keywords=${encodeURIComponent(q)}`,  // 批发价格参考
@@ -426,14 +418,15 @@ export function generateSearchLink(
       '爱奇艺': (q) => `https://so.iqiyi.com/so/q_${encodeURIComponent(q)}`,
       '腾讯视频': (q) => `https://v.qq.com/x/search/?q=${encodeURIComponent(q)}`,
 
-      // 美食平台 - 去掉需登录的平台（美团、小红书）
-      '大众点评': (q) => `https://www.dianping.com/search/keyword/2/0_${encodeURIComponent(q)}`,  // 需登录查看详情
+      // 美食平台 - 增加更多选择
+      '大众点评': (q) => `https://www.dianping.com/search/keyword/2/0_${encodeURIComponent(q)}`,
       '下厨房': (q) => `https://www.xiachufang.com/search/?keyword=${encodeURIComponent(q)}`,
       '百度地图美食': (q) => `https://map.baidu.com/search/${encodeURIComponent(q + ' 餐厅')}`,  // 地图搜附近餐厅
       '高德地图美食': (q) => `https://ditu.amap.com/search?query=${encodeURIComponent(q + ' 餐厅')}`,  // 高德地图搜餐厅
       '饿了么': (q) => `https://www.ele.me/search/${encodeURIComponent(q)}`,  // 外卖平台
       '百度美食': (q) => `https://www.baidu.com/s?wd=${encodeURIComponent(q)} 美食 附近`,
       '豆果美食': (q) => `https://www.douguo.com/caipu/${encodeURIComponent(q)}`,  // 菜谱平台 - 正确URL格式
+      '小红书美食': (q) => `https://www.xiaohongshu.com/search_result?keyword=${encodeURIComponent(q + ' 美食')}&type=note`,  // 美食攻略
 
       // 旅游/出行平台 - 增加更多选择，去掉需登录的小红书
       '携程': (q) => `https://you.ctrip.com/globalsearch/?keyword=${encodeURIComponent(q)}`,  // 携程正确URL格式
@@ -755,7 +748,7 @@ export function selectBestPlatform(
     zh: {
       entertainment: entertainmentPlatformMap.zh[entertainmentType || 'video'] || ['豆瓣', 'B站', '爱奇艺'],
       shopping: ['什么值得买', '苏宁易购', '拼多多', '唯品会', '当当网', '1688', '淘宝', '京东'],  // 优先无需登录的平台
-      food: ['百度地图美食', '高德地图美食', '饿了么', '下厨房', '豆果美食'],  // 去掉需登录的美团、小红书
+      food: ['百度地图美食', '高德地图美食', '饿了么', '下厨房', '豆果美食', '大众点评', '小红书美食'],  // 增加大众点评、小红书
       travel: ['携程', '马蜂窝', '穷游', '去哪儿', '飞猪', '途牛', '同程旅行', 'Booking.com', 'Agoda'],  // 去掉需登录的小红书
       fitness: ['B站健身', '腾讯视频健身', '优酷健身', '百度地图健身', '高德地图健身', '百度健身']  // 去掉需登录的抖音、小红书
     },
@@ -789,9 +782,9 @@ export function selectFoodPlatformWithRotation(
   suggestedPlatform?: string,
   locale: string = 'zh'
 ): string {
-  // 对于中文环境，使用新的平台列表（去掉需登录的美团、小红书）
+  // 对于中文环境，使用新的平台列表（增加大众点评、小红书美食）
   if (locale === 'zh') {
-    const cnPlatforms = ['百度地图美食', '高德地图美食', '饿了么', '下厨房', '豆果美食'];
+    const cnPlatforms = ['百度地图美食', '高德地图美食', '饿了么', '下厨房', '豆果美食', '大众点评', '小红书美食'];
     if (suggestedPlatform && cnPlatforms.includes(suggestedPlatform)) {
       return suggestedPlatform;
     }

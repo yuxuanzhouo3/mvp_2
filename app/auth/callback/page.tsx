@@ -90,6 +90,9 @@ function AuthCallbackContent() {
                   refreshTokenExpiresIn: 604800,
                 }
               )
+
+              // 首次登录：清除问卷提示的关闭标志，确保问卷入口正确显示
+              localStorage.removeItem('onboarding_prompt_dismissed')
             } catch (error) {
               console.error("[WeChat Callback] Failed to save auth state:", error)
             }

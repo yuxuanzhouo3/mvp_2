@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { isChinaRegion } from "@/lib/config/region";
 import { cloudbaseSignInWithWechat } from "@/lib/auth/cloudbase-auth";
+import { getCloudBaseDatabase, CloudBaseCollections } from "@/lib/database/cloudbase-client";
 
 /**
  * 微信 OAuth 回调处理
@@ -13,7 +14,8 @@ import { cloudbaseSignInWithWechat } from "@/lib/auth/cloudbase-auth";
  * 1. 使用授权码换取 access_token 和 openid
  * 2. 获取微信用户信息
  * 3. 创建或更新本地用户
- * 4. 生成会话 token 并设置 cookie
+ * 4. 查询用户订阅状态
+ * 5. 生成会话 token 并设置 cookie
  */
 export async function POST(request: Request) {
   // 非中国区域返回 404
@@ -99,7 +101,47 @@ export async function POST(request: Request) {
 
     console.log("[WeChat Auth] User signed in:", result.user._id);
 
-    // 4. 设置 auth-token cookie
+    // 4. 查询用户订阅状态
+    let subscriptionData = {
+      pro: result.user.pro || false,
+      plan: result.user.plan || "free",
+      plan_exp: result.user.plan_exp || null,
+      subscription_status: "inactive" as string,
+    };
+
+    try {
+      const db = getCloudBaseDatabase();
+      const now = new Date().toISOString();
+
+      const subscriptionResult = await db
+        .collection(CloudBaseCollections.USER_SUBSCRIPTIONS)
+        .where({
+          user_id: result.user._id,
+          status: "active",
+        })
+        .orderBy("subscription_end", "desc")
+        .limit(1)
+        .get();
+
+      if (subscriptionResult.data && subscriptionResult.data.length > 0) {
+        const subscription = subscriptionResult.data[0];
+        // 检查订阅是否过期
+        if (subscription.subscription_end > now) {
+          subscriptionData = {
+            pro: true,
+            plan: subscription.plan_type || "pro",
+            plan_exp: subscription.subscription_end,
+            subscription_status: "active",
+          };
+          console.log("[WeChat Auth] Found active subscription:", subscription.plan_type);
+        }
+      }
+    } catch (subError) {
+      console.warn("[WeChat Auth] Error checking subscription:", subError);
+      // 订阅查询失败不影响登录
+    }
+
+    // 5. 设置 auth-token cookie
     const cookieStore = await cookies();
     const response = NextResponse.json({
       success: true,
@@ -109,12 +151,15 @@ export async function POST(request: Request) {
         name: result.user.name,
         avatar: result.user.avatar,
         createdAt: result.user.createdAt,
+        // 订阅相关字段
+        subscription_plan: subscriptionData.plan,
+        subscription_status: subscriptionData.subscription_status,
         metadata: {
-          pro: result.user.pro || false,
+          pro: subscriptionData.pro,
           region: result.user.region || "CN",
-          plan: result.user.plan || "free",
-          plan_exp: result.user.plan_exp || null,
-          hide_ads: result.user.hide_ads || false,
+          plan: subscriptionData.plan,
+          plan_exp: subscriptionData.plan_exp,
+          hide_ads: result.user.hide_ads || subscriptionData.pro,
         },
       },
       accessToken: result.accessToken,
