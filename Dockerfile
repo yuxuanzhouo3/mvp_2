@@ -9,16 +9,6 @@ RUN apk add --no-cache libc6-compat && \
 # 设置工作目录
 WORKDIR /app
 
-# ========== 构建时环境变量声明 ==========
-ARG NODE_ENV=production
-ARG NEXT_PUBLIC_DEPLOYMENT_REGION=CN
-ARG NEXT_PUBLIC_WECHAT_CLOUDBASE_ID=cloudbase-build-placeholder
-ARG DISABLE_REACT_PROFILING_ALIAS=true
-ENV NODE_ENV=$NODE_ENV
-ENV NEXT_PUBLIC_DEPLOYMENT_REGION=$NEXT_PUBLIC_DEPLOYMENT_REGION
-ENV NEXT_PUBLIC_WECHAT_CLOUDBASE_ID=$NEXT_PUBLIC_WECHAT_CLOUDBASE_ID
-ENV DISABLE_REACT_PROFILING_ALIAS=$DISABLE_REACT_PROFILING_ALIAS
-
 # 复制包管理文件
 COPY package.json pnpm-lock.yaml ./
 
@@ -28,24 +18,29 @@ RUN pnpm install --frozen-lockfile
 # 复制源代码
 COPY . .
 
-# 1. 声明构建参数 (ARG) 并提供【默认占位符】
-# 关键修改：添加 =... 默认值。
-# 这样即使腾讯云构建时不传这些参数，Docker 构建也能通过，
-# 从而满足 Next.js 构建时对 process.env 的基本检查。
+# ========== 构建阶段环境变量 ==========
+# 仅声明构建时需要的变量
+ARG NODE_ENV=production
+ARG NEXT_PUBLIC_DEPLOYMENT_REGION=CN
+ARG DISABLE_REACT_PROFILING_ALIAS=true
+
+# 构建时占位符（避免 Next.js 构建报错）
 ARG NEXT_PUBLIC_SUPABASE_URL=https://build-placeholder.supabase.co
 ARG NEXT_PUBLIC_SUPABASE_ANON_KEY=build-placeholder-key
+ARG NEXT_PUBLIC_WECHAT_CLOUDBASE_ID=cloudbase-build-placeholder
 
-# 2. 将 ARG 转为 ENV
+# 设置构建环境变量
+ENV NODE_ENV=$NODE_ENV
+ENV NEXT_PUBLIC_DEPLOYMENT_REGION=$NEXT_PUBLIC_DEPLOYMENT_REGION
+ENV DISABLE_REACT_PROFILING_ALIAS=$DISABLE_REACT_PROFILING_ALIAS
 ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
 ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
+ENV NEXT_PUBLIC_WECHAT_CLOUDBASE_ID=$NEXT_PUBLIC_WECHAT_CLOUDBASE_ID
 
 # 构建应用
-# 此时 Next.js 会使用上面的假值完成构建。
-# 只要你的代码里没有在 import 阶段就发起网络请求（通常是在组件 useEffect 或 Server Component 内部发起），
-# 使用假值构建是完全安全的。
 RUN pnpm build
 
-# 生产阶段
+# ========== 生产阶段 ==========
 FROM node:20-alpine AS production
 
 # 安装必要工具和 pnpm
@@ -55,34 +50,41 @@ RUN apk add --no-cache libc6-compat && \
 # 设置工作目录
 WORKDIR /app
 
-# ========== 运行时配置说明 ==========
-# CloudBase 云托管会通过环境变量注入配置
-# 前端通过 /api/auth/config 接口在运行时获取 MY_NEXT_PUBLIC_... 变量
-
-ARG NODE_ENV=production
-ARG NEXT_PUBLIC_DEPLOYMENT_REGION=CN
-ARG DISABLE_REACT_PROFILING_ALIAS=true
-
-ENV NODE_ENV=$NODE_ENV
-ENV NEXT_PUBLIC_DEPLOYMENT_REGION=$NEXT_PUBLIC_DEPLOYMENT_REGION
-ENV DISABLE_REACT_PROFILING_ALIAS=$DISABLE_REACT_PROFILING_ALIAS
-
-# ========== 运行时环境变量说明 ==========
-# 以下环境变量由 CloudBase 云托管在运行时注入，无需在此声明：
-# - NEXT_PUBLIC_WECHAT_CLOUDBASE_ID (CloudBase 环境 ID)
-# - CLOUDBASE_SECRET_ID / CLOUDBASE_SECRET_KEY (CloudBase 密钥)
-# - WECHAT_APP_ID / WECHAT_APP_SECRET (微信登录)
-# - JWT_SECRET / NEXTAUTH_SECRET (认证密钥)
-# - NEXT_PUBLIC_APP_URL (应用 URL)
-# - ALIPAY_* (支付宝支付)
-# - WECHAT_PAY_* (微信支付)
-# - ZHIPU_API_KEY (AI 推荐)
-#
-# 注意：不要用 ENV VAR=${VAR} 的方式声明，否则会在构建时被设为空值
-
-# CloudBase 云托管固定监听端口 3000
+# ========== 运行时环境变量 ==========
+# 只设置固定不变的配置
+ENV NODE_ENV=production
+ENV NEXT_PUBLIC_DEPLOYMENT_REGION=CN
+ENV DISABLE_REACT_PROFILING_ALIAS=true
 ENV HOST=0.0.0.0
 ENV PORT=3000
+
+# ⚠️ 重要：以下环境变量由 CloudBase 云托管在运行时注入，不要在此声明
+# 
+# 认证相关：
+# - NEXT_PUBLIC_WECHAT_CLOUDBASE_ID (CloudBase 环境 ID)
+# - CLOUDBASE_SECRET_ID (CloudBase 密钥 ID)
+# - CLOUDBASE_SECRET_KEY (CloudBase 密钥 Key)
+# - JWT_SECRET (JWT 密钥)
+# - NEXTAUTH_SECRET (NextAuth 密钥)
+#
+# 微信相关：
+# - WECHAT_APP_ID (微信 AppID)
+# - WECHAT_APP_SECRET (微信 AppSecret)
+# - WECHAT_PAY_* (微信支付相关)
+#
+# 数据库相关：
+# - NEXT_PUBLIC_SUPABASE_URL (Supabase URL)
+# - NEXT_PUBLIC_SUPABASE_ANON_KEY (Supabase Key)
+#
+# 其他服务：
+# - NEXT_PUBLIC_APP_URL (应用访问 URL)
+# - ALIPAY_* (支付宝支付相关)
+# - ZHIPU_API_KEY (AI 服务密钥)
+#
+# ❌ 错误示例（会覆盖运行时注入）：
+# ENV NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+#
+# ✅ 正确做法：完全不声明，让云托管注入
 
 # 从构建阶段复制必要的文件
 COPY --from=base /app/package.json /app/pnpm-lock.yaml ./
