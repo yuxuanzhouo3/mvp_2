@@ -12,6 +12,7 @@ ARG NODE_ENV=production
 ARG NEXT_PUBLIC_DEPLOYMENT_REGION=CN
 
 ENV NODE_ENV=$NODE_ENV
+ENV NEXT_PUBLIC_DEPLOYMENT_REGION=$NEXT_PUBLIC_DEPLOYMENT_REGION
 
 # 复制包管理文件
 COPY package.json pnpm-lock.yaml ./
@@ -49,11 +50,14 @@ RUN npm install -g pnpm
 WORKDIR /app
 
 # ========== 运行时配置说明 ==========
-# 你的思路是正确的：真实的配置通过环境变量注入到容器中，
-# 然后前端通过 /api/auth/config 接口在运行时获取这些 MY_NEXT_PUBLIC_... 变量。
+# 真实的配置通过环境变量注入到容器中，
+# 前端通过 /api/auth/config 接口在运行时获取这些 MY_NEXT_PUBLIC_... 变量。
 
 ARG PORT=3000
+ARG NEXT_PUBLIC_DEPLOYMENT_REGION=CN
+
 ENV PORT=$PORT
+ENV NEXT_PUBLIC_DEPLOYMENT_REGION=$NEXT_PUBLIC_DEPLOYMENT_REGION
 
 # 从构建阶段复制必要的文件
 COPY --from=base /app/package.json /app/pnpm-lock.yaml ./
