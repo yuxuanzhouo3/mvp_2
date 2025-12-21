@@ -9,6 +9,8 @@ WORKDIR /app
 
 # ========== 构建时环境变量声明 ==========
 ARG NODE_ENV=production
+ARG NEXT_PUBLIC_DEPLOYMENT_REGION=CN
+
 ENV NODE_ENV=$NODE_ENV
 
 # 复制包管理文件
