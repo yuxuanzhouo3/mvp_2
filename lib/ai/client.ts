@@ -1,5 +1,6 @@
 /**
- * AI 客户端 - 使用智谱 (Zhipu) GLM-4.5-Flash
+ * AI 客户端 - 多模型支持
+ * 优先级: 通义千问 (qwen-max → qwen-plus → qwen-turbo) → 智谱 (glm-4.5-flash)
  */
 
 interface AIRequest {
@@ -16,12 +17,103 @@ interface AIResponse {
   model: string;
 }
 
+// 模型配置
+const QWEN_MODELS = ["qwen-max", "qwen-plus", "qwen-turbo"] as const;
+const ZHIPU_MODEL = "glm-4.5-flash";
+
+// API 端点
+const QWEN_API_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
+const ZHIPU_API_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions";
+
+/**
+ * 检查通义千问 API 是否配置
+ */
+export function isQwenConfigured(): boolean {
+  const apiKey = process.env.QWEN_API_KEY;
+  return !!(apiKey && !apiKey.includes("your_"));
+}
+
 /**
  * 检查智谱 API 是否配置
  */
 export function isZhipuConfigured(): boolean {
   const apiKey = process.env.ZHIPU_API_KEY;
   return !!(apiKey && !apiKey.includes("your_"));
+}
+
+/**
+ * 调用通义千问 API
+ */
+async function callQwenAPI(
+  request: AIRequest,
+  model: (typeof QWEN_MODELS)[number],
+  retryCount: number = 0
+): Promise<string> {
+  const apiKey = process.env.QWEN_API_KEY;
+  const MAX_RETRIES = 2;
+
+  if (!apiKey) {
+    throw new Error("QWEN_API_KEY is not configured");
+  }
+
+  try {
+    console.log(`Calling Qwen API with model: ${model}...`);
+
+    const response = await fetch(QWEN_API_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        messages: request.messages,
+        temperature: request.temperature ?? 0.7,
+        max_tokens: request.maxTokens ?? 2000,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      const statusCode = response.status;
+
+      let errorMessage = errorText;
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorMessage = errorJson.error?.message || errorJson.message || errorText;
+      } catch {
+        // 使用原始错误文本
+      }
+
+      console.error(`Qwen API Error (${model}, Status ${statusCode}):`, errorMessage);
+
+      // 429 限流或 5xx 服务器错误，可以重试
+      if ((statusCode === 429 || statusCode >= 500) && retryCount < MAX_RETRIES) {
+        console.warn(`${model} error (${statusCode}), retrying... (${retryCount + 1}/${MAX_RETRIES})`);
+        await new Promise((resolve) => setTimeout(resolve, 1000 * (retryCount + 1)));
+        return callQwenAPI(request, model, retryCount + 1);
+      }
+
+      throw new Error(`Qwen API (${model}) error: ${statusCode} - ${errorMessage}`);
+    }
+
+    const data = await response.json();
+
+    if (data.choices && data.choices.length > 0) {
+      const content = data.choices[0].message?.content;
+      if (content) {
+        console.log(`✅ Successfully called Qwen API (${model})`);
+        return content;
+      }
+    }
+
+    throw new Error(`Qwen API (${model}) returned no valid content`);
+  } catch (error) {
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error(`Unexpected error calling Qwen API (${model}): ${error}`);
+  }
 }
 
 /**
@@ -40,14 +132,16 @@ async function callZhipuAPI(request: AIRequest, retryCount: number = 0): Promise
   }
 
   try {
-    const response = await fetch("https://open.bigmodel.cn/api/paas/v4/chat/completions", {
+    console.log("Calling Zhipu API...");
+
+    const response = await fetch(ZHIPU_API_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "glm-4.5-flash",
+        model: ZHIPU_MODEL,
         messages: request.messages,
         temperature: request.temperature ?? 0.7,
         max_tokens: request.maxTokens ?? 2000,
@@ -58,40 +152,22 @@ async function callZhipuAPI(request: AIRequest, retryCount: number = 0): Promise
       const errorText = await response.text();
       const statusCode = response.status;
 
-      // 解析错误响应
       let errorMessage = errorText;
       try {
         const errorJson = JSON.parse(errorText);
         errorMessage = errorJson.error?.message || errorJson.msg || errorText;
       } catch {
-        // 继续使用原始错误文本
+        // 使用原始错误文本
       }
 
-      // 详细的错误日志
-      console.error(`Zhipu API Error (Status ${statusCode}):`, {
-        status: statusCode,
-        message: errorMessage,
-        timestamp: new Date().toISOString(),
-        apiKeyExists: !!apiKey,
-      });
+      console.error(`Zhipu API Error (Status ${statusCode}):`, errorMessage);
 
-      // 403 Forbidden - API Key 或权限问题
       if (statusCode === 403) {
-        throw new Error(
-          `Zhipu API access denied (403 Forbidden): ${errorMessage}. Please check your API key and account permissions.`
-        );
+        throw new Error(`Zhipu API access denied (403): ${errorMessage}`);
       }
 
-      // 429 Too Many Requests - 速率限制，可以重试
-      if (statusCode === 429 && retryCount < MAX_RETRIES) {
-        console.warn(`Rate limited, retrying... (${retryCount + 1}/${MAX_RETRIES})`);
-        await new Promise((resolve) => setTimeout(resolve, 1000 * (retryCount + 1)));
-        return callZhipuAPI(request, retryCount + 1);
-      }
-
-      // 500+ 服务器错误，可以重试
-      if (statusCode >= 500 && retryCount < MAX_RETRIES) {
-        console.warn(`Server error (${statusCode}), retrying... (${retryCount + 1}/${MAX_RETRIES})`);
+      if ((statusCode === 429 || statusCode >= 500) && retryCount < MAX_RETRIES) {
+        console.warn(`Zhipu error (${statusCode}), retrying... (${retryCount + 1}/${MAX_RETRIES})`);
         await new Promise((resolve) => setTimeout(resolve, 1000 * (retryCount + 1)));
         return callZhipuAPI(request, retryCount + 1);
       }
@@ -99,25 +175,12 @@ async function callZhipuAPI(request: AIRequest, retryCount: number = 0): Promise
       throw new Error(`Zhipu API error: ${statusCode} - ${errorMessage}`);
     }
 
-    // 智谱 v4 API 响应格式与 OpenAI 兼容
     interface ZhipuResponse {
-      id?: string;
-      created?: number;
-      model?: string;
       choices?: Array<{
-        index: number;
         message: {
-          role: string;
           content: string;
         };
-        finish_reason: string;
       }>;
-      usage?: {
-        prompt_tokens: number;
-        completion_tokens: number;
-        total_tokens: number;
-      };
-      // 旧版 API 格式兼容
       code?: number;
       msg?: string;
       data?: {
@@ -131,52 +194,88 @@ async function callZhipuAPI(request: AIRequest, retryCount: number = 0): Promise
 
     const data: ZhipuResponse = await response.json();
 
-    // 检查是否是旧版 API 响应格式
     if (data.code !== undefined && data.code !== 0) {
       throw new Error(`Zhipu API returned error code ${data.code}: ${data.msg}`);
     }
 
-    // 新版 v4 API 格式（与 OpenAI 兼容）
     if (data.choices && data.choices.length > 0) {
       const content = data.choices[0].message?.content;
       if (content) {
+        console.log("✅ Successfully called Zhipu API");
         return content;
       }
     }
 
-    // 旧版 API 格式兼容
     if (data.data?.choices && data.data.choices.length > 0) {
       return data.data.choices[0].message.content;
     }
 
     throw new Error("Zhipu API returned no valid content");
   } catch (error) {
-    // 重新抛出已知的错误
     if (error instanceof Error) {
       throw error;
     }
-    // 捕获未知错误
     throw new Error(`Unexpected error calling Zhipu API: ${error}`);
   }
 }
 
 /**
- * 通用 AI 调用函数
+ * 通用 AI 调用函数 - 多模型容错策略
+ * 优先级: qwen-max → qwen-plus → qwen-turbo → glm-4.5-flash
  */
 export async function callAI(request: AIRequest): Promise<AIResponse> {
-  if (!isZhipuConfigured()) {
-    throw new Error(
-      "Zhipu API not configured. Please set ZHIPU_API_KEY environment variable."
-    );
+  const errors: string[] = [];
+
+  // 1. 尝试通义千问模型 (按优先级)
+  if (isQwenConfigured()) {
+    for (const model of QWEN_MODELS) {
+      try {
+        const content = await callQwenAPI(request, model);
+        return { content, model };
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        console.warn(`❌ ${model} failed: ${msg}`);
+        errors.push(`${model}: ${msg}`);
+        // 继续尝试下一个模型
+      }
+    }
+  } else {
+    console.warn("⚠️ Qwen API not configured, skipping Qwen models");
   }
 
-  try {
-    console.log("Calling Zhipu API...");
-    const content = await callZhipuAPI(request);
-    console.log("✅ Successfully called Zhipu API");
-    return { content, model: "glm-4.5-flash" };
-  } catch (error) {
-    console.error("❌ Zhipu API failed:", error instanceof Error ? error.message : String(error));
-    throw error;
+  // 2. 尝试智谱模型作为最终备用
+  if (isZhipuConfigured()) {
+    try {
+      const content = await callZhipuAPI(request);
+      return { content, model: ZHIPU_MODEL };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error(`❌ ${ZHIPU_MODEL} failed: ${msg}`);
+      errors.push(`${ZHIPU_MODEL}: ${msg}`);
+    }
+  } else {
+    console.warn("⚠️ Zhipu API not configured");
   }
+
+  // 所有模型都失败
+  throw new Error(
+    `All AI models failed:\n${errors.join("\n")}`
+  );
+}
+
+/**
+ * 获取可用的模型列表
+ */
+export function getAvailableModels(): string[] {
+  const models: string[] = [];
+
+  if (isQwenConfigured()) {
+    models.push(...QWEN_MODELS);
+  }
+
+  if (isZhipuConfigured()) {
+    models.push(ZHIPU_MODEL);
+  }
+
+  return models;
 }

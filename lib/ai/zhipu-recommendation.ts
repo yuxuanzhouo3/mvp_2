@@ -2,7 +2,7 @@ import OpenAI from "openai";
 import { ZhipuAI } from "zhipuai";
 import { isChinaDeployment } from "@/lib/config/deployment.config";
 
-type AIProvider = "openai" | "mistral" | "zhipu";
+type AIProvider = "openai" | "mistral" | "zhipu" | "qwen-max" | "qwen-plus" | "qwen-turbo";
 
 export type AIMessage = {
   role: "system" | "user" | "assistant";
@@ -13,7 +13,13 @@ const DEFAULT_MODELS = {
   openai: process.env.OPENAI_MODEL || "gpt-4o-mini",
   mistral: process.env.MISTRAL_MODEL || "mistral-large-latest",
   zhipu: process.env.ZHIPU_MODEL || "glm-4.5-flash",
+  "qwen-max": "qwen-max",
+  "qwen-plus": "qwen-plus",
+  "qwen-turbo": "qwen-turbo",
 };
+
+// 通义千问 API 端点
+const QWEN_API_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
 
 function hasValidKey(value?: string | null) {
   return Boolean(value && value.trim() && !value.includes("your_"));
@@ -21,7 +27,17 @@ function hasValidKey(value?: string | null) {
 
 function getProviderOrder(): AIProvider[] {
   if (isChinaDeployment()) {
-    return hasValidKey(process.env.ZHIPU_API_KEY) ? ["zhipu"] : [];
+    // CN环境: 优先使用通义千问，智谱作为备用
+    const providers: AIProvider[] = [];
+
+    if (hasValidKey(process.env.QWEN_API_KEY)) {
+      providers.push("qwen-max", "qwen-plus", "qwen-turbo");
+    }
+    if (hasValidKey(process.env.ZHIPU_API_KEY)) {
+      providers.push("zhipu");
+    }
+
+    return providers;
   }
 
   // INTL region: prefer Mistral first, then fall back to OpenAI
@@ -43,6 +59,10 @@ export function isAIProviderConfigured(): boolean {
 
 export function isZhipuConfigured(): boolean {
   return hasValidKey(process.env.ZHIPU_API_KEY);
+}
+
+export function isQwenConfigured(): boolean {
+  return hasValidKey(process.env.QWEN_API_KEY);
 }
 
 async function callAIWithFallback(messages: AIMessage[], temperature = 0.8) {
@@ -75,6 +95,14 @@ async function callAIWithFallback(messages: AIMessage[], temperature = 0.8) {
             provider,
             model: DEFAULT_MODELS.zhipu,
           };
+        case "qwen-max":
+        case "qwen-plus":
+        case "qwen-turbo":
+          return {
+            content: await callQwen(messages, temperature, provider),
+            provider,
+            model: provider,
+          };
       }
     } catch (error) {
       lastError = error;
@@ -83,6 +111,43 @@ async function callAIWithFallback(messages: AIMessage[], temperature = 0.8) {
   }
 
   throw lastError || new Error("All AI providers failed");
+}
+
+async function callQwen(messages: AIMessage[], temperature: number, model: "qwen-max" | "qwen-plus" | "qwen-turbo") {
+  const apiKey = process.env.QWEN_API_KEY;
+  if (!hasValidKey(apiKey)) {
+    throw new Error("QWEN_API_KEY is not configured");
+  }
+
+  console.log(`[AI] Calling Qwen API with model: ${model}...`);
+
+  const response = await fetch(QWEN_API_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey!.trim()}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      messages,
+      temperature,
+      max_tokens: 2000,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Qwen API (${model}) error ${response.status}: ${errorText}`);
+  }
+
+  const data = await response.json();
+  const content = data?.choices?.[0]?.message?.content;
+  if (!content) {
+    throw new Error(`Qwen (${model}) returned empty content`);
+  }
+
+  console.log(`[AI] ✅ Successfully called Qwen API (${model})`);
+  return content;
 }
 
 async function callOpenAI(messages: AIMessage[], temperature: number) {
