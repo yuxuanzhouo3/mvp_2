@@ -1,92 +1,234 @@
-# 使用多阶段构建减小镜像大小
-FROM node:20-alpine AS base
+# =====================================================
+# 构建阶段（仅用于 Next.js build）
+# =====================================================
+FROM node:20-alpine AS builder
 
 # 安装 pnpm
 RUN npm install -g pnpm
 
-# 设置工作目录
 WORKDIR /app
 
-# ========== 构建时环境变量声明 ==========
+# 构建参数（仅 build-time 使用）
 ARG NODE_ENV=production
-ENV NODE_ENV=$NODE_ENV
-
-# 复制包管理文件
-COPY package.json pnpm-lock.yaml ./
-
-# 安装依赖
-RUN pnpm install --frozen-lockfile
-
-# 复制源代码
-COPY . .
-
-# 声明构建参数 (ARG) 并提供【默认占位符】
-# 这样即使腾讯云构建时不传这些参数，Docker 构建也能通过，
-# 从而满足 Next.js 构建时对 process.env 的基本检查。
 ARG NEXT_PUBLIC_SUPABASE_URL=https://build-placeholder.supabase.co
 ARG NEXT_PUBLIC_SUPABASE_ANON_KEY=build-placeholder-key
 ARG NEXT_PUBLIC_WECHAT_CLOUDBASE_ID=cloudbase-build-placeholder
 ARG NEXT_PUBLIC_DEPLOYMENT_REGION=CN
 ARG DISABLE_REACT_PROFILING_ALIAS=true
 
-# 将 ARG 转为 ENV
-ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
-ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
-ENV NEXT_PUBLIC_WECHAT_CLOUDBASE_ID=$NEXT_PUBLIC_WECHAT_CLOUDBASE_ID
-ENV NEXT_PUBLIC_DEPLOYMENT_REGION=$NEXT_PUBLIC_DEPLOYMENT_REGION
-ENV DISABLE_REACT_PROFILING_ALIAS=$DISABLE_REACT_PROFILING_ALIAS
+# ⚠️ 关键点：
+# 这里只在 builder 阶段设置 ENV
+# 这些值不会进入最终镜像
+ENV NODE_ENV=$NODE_ENV \
+    NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL \
+    NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY \
+    NEXT_PUBLIC_WECHAT_CLOUDBASE_ID=$NEXT_PUBLIC_WECHAT_CLOUDBASE_ID \
+    NEXT_PUBLIC_DEPLOYMENT_REGION=$NEXT_PUBLIC_DEPLOYMENT_REGION \
+    DISABLE_REACT_PROFILING_ALIAS=$DISABLE_REACT_PROFILING_ALIAS
 
-# 构建应用
-# 此时 Next.js 会使用上面的假值完成构建。
-# 只要你的代码里没有在 import 阶段就发起网络请求（通常是在组件 useEffect 或 Server Component 内部发起），
-# 使用假值构建是完全安全的。
+# 复制依赖文件
+COPY package.json pnpm-lock.yaml ./
+
+# 安装依赖（含 devDependencies）
+RUN pnpm install --frozen-lockfile
+
+# 复制源代码
+COPY . .
+
+# 构建 Next.js
 RUN pnpm build
 
-# 生产阶段
-FROM node:20-alpine AS production
+
+
+# =====================================================
+# 生产阶段（完全依赖 CloudBase 注入）
+# =====================================================
+FROM node:20-alpine AS runner
 
 # 安装 pnpm
 RUN npm install -g pnpm
 
-# 设置工作目录
 WORKDIR /app
 
-# ========== 运行时配置说明 ==========
-# CloudBase 云托管会通过环境变量注入真实配置
-# 前端通过 /api/auth/config 接口在运行时获取这些环境变量
-# 
-# 以下环境变量由 CloudBase 云托管在运行时注入，不要在此声明：
-# - NEXT_PUBLIC_WECHAT_CLOUDBASE_ID (CloudBase 环境 ID)
-# - CLOUDBASE_SECRET_ID / CLOUDBASE_SECRET_KEY (CloudBase 密钥)
-# - NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY (数据库)
-# - WECHAT_APP_ID / WECHAT_APP_SECRET (微信登录)
-# - JWT_SECRET / NEXTAUTH_SECRET (认证密钥)
-# - NEXT_PUBLIC_APP_URL (应用 URL)
-# - ALIPAY_* / WECHAT_PAY_* (支付相关)
-# - ZHIPU_API_KEY (AI 服务)
+# ❌ 不声明任何 NEXT_PUBLIC_* / Supabase / 微信 / AI 相关 ENV
+# ❌ 不声明 NODE_ENV（CloudBase 会注入）
+# ❌ 不声明 APP_URL / JWT_SECRET 等
 
 ARG PORT=3000
 ENV PORT=$PORT
 
-# 从构建阶段复制必要的文件
-COPY --from=base /app/package.json /app/pnpm-lock.yaml ./
-COPY --from=base /app/.next ./.next
-COPY --from=base /app/public ./public
-COPY --from=base /app/next.config.mjs ./
+# 仅复制运行必需文件
+COPY --from=builder /app/package.json /app/pnpm-lock.yaml ./
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/next.config.mjs ./
 
-# 安装生产依赖
+# 仅安装生产依赖
 RUN pnpm install --frozen-lockfile --prod
 
-# 创建非root用户
-RUN addgroup -g 1001 -S nodejs
-RUN adduser -S nextjs -u 1001
+# 非 root 用户
+RUN addgroup -g 1001 -S nodejs \
+ && adduser -S nextjs -u 1001
 
-# 更改文件所有权
 RUN chown -R nextjs:nodejs /app
 USER nextjs
 
-# 暴露端口
 EXPOSE 3000
 
-# 启动应用
+CMD ["pnpm", "start"]
+# =====================================================
+# 构建阶段（仅用于 Next.js build）
+# =====================================================
+FROM node:20-alpine AS builder
+
+# 安装 pnpm
+RUN npm install -g pnpm
+
+WORKDIR /app
+
+# 构建参数（仅 build-time 使用）
+ARG NODE_ENV=production
+ARG NEXT_PUBLIC_SUPABASE_URL=https://build-placeholder.supabase.co
+ARG NEXT_PUBLIC_SUPABASE_ANON_KEY=build-placeholder-key
+ARG NEXT_PUBLIC_WECHAT_CLOUDBASE_ID=cloudbase-build-placeholder
+ARG NEXT_PUBLIC_DEPLOYMENT_REGION=CN
+ARG DISABLE_REACT_PROFILING_ALIAS=true
+
+# ⚠️ 关键点：
+# 这里只在 builder 阶段设置 ENV
+# 这些值不会进入最终镜像
+ENV NODE_ENV=$NODE_ENV \
+    NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL \
+    NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY \
+    NEXT_PUBLIC_WECHAT_CLOUDBASE_ID=$NEXT_PUBLIC_WECHAT_CLOUDBASE_ID \
+    NEXT_PUBLIC_DEPLOYMENT_REGION=$NEXT_PUBLIC_DEPLOYMENT_REGION \
+    DISABLE_REACT_PROFILING_ALIAS=$DISABLE_REACT_PROFILING_ALIAS
+
+# 复制依赖文件
+COPY package.json pnpm-lock.yaml ./
+
+# 安装依赖（含 devDependencies）
+RUN pnpm install --frozen-lockfile
+
+# 复制源代码
+COPY . .
+
+# 构建 Next.js
+RUN pnpm build
+
+
+
+# =====================================================
+# 生产阶段（完全依赖 CloudBase 注入）
+# =====================================================
+FROM node:20-alpine AS runner
+
+# 安装 pnpm
+RUN npm install -g pnpm
+
+WORKDIR /app
+
+# ❌ 不声明任何 NEXT_PUBLIC_* / Supabase / 微信 / AI 相关 ENV
+# ❌ 不声明 NODE_ENV（CloudBase 会注入）
+# ❌ 不声明 APP_URL / JWT_SECRET 等
+
+ARG PORT=3000
+ENV PORT=$PORT
+
+# 仅复制运行必需文件
+COPY --from=builder /app/package.json /app/pnpm-lock.yaml ./
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/next.config.mjs ./
+
+# 仅安装生产依赖
+RUN pnpm install --frozen-lockfile --prod
+
+# 非 root 用户
+RUN addgroup -g 1001 -S nodejs \
+ && adduser -S nextjs -u 1001
+
+RUN chown -R nextjs:nodejs /app
+USER nextjs
+
+EXPOSE 3000
+
+CMD ["pnpm", "start"]
+# =====================================================
+# 构建阶段（仅用于 Next.js build）
+# =====================================================
+FROM node:20-alpine AS builder
+
+# 安装 pnpm
+RUN npm install -g pnpm
+
+WORKDIR /app
+
+# 构建参数（仅 build-time 使用）
+ARG NODE_ENV=production
+ARG NEXT_PUBLIC_SUPABASE_URL=https://build-placeholder.supabase.co
+ARG NEXT_PUBLIC_SUPABASE_ANON_KEY=build-placeholder-key
+ARG NEXT_PUBLIC_WECHAT_CLOUDBASE_ID=cloudbase-build-placeholder
+ARG NEXT_PUBLIC_DEPLOYMENT_REGION=CN
+ARG DISABLE_REACT_PROFILING_ALIAS=true
+
+# ⚠️ 关键点：
+# 这里只在 builder 阶段设置 ENV
+# 这些值不会进入最终镜像
+ENV NODE_ENV=$NODE_ENV \
+    NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL \
+    NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY \
+    NEXT_PUBLIC_WECHAT_CLOUDBASE_ID=$NEXT_PUBLIC_WECHAT_CLOUDBASE_ID \
+    NEXT_PUBLIC_DEPLOYMENT_REGION=$NEXT_PUBLIC_DEPLOYMENT_REGION \
+    DISABLE_REACT_PROFILING_ALIAS=$DISABLE_REACT_PROFILING_ALIAS
+
+# 复制依赖文件
+COPY package.json pnpm-lock.yaml ./
+
+# 安装依赖（含 devDependencies）
+RUN pnpm install --frozen-lockfile
+
+# 复制源代码
+COPY . .
+
+# 构建 Next.js
+RUN pnpm build
+
+
+
+# =====================================================
+# 生产阶段（完全依赖 CloudBase 注入）
+# =====================================================
+FROM node:20-alpine AS runner
+
+# 安装 pnpm
+RUN npm install -g pnpm
+
+WORKDIR /app
+
+# ❌ 不声明任何 NEXT_PUBLIC_* / Supabase / 微信 / AI 相关 ENV
+# ❌ 不声明 NODE_ENV（CloudBase 会注入）
+# ❌ 不声明 APP_URL / JWT_SECRET 等
+
+ARG PORT=3000
+ENV PORT=$PORT
+
+# 仅复制运行必需文件
+COPY --from=builder /app/package.json /app/pnpm-lock.yaml ./
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/next.config.mjs ./
+
+# 仅安装生产依赖
+RUN pnpm install --frozen-lockfile --prod
+
+# 非 root 用户
+RUN addgroup -g 1001 -S nodejs \
+ && adduser -S nextjs -u 1001
+
+RUN chown -R nextjs:nodejs /app
+USER nextjs
+
+EXPOSE 3000
+
 CMD ["pnpm", "start"]
