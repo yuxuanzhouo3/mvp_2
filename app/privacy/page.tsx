@@ -38,8 +38,8 @@ export default function LegalPage() {
           </h1>
           <p className="text-gray-600 mb-8">
             {language === "zh"
-              ? "最后更新：2024年12月"
-              : "Last updated: December 2024"}
+              ? "最后更新：2025年12月"
+              : "Last updated: December 2025"}
           </p>
 
           <Tabs defaultValue="terms" className="w-full">
@@ -100,7 +100,7 @@ export default function LegalPage() {
                     <h2 className="text-2xl font-bold mt-6 mb-4">4. 联系我们</h2>
                     <p className="text-gray-700">如对本服务条款有任何疑问，请联系：</p>
                     <div className="bg-gray-100 p-6 rounded-lg mt-4">
-                      <p className="text-gray-700"><strong>邮箱：</strong>support@chenhui.com</p>
+                      <p className="text-gray-700"><strong>邮箱：</strong>mornscience@gmail.com</p>
                       <p className="text-gray-700 mt-2"><strong>工作时间：</strong>周一至周五 9:00-18:00</p>
                     </div>
                   </section>
@@ -189,7 +189,7 @@ export default function LegalPage() {
                       <li><strong>携带权：</strong>获取您的数据副本</li>
                     </ul>
                     <p className="text-gray-700 mt-4">
-                      如需行使这些权利，请发送邮件至 support@chenhui.com，我们将在 30 个工作日内处理您的请求。
+                      如需行使这些权利，请发送邮件至 mornscience@gmail.com，我们将在 30 个工作日内处理您的请求。
                     </p>
                   </section>
 
@@ -204,7 +204,7 @@ export default function LegalPage() {
                     <h2 className="text-2xl font-bold mt-6 mb-4">7. 联系我们</h2>
                     <p className="text-gray-700">如果您对本隐私政策有任何疑问，请发送邮件至：</p>
                     <div className="bg-gray-100 p-6 rounded-lg mt-4">
-                      <p className="text-gray-700"><strong>邮箱：</strong>support@chenhui.com</p>
+                      <p className="text-gray-700"><strong>邮箱：</strong>mornscience@gmail.com</p>
                     </div>
                   </section>
                 </div>
@@ -272,7 +272,7 @@ export default function LegalPage() {
                   <section>
                     <h2 className="text-2xl font-bold mt-6 mb-4">2. 退款流程</h2>
                     <ul className="list-disc pl-6 space-y-2 text-gray-700">
-                      <li><strong>提交申请：</strong>发送邮件至 support@chenhui.com 提交退款申请</li>
+                      <li><strong>提交申请：</strong>发送邮件至 mornscience@gmail.com 提交退款申请</li>
                       <li><strong>审核处理：</strong>我们将在 1-3 个工作日内审核</li>
                       <li><strong>退款确认：</strong>审核通过后发送退款确认邮件</li>
                       <li><strong>资金退回：</strong>3-7 个工作日内原路退回</li>
