@@ -34,7 +34,7 @@ export default function LegalPage() {
 
         <div className="bg-white rounded-lg shadow-sm p-8">
           <h1 className="text-3xl font-bold mb-2">
-            {language === "zh" ? "法律与政策" : "Legal"}
+            {language === "zh" ? "法律与政策" : "Legal & Policies"}
           </h1>
           <p className="text-gray-600 mb-8">
             {language === "zh"
@@ -45,13 +45,13 @@ export default function LegalPage() {
           <Tabs defaultValue="terms" className="w-full">
             <TabsList className="grid w-full grid-cols-3 mb-8">
               <TabsTrigger value="terms">
-                <span className="text-blue-600">{language === "zh" ? "服务条款" : "Terms"}</span>
+                <span className="text-blue-600">{language === "zh" ? "服务条款" : "Terms of Service"}</span>
               </TabsTrigger>
               <TabsTrigger value="privacy">
-                <span className="text-blue-600">{language === "zh" ? "隐私政策" : "Privacy"}</span>
+                <span className="text-blue-600">{language === "zh" ? "隐私政策" : "Privacy Policy"}</span>
               </TabsTrigger>
               <TabsTrigger value="refund">
-                {language === "zh" ? "退款政策" : "Refund"}
+                {language === "zh" ? "退款政策" : "Refund Policy"}
               </TabsTrigger>
             </TabsList>
 
@@ -108,24 +108,75 @@ export default function LegalPage() {
               ) : (
                 <div className="prose prose-sm max-w-none space-y-6">
                   <section>
-                    <h2 className="text-2xl font-bold mt-6 mb-4">Service</h2>
+                    <h2 className="text-2xl font-bold mt-6 mb-4">1. Service Description</h2>
                     <p className="text-gray-700">
-                      {platformName} provides AI-powered personalized recommendation services. Users can receive intelligent recommendations based on their preferences across multiple categories including entertainment, shopping, food, travel, and fitness.
+                      {platformName} is an AI-powered personalized recommendation platform that provides intelligent recommendation services to users. Our services include but are not limited to:
+                    </p>
+                    <ul className="list-disc pl-6 space-y-2 text-gray-700">
+                      <li><strong>AI Personalized Recommendations</strong> - Smart recommendations based on user preferences</li>
+                      <li><strong>Multi-Category Recommendations</strong> - Entertainment, shopping, food, travel, fitness and more</li>
+                      <li><strong>History Management</strong> - Save and manage your recommendation history</li>
+                      <li><strong>User Profiles</strong> - Build personalized preference profiles</li>
+                    </ul>
+                  </section>
+
+                  <section>
+                    <h2 className="text-2xl font-bold mt-6 mb-4">2. User Account</h2>
+                    <p className="text-gray-700">
+                      To use the full features of {platformName}, you need to register an account. Please provide accurate personal information when registering and be responsible for protecting your account security.
+                    </p>
+                    <p className="text-gray-700 font-semibold mt-4">You agree to:</p>
+                    <ul className="list-disc pl-6 space-y-2 text-gray-700">
+                      <li>Provide true, accurate, and complete registration information</li>
+                      <li>Update your personal information promptly to maintain accuracy</li>
+                      <li>Keep your account password secure</li>
+                      <li>Be responsible for all activities under your account</li>
+                    </ul>
+                  </section>
+
+                  <section>
+                    <h2 className="text-2xl font-bold mt-6 mb-4">3. Paid Services</h2>
+                    <p className="text-gray-700 mb-4">
+                      {platformName} offers both free and paid subscription plans. Paid plans provide more recommendation quotas and premium features.
+                    </p>
+                    <p className="text-gray-700 mt-4 p-3 bg-blue-50 border border-blue-200 rounded">
+                      <strong>Important Notice:</strong> {platformName} does not offer automatic renewal. All subscriptions are manually purchased by users, and no automatic charges will occur when the subscription expires.
                     </p>
                   </section>
 
                   <section>
-                    <h2 className="text-2xl font-bold mt-6 mb-4">User Account</h2>
+                    <h2 className="text-2xl font-bold mt-6 mb-4">4. Acceptable Use</h2>
+                    <p className="text-gray-700">When using our services, you agree not to:</p>
+                    <ul className="list-disc pl-6 space-y-2 text-gray-700">
+                      <li>Use the service for any illegal or unauthorized purpose</li>
+                      <li>Attempt to bypass, disable, or interfere with security features</li>
+                      <li>Share your account credentials with others</li>
+                      <li>Use automated systems to access the service without permission</li>
+                      <li>Engage in any activity that disrupts or interferes with the service</li>
+                    </ul>
+                  </section>
+
+                  <section>
+                    <h2 className="text-2xl font-bold mt-6 mb-4">5. Intellectual Property</h2>
                     <p className="text-gray-700">
-                      Users may log in via Email or Google. You must keep your account credentials secure and are fully responsible for all activity under your account.
+                      All content, features, and functionality of {platformName} are owned by us and are protected by international copyright, trademark, and other intellectual property laws. You may not reproduce, distribute, or create derivative works without our express written permission.
                     </p>
                   </section>
 
                   <section>
-                    <h2 className="text-2xl font-bold mt-6 mb-4">Payment (One-Time Purchase)</h2>
+                    <h2 className="text-2xl font-bold mt-6 mb-4">6. Limitation of Liability</h2>
                     <p className="text-gray-700">
-                      {platformName} offers subscription plans with one-time purchases. There are no automatic renewals. Payment is non-recurring unless explicitly stated.
+                      {platformName} provides recommendations for informational purposes only. We are not liable for any decisions made based on our recommendations. The service is provided &quot;as is&quot; without warranties of any kind.
                     </p>
+                  </section>
+
+                  <section>
+                    <h2 className="text-2xl font-bold mt-6 mb-4">7. Contact Us</h2>
+                    <p className="text-gray-700">If you have any questions about these Terms of Service, please contact us:</p>
+                    <div className="bg-gray-100 p-6 rounded-lg mt-4">
+                      <p className="text-gray-700"><strong>Email:</strong> support@randomlife.com</p>
+                      <p className="text-gray-700 mt-2"><strong>Business Hours:</strong> Monday - Friday, 9:00 AM - 6:00 PM (UTC)</p>
+                    </div>
                   </section>
                 </div>
               )}
@@ -211,45 +262,96 @@ export default function LegalPage() {
               ) : (
                 <div className="prose prose-sm max-w-none space-y-6">
                   <section>
-                    <h2 className="text-2xl font-bold mt-6 mb-4">Information We Collect</h2>
-                    <p className="text-gray-700">We collect only information necessary to provide recommendation services:</p>
+                    <h2 className="text-2xl font-bold mt-6 mb-4">1. Information We Collect</h2>
+                    <p className="text-gray-700">We collect the following types of information:</p>
                     <ul className="list-disc pl-6 space-y-2 text-gray-700">
-                      <li>Login credentials (Email or Google account)</li>
-                      <li>Preference data (used for personalized recommendations)</li>
-                      <li>Basic device information (model, OS version)</li>
-                      <li>Payment records (processed via Stripe / PayPal)</li>
-                    </ul>
-                    <p className="text-gray-700 mt-4">We do not collect advertising, analytics, or tracking data.</p>
-                  </section>
-
-                  <section>
-                    <h2 className="text-2xl font-bold mt-6 mb-4">How We Use Data</h2>
-                    <p className="text-gray-700">Data is used to:</p>
-                    <ul className="list-disc pl-6 space-y-2 text-gray-700">
-                      <li>Provide personalized AI recommendations</li>
-                      <li>Build user preference profiles</li>
-                      <li>Verify and manage payment status</li>
-                      <li>Deliver basic customer support</li>
-                      <li>Ensure service security</li>
-                    </ul>
-                    <p className="text-gray-700 mt-4">We do not sell or share user data with third parties.</p>
-                  </section>
-
-                  <section>
-                    <h2 className="text-2xl font-bold mt-6 mb-4">User Rights</h2>
-                    <p className="text-gray-700">Users may at any time:</p>
-                    <ul className="list-disc pl-6 space-y-2 text-gray-700">
-                      <li>Delete their recommendation history</li>
-                      <li>Delete their account</li>
-                      <li>Request complete deletion of personal data by emailing: support@randomlife.com</li>
+                      <li><strong>Account Information:</strong> Email address, username, password (encrypted), Google account details, profile picture</li>
+                      <li><strong>Usage Data:</strong> Recommendation history, preference settings, access logs</li>
+                      <li><strong>Device Information:</strong> Device model, operating system version, browser type, IP address</li>
+                      <li><strong>Payment Information:</strong> Transaction records processed securely via Stripe / PayPal (we do not store full payment card details)</li>
                     </ul>
                   </section>
 
                   <section>
-                    <h2 className="text-2xl font-bold mt-6 mb-4">Children</h2>
+                    <h2 className="text-2xl font-bold mt-6 mb-4">2. How We Use Your Information</h2>
+                    <p className="text-gray-700">We use the collected information to:</p>
+                    <ul className="list-disc pl-6 space-y-2 text-gray-700">
+                      <li>Provide and improve personalized recommendation services</li>
+                      <li>Build user preference profiles for better recommendations</li>
+                      <li>Process payments and manage subscriptions</li>
+                      <li>Provide technical support and customer service</li>
+                      <li>Ensure security monitoring and fraud prevention</li>
+                      <li>Communicate service updates and important notices</li>
+                    </ul>
+                  </section>
+
+                  <section>
+                    <h2 className="text-2xl font-bold mt-6 mb-4">3. Data Protection</h2>
+                    <p className="text-gray-700">We employ industry-standard security measures to protect your information:</p>
+                    <ul className="list-disc pl-6 space-y-2 text-gray-700">
+                      <li>Data encryption in transit and at rest</li>
+                      <li>Access control and authentication mechanisms</li>
+                      <li>Regular security audits and vulnerability assessments</li>
+                      <li>Secure data centers with physical security controls</li>
+                    </ul>
+                  </section>
+
+                  <section>
+                    <h2 className="text-2xl font-bold mt-6 mb-4">4. Information Sharing</h2>
                     <p className="text-gray-700">
-                      Services are not intended for children under 13. Parents or guardians should ensure compliance.
+                      We do not sell, rent, or trade your personal information. We only share information in the following circumstances:
                     </p>
+                    <ul className="list-disc pl-6 space-y-2 text-gray-700">
+                      <li>With your explicit consent</li>
+                      <li>When required by law or court order</li>
+                      <li>To protect our rights and property</li>
+                      <li>With trusted third-party service providers (e.g., payment processors) under strict confidentiality agreements</li>
+                    </ul>
+                  </section>
+
+                  <section>
+                    <h2 className="text-2xl font-bold mt-6 mb-4">5. Your Rights</h2>
+                    <p className="text-gray-700">Under applicable privacy laws (including GDPR and CCPA), you have the following rights:</p>
+                    <ul className="list-disc pl-6 space-y-2 text-gray-700">
+                      <li><strong>Right to Access:</strong> View and access your personal information</li>
+                      <li><strong>Right to Rectification:</strong> Correct inaccurate information</li>
+                      <li><strong>Right to Erasure:</strong> Delete your account and data</li>
+                      <li><strong>Right to Data Portability:</strong> Obtain a copy of your data</li>
+                      <li><strong>Right to Object:</strong> Object to certain processing of your data</li>
+                    </ul>
+                    <p className="text-gray-700 mt-4">
+                      To exercise these rights, please email support@randomlife.com. We will process your request within 30 business days.
+                    </p>
+                  </section>
+
+                  <section>
+                    <h2 className="text-2xl font-bold mt-6 mb-4">6. Cookies and Tracking</h2>
+                    <p className="text-gray-700">
+                      We use essential cookies to maintain your session and preferences. We do not use advertising or third-party tracking cookies. You can control cookie settings through your browser.
+                    </p>
+                  </section>
+
+                  <section>
+                    <h2 className="text-2xl font-bold mt-6 mb-4">7. Children&apos;s Privacy</h2>
+                    <p className="text-gray-700">
+                      Our services are not intended for children under 13 years of age. We do not knowingly collect personal information from children. If we discover that we have collected information from a child, we will delete it immediately.
+                    </p>
+                  </section>
+
+                  <section>
+                    <h2 className="text-2xl font-bold mt-6 mb-4">8. International Data Transfers</h2>
+                    <p className="text-gray-700">
+                      Your information may be transferred to and processed in countries other than your own. We ensure appropriate safeguards are in place to protect your data in accordance with applicable laws.
+                    </p>
+                  </section>
+
+                  <section>
+                    <h2 className="text-2xl font-bold mt-6 mb-4">9. Contact Us</h2>
+                    <p className="text-gray-700">If you have any questions about this Privacy Policy, please contact us:</p>
+                    <div className="bg-gray-100 p-6 rounded-lg mt-4">
+                      <p className="text-gray-700"><strong>Email:</strong> support@randomlife.com</p>
+                      <p className="text-gray-700 mt-2"><strong>Data Protection Officer:</strong> privacy@randomlife.com</p>
+                    </div>
                   </section>
                 </div>
               )}
@@ -293,39 +395,52 @@ export default function LegalPage() {
               ) : (
                 <div className="prose prose-sm max-w-none space-y-6">
                   <section>
-                    <h2 className="text-2xl font-bold mt-6 mb-4">Refundable Cases</h2>
-                    <p className="text-gray-700">We offer refunds in the following scenarios:</p>
+                    <h2 className="text-2xl font-bold mt-6 mb-4">1. Refund Eligibility</h2>
+                    <p className="text-gray-700">You may request a refund under the following circumstances:</p>
                     <ul className="list-disc pl-6 space-y-2 text-gray-700">
-                      <li>Duplicate payments</li>
-                      <li>Inability to access or use the service for 7 consecutive days post-purchase</li>
-                      <li>Major functional failures</li>
-                      <li>Accidental purchase without using features</li>
+                      <li><strong>Duplicate Charges:</strong> System errors resulting in duplicate payments</li>
+                      <li><strong>Service Outage:</strong> Inability to access or use the service for 7 consecutive days</li>
+                      <li><strong>Feature Mismatch:</strong> Actual functionality significantly differs from advertised features</li>
+                      <li><strong>Accidental Purchase:</strong> Unintended purchase without using any features</li>
                     </ul>
                   </section>
 
                   <section>
-                    <h2 className="text-2xl font-bold mt-6 mb-4">Non-Refundable Cases</h2>
-                    <p className="text-gray-700">Refunds are not provided if:</p>
+                    <h2 className="text-2xl font-bold mt-6 mb-4">2. Refund Process</h2>
+                    <p className="text-gray-700">To request a refund, please follow these steps:</p>
                     <ul className="list-disc pl-6 space-y-2 text-gray-700">
-                      <li>Services have been used extensively</li>
-                      <li>Service issues are due to user network or device problems</li>
-                      <li>Refund requests are submitted long after purchase</li>
-                      <li>Account suspension due to violations</li>
+                      <li><strong>Submit Request:</strong> Email support@randomlife.com with your refund request</li>
+                      <li><strong>Review Period:</strong> We will review your request within 1-3 business days</li>
+                      <li><strong>Confirmation:</strong> You will receive a confirmation email once approved</li>
+                      <li><strong>Fund Return:</strong> Refunds are processed within 3-7 business days via the original payment method</li>
+                    </ul>
+                    <p className="text-gray-700 mt-4">Please include the following information in your request:</p>
+                    <ul className="list-disc pl-6 space-y-2 text-gray-700">
+                      <li>Your account email address</li>
+                      <li>Transaction ID or payment receipt</li>
+                      <li>Reason for refund request</li>
                     </ul>
                   </section>
 
                   <section>
-                    <h2 className="text-2xl font-bold mt-6 mb-4">Refund Procedure</h2>
-                    <p className="text-gray-700">Email: <strong>support@randomlife.com</strong></p>
-                    <p className="text-gray-700 mt-4">Provide:</p>
+                    <h2 className="text-2xl font-bold mt-6 mb-4">3. Non-Refundable Cases</h2>
+                    <p className="text-gray-700">Refunds will not be provided in the following situations:</p>
                     <ul className="list-disc pl-6 space-y-2 text-gray-700">
-                      <li>Account details</li>
-                      <li>Payment proof</li>
-                      <li>Refund reason</li>
+                      <li>Request submitted beyond the refund time limit (30 days after purchase)</li>
+                      <li>Service features have been extensively used</li>
+                      <li>Issues caused by user&apos;s own network or device problems</li>
+                      <li>Account terminated due to Terms of Service violations</li>
+                      <li>Change of mind after significant use of the service</li>
                     </ul>
-                    <p className="text-gray-700 mt-4">
-                      Review takes 1-3 business days. Refunds are returned via original payment method within 3-7 business days.
-                    </p>
+                  </section>
+
+                  <section>
+                    <h2 className="text-2xl font-bold mt-6 mb-4">4. Contact Us</h2>
+                    <p className="text-gray-700">For refund inquiries, please contact:</p>
+                    <div className="bg-gray-100 p-6 rounded-lg mt-4">
+                      <p className="text-gray-700"><strong>Email:</strong> support@randomlife.com</p>
+                      <p className="text-gray-700 mt-2"><strong>Response Time:</strong> Within 24-48 hours</p>
+                    </div>
                   </section>
                 </div>
               )}

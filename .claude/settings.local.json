@@ -42,7 +42,8 @@
       "Bash(npm install:*)",
       "Bash(pnpm add:*)",
       "Bash(pnpm install:*)",
-      "Bash(powershell -Command:*)"
+      "Bash(powershell -Command:*)",
+      "Bash(npx eslint:*)"
     ],
     "deny": [],
     "ask": []
