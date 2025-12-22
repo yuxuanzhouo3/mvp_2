@@ -161,15 +161,41 @@ export async function POST(request: NextRequest) {
 
     // 更新用户订阅状态
     const daysToAdd = billingCycle === "yearly" ? 365 : 30;
-    
-    // 检查是否已有订阅记录（不限制状态和时间）
+    const daysInMs = daysToAdd * 24 * 60 * 60 * 1000;
+
+    // 检查是否已有相同订阅类型的记录
     const { data: existingSubscription, error: subQueryError } = await supabaseAdmin
       .from("user_subscriptions")
       .select("*")
       .eq("user_id", user.id)
+      .eq("plan_type", planType)
       .order("created_at", { ascending: false })
       .limit(1)
       .single();
+
+    // 检查是否是升级场景（从 pro 升级到 enterprise）
+    let isUpgrade = false;
+    if (planType === "enterprise") {
+      const { data: lowerPlanSubscription } = await supabaseAdmin
+        .from("user_subscriptions")
+        .select("*")
+        .eq("user_id", user.id)
+        .eq("status", "active")
+        .eq("plan_type", "pro")
+        .gte("subscription_end", new Date().toISOString())
+        .single();
+
+      if (lowerPlanSubscription) {
+        isUpgrade = true;
+        // 将旧的 pro 订阅标记为 inactive
+        await supabaseAdmin
+          .from("user_subscriptions")
+          .update({ status: "inactive", updated_at: now })
+          .eq("id", lowerPlanSubscription.id);
+
+        console.log(`[Payment Confirm] User ${user.id} upgrading from pro to enterprise. Deactivated pro subscription.`);
+      }
+    }
 
     let subscriptionEnd: Date;
 
@@ -177,23 +203,21 @@ export async function POST(request: NextRequest) {
       console.error("[Payment Confirm] Error checking subscription:", subQueryError);
     }
 
-    if (existingSubscription) {
-      // 用户已有订阅记录
+    if (existingSubscription && !isUpgrade) {
+      // 用户已有相同类型的订阅记录，且不是升级场景
       const currentEnd = new Date(existingSubscription.subscription_end);
       const nowDate = new Date();
-      
+
       // 如果当前订阅还有效，则叠加时间
       if (currentEnd > nowDate && existingSubscription.status === "active") {
-        subscriptionEnd = currentEnd;
-        subscriptionEnd.setDate(subscriptionEnd.getDate() + daysToAdd);
-        console.log(`[Payment Confirm] Extending subscription to: ${subscriptionEnd.toISOString()}`);
+        subscriptionEnd = new Date(currentEnd.getTime() + daysInMs);
+        console.log(`[Payment Confirm] Extending ${planType} subscription to: ${subscriptionEnd.toISOString()}`);
       } else {
         // 订阅已过期，从现在开始计算
-        subscriptionEnd = new Date();
-        subscriptionEnd.setDate(subscriptionEnd.getDate() + daysToAdd);
-        console.log(`[Payment Confirm] Reactivating subscription to: ${subscriptionEnd.toISOString()}`);
+        subscriptionEnd = new Date(Date.now() + daysInMs);
+        console.log(`[Payment Confirm] Reactivating ${planType} subscription to: ${subscriptionEnd.toISOString()}`);
       }
-      
+
       // 更新现有订阅记录
       const { error: updateSubError } = await supabaseAdmin
         .from("user_subscriptions")
@@ -209,14 +233,17 @@ export async function POST(request: NextRequest) {
       if (updateSubError) {
         console.error("[Payment Confirm] Error updating subscription:", updateSubError);
       } else {
-        console.log(`[Payment Confirm] Updated subscription ${existingSubscription.id}`);
+        console.log(`[Payment Confirm] Updated ${planType} subscription ${existingSubscription.id}`);
       }
     } else {
-      // 创建新订阅记录
-      subscriptionEnd = new Date();
-      subscriptionEnd.setDate(subscriptionEnd.getDate() + daysToAdd);
-      console.log(`[Payment Confirm] Creating new subscription ending at: ${subscriptionEnd.toISOString()}`);
-      
+      // 创建新订阅记录（没有相同类型订阅或是升级场景）
+      subscriptionEnd = new Date(Date.now() + daysInMs);
+      if (isUpgrade) {
+        console.log(`[Payment Confirm] User ${user.id} upgraded to ${planType}, new subscription ending at: ${subscriptionEnd.toISOString()}`);
+      } else {
+        console.log(`[Payment Confirm] Creating new ${planType} subscription ending at: ${subscriptionEnd.toISOString()}`);
+      }
+
       const { error: insertSubError } = await supabaseAdmin
         .from("user_subscriptions")
         .insert({
@@ -232,7 +259,7 @@ export async function POST(request: NextRequest) {
       if (insertSubError) {
         console.error("[Payment Confirm] Error inserting subscription:", insertSubError);
       } else {
-        console.log(`[Payment Confirm] Inserted new subscription for user ${user.id}`);
+        console.log(`[Payment Confirm] Inserted new ${planType} subscription for user ${user.id}`);
       }
     }
 

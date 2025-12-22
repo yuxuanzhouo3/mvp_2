@@ -174,7 +174,7 @@ export default function LegalPage() {
                     <h2 className="text-2xl font-bold mt-6 mb-4">7. Contact Us</h2>
                     <p className="text-gray-700">If you have any questions about these Terms of Service, please contact us:</p>
                     <div className="bg-gray-100 p-6 rounded-lg mt-4">
-                      <p className="text-gray-700"><strong>Email:</strong> support@randomlife.com</p>
+                      <p className="text-gray-700"><strong>Email:</strong> mornscience@gmail.com</p>
                       <p className="text-gray-700 mt-2"><strong>Business Hours:</strong> Monday - Friday, 9:00 AM - 6:00 PM (UTC)</p>
                     </div>
                   </section>
@@ -320,7 +320,7 @@ export default function LegalPage() {
                       <li><strong>Right to Object:</strong> Object to certain processing of your data</li>
                     </ul>
                     <p className="text-gray-700 mt-4">
-                      To exercise these rights, please email support@randomlife.com. We will process your request within 30 business days.
+                      To exercise these rights, please email mornscience@gmail.com. We will process your request within 30 business days.
                     </p>
                   </section>
 
@@ -349,8 +349,8 @@ export default function LegalPage() {
                     <h2 className="text-2xl font-bold mt-6 mb-4">9. Contact Us</h2>
                     <p className="text-gray-700">If you have any questions about this Privacy Policy, please contact us:</p>
                     <div className="bg-gray-100 p-6 rounded-lg mt-4">
-                      <p className="text-gray-700"><strong>Email:</strong> support@randomlife.com</p>
-                      <p className="text-gray-700 mt-2"><strong>Data Protection Officer:</strong> privacy@randomlife.com</p>
+                      <p className="text-gray-700"><strong>Email:</strong> mornscience@gmail.com</p>
+                      <p className="text-gray-700 mt-2"><strong>Data Protection Officer:</strong> mornscience@gmail.com</p>
                     </div>
                   </section>
                 </div>
@@ -409,7 +409,7 @@ export default function LegalPage() {
                     <h2 className="text-2xl font-bold mt-6 mb-4">2. Refund Process</h2>
                     <p className="text-gray-700">To request a refund, please follow these steps:</p>
                     <ul className="list-disc pl-6 space-y-2 text-gray-700">
-                      <li><strong>Submit Request:</strong> Email support@randomlife.com with your refund request</li>
+                      <li><strong>Submit Request:</strong> Email mornscience@gmail.com with your refund request</li>
                       <li><strong>Review Period:</strong> We will review your request within 1-3 business days</li>
                       <li><strong>Confirmation:</strong> You will receive a confirmation email once approved</li>
                       <li><strong>Fund Return:</strong> Refunds are processed within 3-7 business days via the original payment method</li>
@@ -438,7 +438,7 @@ export default function LegalPage() {
                     <h2 className="text-2xl font-bold mt-6 mb-4">4. Contact Us</h2>
                     <p className="text-gray-700">For refund inquiries, please contact:</p>
                     <div className="bg-gray-100 p-6 rounded-lg mt-4">
-                      <p className="text-gray-700"><strong>Email:</strong> support@randomlife.com</p>
+                      <p className="text-gray-700"><strong>Email:</strong> mornscience@gmail.com</p>
                       <p className="text-gray-700 mt-2"><strong>Response Time:</strong> Within 24-48 hours</p>
                     </div>
                   </section>

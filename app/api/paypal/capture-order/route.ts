@@ -166,15 +166,41 @@ export async function POST(request: NextRequest) {
       const { user_id, metadata } = paymentRecord;
       const days = metadata?.billingCycle === "yearly" ? 365 : 30;
       const daysInMs = days * 24 * 60 * 60 * 1000;
+      const newPlanType = metadata?.planType || "pro";
 
-      // 检查用户是否已有活跃订阅
+      // 检查用户是否已有相同订阅类型的活跃订阅
       const { data: existingSubscription, error: fetchError } = await supabaseAdmin
         .from("user_subscriptions")
         .select("*")
         .eq("user_id", user_id)
         .eq("status", "active")
+        .eq("plan_type", newPlanType)
         .gte("subscription_end", new Date().toISOString())
         .single();
+
+      // 检查是否是升级场景（从 pro 升级到 enterprise）
+      let isUpgrade = false;
+      if (newPlanType === "enterprise") {
+        const { data: lowerPlanSubscription } = await supabaseAdmin
+          .from("user_subscriptions")
+          .select("*")
+          .eq("user_id", user_id)
+          .eq("status", "active")
+          .eq("plan_type", "pro")
+          .gte("subscription_end", new Date().toISOString())
+          .single();
+
+        if (lowerPlanSubscription) {
+          isUpgrade = true;
+          // 将旧的 pro 订阅标记为 inactive
+          await supabaseAdmin
+            .from("user_subscriptions")
+            .update({ status: "inactive", updated_at: new Date().toISOString() })
+            .eq("id", lowerPlanSubscription.id);
+
+          console.log(`User ${user_id} upgrading from pro to enterprise. Deactivated pro subscription.`);
+        }
+      }
 
       let subscriptionEnd: Date;
 
@@ -182,15 +208,19 @@ export async function POST(request: NextRequest) {
         console.error("Error checking existing subscription:", fetchError);
       }
 
-      if (existingSubscription) {
-        // 用户已有活跃订阅，叠加时间
-        console.log(`User ${user_id} has existing subscription ending at: ${existingSubscription.subscription_end}`);
+      if (existingSubscription && !isUpgrade) {
+        // 用户已有相同类型的活跃订阅，叠加时间
+        console.log(`User ${user_id} has existing ${newPlanType} subscription ending at: ${existingSubscription.subscription_end}`);
         subscriptionEnd = new Date(new Date(existingSubscription.subscription_end).getTime() + daysInMs);
-        console.log(`Extended subscription to: ${subscriptionEnd.toISOString()}`);
+        console.log(`Extended ${newPlanType} subscription to: ${subscriptionEnd.toISOString()}`);
       } else {
-        // 用户没有活跃订阅，创建新订阅
+        // 用户没有相同类型的活跃订阅，或者是升级场景，从当前时间开始计算新订阅
         subscriptionEnd = new Date(Date.now() + daysInMs);
-        console.log(`Created new subscription for user ${user_id} ending at: ${subscriptionEnd.toISOString()}`);
+        if (isUpgrade) {
+          console.log(`User ${user_id} upgraded to ${newPlanType}, new subscription ending at: ${subscriptionEnd.toISOString()}`);
+        } else {
+          console.log(`Created new ${newPlanType} subscription for user ${user_id} ending at: ${subscriptionEnd.toISOString()}`);
+        }
       }
 
       const { error: subscriptionError } = await supabaseAdmin
@@ -199,7 +229,7 @@ export async function POST(request: NextRequest) {
           user_id,
           status: "active",
           subscription_end: subscriptionEnd.toISOString(),
-          plan_type: metadata?.planType || "pro",
+          plan_type: newPlanType,
           currency,
           updated_at: new Date().toISOString(),
         });
@@ -210,12 +240,11 @@ export async function POST(request: NextRequest) {
       }
 
       // 同时更新用户的元数据，以便前端能立即显示正确的订阅状态
-      const planType = metadata?.planType || "pro";
       const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
         user_id,
         {
           user_metadata: {
-            subscription_plan: planType,
+            subscription_plan: newPlanType,
             subscription_status: "active",
             subscription_end: subscriptionEnd.toISOString(),
           }

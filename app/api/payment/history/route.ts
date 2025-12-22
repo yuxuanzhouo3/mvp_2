@@ -144,7 +144,7 @@ async function getPaymentHistoryINTL(userId: string, page: number, pageSize: num
   // 查询支付记录 - 显示completed状态和PayPal的pending状态（可能需要手动确认）
   const { data: payments, error } = await supabaseAdmin
     .from("payments")
-    .select("id, created_at, amount, currency, status, payment_method, transaction_id, user_id")
+    .select("id, created_at, amount, currency, status, payment_method, transaction_id, user_id, metadata")
     .eq("user_id", userId)
     .or("status.eq.completed,and(status.eq.pending,payment_method.eq.paypal)")
     .order("created_at", { ascending: false })
@@ -186,13 +186,26 @@ async function getPaymentHistoryINTL(userId: string, page: number, pageSize: num
           ? "PayPal"
           : method || "";
 
+    // 从 metadata 中提取订阅信息
+    const metadata = p.metadata || {};
+    const planType = metadata.planType || metadata.plan_type || metadata.tier || "pro";
+    const billingCycle = metadata.billingCycle || metadata.billing_cycle || "monthly";
+
+    // 生成描述
+    let description = "Subscription payment";
+    if (planType) {
+      const planName = planType.toLowerCase() === "enterprise" ? "Max Enterprise" : "Pro";
+      const cycleName = billingCycle === "yearly" ? "Annual" : "Monthly";
+      description = `${planName} - ${cycleName}`;
+    }
+
     return {
       id: p.id,
       date: p.created_at,
       amount: parseFloat(String(p.amount || "0")),
       currency: p.currency || "USD",
       status: uiStatus,
-      description: "Subscription payment",
+      description,
       paymentMethod,
       transactionId: p.transaction_id,
       invoiceUrl: null as string | null,

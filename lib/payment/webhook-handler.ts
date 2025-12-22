@@ -666,19 +666,45 @@ async function updateUserSubscription(userId: string, amount: number, currency: 
       billingCycle,
     });
     const daysToAdd = billingCycle === "yearly" ? 365 : 30;
+    const daysInMs = daysToAdd * 24 * 60 * 60 * 1000;
     const requestedEnd = metadata?.subscriptionEnd ? new Date(metadata.subscriptionEnd) : null;
     const statusToSet: AppSubscriptionStatus = metadata?.status || "active";
     const isStatusActive = statusToSet === "active";
     const normalizedCurrency = currency?.toUpperCase?.() || "USD";
 
-    // 首先检查用户是否已有活跃订阅
+    // 检查用户是否已有相同订阅类型的活跃订阅
     const { data: existingSubscription, error: fetchError } = await supabaseAdmin
       .from("user_subscriptions")
       .select("*")
       .eq("user_id", userId)
       .eq("status", "active")
+      .eq("plan_type", planType)
       .gte("subscription_end", new Date().toISOString())
       .single();
+
+    // 检查是否是升级场景（从 pro 升级到 enterprise）
+    let isUpgrade = false;
+    if (planType === "enterprise") {
+      const { data: lowerPlanSubscription } = await supabaseAdmin
+        .from("user_subscriptions")
+        .select("*")
+        .eq("user_id", userId)
+        .eq("status", "active")
+        .eq("plan_type", "pro")
+        .gte("subscription_end", new Date().toISOString())
+        .single();
+
+      if (lowerPlanSubscription) {
+        isUpgrade = true;
+        // 将旧的 pro 订阅标记为 inactive
+        await supabaseAdmin
+          .from("user_subscriptions")
+          .update({ status: "inactive", updated_at: new Date().toISOString() })
+          .eq("id", lowerPlanSubscription.id);
+
+        console.log(`User ${userId} upgrading from pro to enterprise. Deactivated pro subscription.`);
+      }
+    }
 
     let subscriptionEnd: Date;
     let isNewSubscription = false;
@@ -689,30 +715,30 @@ async function updateUserSubscription(userId: string, amount: number, currency: 
     }
 
     if (requestedEnd) {
-      if (existingSubscription) {
+      if (existingSubscription && !isUpgrade) {
         const currentEnd = new Date(existingSubscription.subscription_end);
         subscriptionEnd = currentEnd > requestedEnd ? currentEnd : requestedEnd;
       } else {
         isNewSubscription = true;
         subscriptionEnd = requestedEnd;
       }
-    } else if (existingSubscription && isStatusActive) {
-      // 用户已有活跃订阅，叠加时间
-      console.log(`User ${userId} has existing subscription ending at: ${existingSubscription.subscription_end}`);
+    } else if (existingSubscription && isStatusActive && !isUpgrade) {
+      // 用户已有相同类型的活跃订阅，且不是升级场景，叠加时间
+      console.log(`User ${userId} has existing ${planType} subscription ending at: ${existingSubscription.subscription_end}`);
 
-      subscriptionEnd = new Date(existingSubscription.subscription_end);
-      subscriptionEnd.setDate(subscriptionEnd.getDate() + daysToAdd);
+      subscriptionEnd = new Date(new Date(existingSubscription.subscription_end).getTime() + daysInMs);
 
-      console.log(`Extended subscription to: ${subscriptionEnd.toISOString()}`);
+      console.log(`Extended ${planType} subscription to: ${subscriptionEnd.toISOString()}`);
     } else if (existingSubscription && !isStatusActive) {
       subscriptionEnd = new Date(existingSubscription.subscription_end);
     } else {
       isNewSubscription = true;
-      subscriptionEnd = new Date();
-      if (isStatusActive) {
-        subscriptionEnd.setDate(subscriptionEnd.getDate() + daysToAdd);
+      subscriptionEnd = new Date(Date.now() + (isStatusActive ? daysInMs : 0));
+      if (isUpgrade) {
+        console.log(`User ${userId} upgraded to ${planType}, new subscription ending at: ${subscriptionEnd.toISOString()}`);
+      } else {
+        console.log(`Created new ${planType} subscription for user ${userId} ending at: ${subscriptionEnd.toISOString()}`);
       }
-      console.log(`Created new subscription for user ${userId} ending at: ${subscriptionEnd.toISOString()}`);
     }
 
     // 更新或创建订阅记录
