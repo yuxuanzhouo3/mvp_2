@@ -247,17 +247,8 @@ export function BillingHistory() {
         description: language === "zh" ? "订单已取消" : "Payment cancelled successfully",
       });
 
-      // 在CN环境，删除记录后直接从列表中移除
-      if (isCN) {
-        setRecords((prev) => prev.filter((r) => r.id !== recordId));
-      } else {
-        // 在INTL环境，更新状态为failed
-        setRecords((prev) =>
-          prev.map((r) =>
-            r.id === recordId ? { ...r, status: "failed" as const } : r
-          )
-        );
-      }
+      // 删除记录后直接从列表中移除
+      setRecords((prev) => prev.filter((r) => r.id !== recordId));
     } catch (error: any) {
       console.error("Cancel order error:", error);
       toast({
@@ -373,19 +364,35 @@ export function BillingHistory() {
                       <TableCell>{getStatusBadge(record.status)}</TableCell>
                       <TableCell>
                         {record.status === "pending" && record.paymentMethod === "PayPal" && !isCN && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleConfirmPayPal(record)}
-                            disabled={processingId === record.id}
-                          >
-                            {processingId === record.id ? (
-                              <RefreshCw className="h-3 w-3 animate-spin mr-1" />
-                            ) : (
-                              <CheckCircle className="h-3 w-3 mr-1" />
-                            )}
-                            {language === "zh" ? "确认支付" : "Confirm"}
-                          </Button>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleConfirmPayPal(record)}
+                              disabled={processingId === record.id}
+                            >
+                              {processingId === record.id ? (
+                                <RefreshCw className="h-3 w-3 animate-spin mr-1" />
+                              ) : (
+                                <CheckCircle className="h-3 w-3 mr-1" />
+                              )}
+                              {language === "zh" ? "确认支付" : "Confirm"}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleCancelOrder(record.id)}
+                              disabled={processingId === record.id}
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                            >
+                              {processingId === record.id ? (
+                                <RefreshCw className="h-3 w-3 animate-spin mr-1" />
+                              ) : (
+                                <Trash2 className="h-3 w-3 mr-1" />
+                              )}
+                              {language === "zh" ? "取消订单" : "Cancel"}
+                            </Button>
+                          </div>
                         )}
                         {record.status === "pending" && isCN && (
                           <Button

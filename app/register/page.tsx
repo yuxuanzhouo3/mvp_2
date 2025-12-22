@@ -32,8 +32,8 @@ export default function RegisterPage() {
   const isChina = isChinaRegion()
 
   const validateForm = (): boolean => {
-    // 中国区域必须同意隐私政策
-    if (isChina && !agreeToPrivacy) {
+    // 所有区域都必须同意隐私政策
+    if (!agreeToPrivacy) {
       setError(isChineseLanguage ? '请阅读并同意隐私政策和服务条款' : 'Please read and agree to the Privacy Policy and Terms of Service')
       return false
     }
@@ -243,7 +243,7 @@ export default function RegisterPage() {
               />
             </div>
 
-            {/* 隐私政策同意 - 中国版本强制同意 */}
+            {/* 隐私政策同意 - 所有版本都强制同意 */}
             <div className="flex items-start gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
               <Checkbox
                 id="privacy-agree"
@@ -261,7 +261,7 @@ export default function RegisterPage() {
                     我已阅读并同意{' '}
                     <Link
                       href="/privacy"
-                      className="text-primary hover:underline"
+                      className="text-blue-600 hover:text-blue-700 hover:underline font-medium"
                       onClick={(e) => e.stopPropagation()}
                     >
                       《隐私政策》
@@ -269,19 +269,18 @@ export default function RegisterPage() {
                     {' '}和{' '}
                     <Link
                       href="/privacy"
-                      className="text-primary hover:underline"
+                      className="text-blue-600 hover:text-blue-700 hover:underline font-medium"
                       onClick={(e) => e.stopPropagation()}
                     >
                       《服务条款》
                     </Link>
-                    {isChina && <span className="text-red-600 ml-1">*</span>}
                   </>
                 ) : (
                   <>
-                    I agree to the{' '}
+                    I have read and agree to the{' '}
                     <Link
                       href="/privacy"
-                      className="text-primary hover:underline"
+                      className="text-blue-600 hover:text-blue-700 hover:underline font-medium"
                       onClick={(e) => e.stopPropagation()}
                     >
                       Privacy Policy
@@ -289,13 +288,14 @@ export default function RegisterPage() {
                     {' '}and{' '}
                     <Link
                       href="/privacy"
-                      className="text-primary hover:underline"
+                      className="text-blue-600 hover:text-blue-700 hover:underline font-medium"
                       onClick={(e) => e.stopPropagation()}
                     >
                       Terms of Service
                     </Link>
                   </>
                 )}
+                <span className="text-red-600 ml-1">*</span>
               </label>
             </div>
 

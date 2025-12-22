@@ -52,24 +52,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 更新支付状态为 failed
-    const { error: updateError } = await supabaseAdmin
+    // 删除支付记录
+    const { error: deleteError } = await supabaseAdmin
       .from("payments")
-      .update({
-        status: "failed",
-        updated_at: new Date().toISOString(),
-      })
+      .delete()
       .eq("id", paymentId);
 
-    if (updateError) {
-      console.error("Error cancelling payment:", updateError);
+    if (deleteError) {
+      console.error("Error cancelling payment:", deleteError);
       return NextResponse.json(
         { success: false, error: "Failed to cancel payment" },
         { status: 500 }
       );
     }
 
-    console.log(`Payment cancelled successfully: ${paymentId}`);
+    console.log(`Payment deleted successfully: ${paymentId}`);
 
     return NextResponse.json({
       success: true,

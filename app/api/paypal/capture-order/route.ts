@@ -165,6 +165,7 @@ export async function POST(request: NextRequest) {
     } else if (paymentRecord) {
       const { user_id, metadata } = paymentRecord;
       const days = metadata?.billingCycle === "yearly" ? 365 : 30;
+      const daysInMs = days * 24 * 60 * 60 * 1000;
 
       // 检查用户是否已有活跃订阅
       const { data: existingSubscription, error: fetchError } = await supabaseAdmin
@@ -184,13 +185,11 @@ export async function POST(request: NextRequest) {
       if (existingSubscription) {
         // 用户已有活跃订阅，叠加时间
         console.log(`User ${user_id} has existing subscription ending at: ${existingSubscription.subscription_end}`);
-        subscriptionEnd = new Date(existingSubscription.subscription_end);
-        subscriptionEnd.setDate(subscriptionEnd.getDate() + days);
+        subscriptionEnd = new Date(new Date(existingSubscription.subscription_end).getTime() + daysInMs);
         console.log(`Extended subscription to: ${subscriptionEnd.toISOString()}`);
       } else {
         // 用户没有活跃订阅，创建新订阅
-        subscriptionEnd = new Date();
-        subscriptionEnd.setDate(subscriptionEnd.getDate() + days);
+        subscriptionEnd = new Date(Date.now() + daysInMs);
         console.log(`Created new subscription for user ${user_id} ending at: ${subscriptionEnd.toISOString()}`);
       }
 

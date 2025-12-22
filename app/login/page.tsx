@@ -32,8 +32,8 @@ export default function LoginPage() {
     e.preventDefault()
     setError(null)
 
-    // 中国区域必须同意隐私政策
-    if (isChina && !agreeToPrivacy) {
+    // 所有区域都必须同意隐私政策
+    if (!agreeToPrivacy) {
       setError(isChineseLanguage ? '请阅读并同意隐私政策' : 'Please read and agree to the Privacy Policy')
       return
     }
@@ -164,40 +164,61 @@ export default function LoginPage() {
               />
             </div>
 
-            {/* 隐私政策同意 - 中国版本强制同意 */}
-            {isChina && (
-              <div className="flex items-start gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                <Checkbox
-                  id="privacy-agree-login"
-                  checked={agreeToPrivacy}
-                  onCheckedChange={(checked) => setAgreeToPrivacy(checked as boolean)}
-                  disabled={loading || !!oauthLoading}
-                  className="mt-1"
-                />
-                <label
-                  htmlFor="privacy-agree-login"
-                  className="text-sm text-gray-700 dark:text-gray-300 cursor-pointer flex-1"
-                >
-                  我已阅读并同意{' '}
-                  <Link
-                    href="/privacy"
-                    className="text-primary hover:underline"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    《隐私政策》
-                  </Link>
-                  {' '}和{' '}
-                  <Link
-                    href="/privacy"
-                    className="text-primary hover:underline"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    《服务条款》
-                  </Link>
-                  <span className="text-red-600 ml-1">*</span>
-                </label>
-              </div>
-            )}
+            {/* 隐私政策同意 - 所有版本都强制同意 */}
+            <div className="flex items-start gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+              <Checkbox
+                id="privacy-agree-login"
+                checked={agreeToPrivacy}
+                onCheckedChange={(checked) => setAgreeToPrivacy(checked as boolean)}
+                disabled={loading || !!oauthLoading}
+                className="mt-1"
+              />
+              <label
+                htmlFor="privacy-agree-login"
+                className="text-sm text-gray-700 dark:text-gray-300 cursor-pointer flex-1"
+              >
+                {isChineseLanguage ? (
+                  <>
+                    我已阅读并同意{' '}
+                    <Link
+                      href="/privacy"
+                      className="text-blue-600 hover:text-blue-700 hover:underline font-medium"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      《隐私政策》
+                    </Link>
+                    {' '}和{' '}
+                    <Link
+                      href="/privacy"
+                      className="text-blue-600 hover:text-blue-700 hover:underline font-medium"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      《服务条款》
+                    </Link>
+                  </>
+                ) : (
+                  <>
+                    I have read and agree to the{' '}
+                    <Link
+                      href="/privacy"
+                      className="text-blue-600 hover:text-blue-700 hover:underline font-medium"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      Privacy Policy
+                    </Link>
+                    {' '}and{' '}
+                    <Link
+                      href="/privacy"
+                      className="text-blue-600 hover:text-blue-700 hover:underline font-medium"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      Terms of Service
+                    </Link>
+                  </>
+                )}
+                <span className="text-red-600 ml-1">*</span>
+              </label>
+            </div>
 
             {error && (
               <div className="p-3 rounded-md bg-destructive/10 text-destructive text-sm">
