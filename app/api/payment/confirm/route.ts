@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
     const billingCycle =
       (metadata as any).billingCycle ||
       (metadata as any).billing_cycle ||
-      (amount >= 99 ? "yearly" : "monthly");
+      (amount >= 20 ? "yearly" : "monthly"); // Pro yearly: $29.99, Enterprise yearly: $69.99
     const planType =
       (metadata as any).planType ||
       (metadata as any).tier ||

@@ -659,7 +659,7 @@ async function updateUserSubscription(userId: string, amount: number, currency: 
     const billingCycle =
       metadata?.billingCycle ||
       metadata?.billing_cycle ||
-      (amount >= 99 ? "yearly" : "monthly");
+      (amount >= 20 ? "yearly" : "monthly"); // Pro yearly: $29.99, Enterprise yearly: $69.99
     const planType = resolvePlanType({
       metadata,
       amount,
