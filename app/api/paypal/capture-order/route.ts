@@ -168,59 +168,47 @@ export async function POST(request: NextRequest) {
       const daysInMs = days * 24 * 60 * 60 * 1000;
       const newPlanType = metadata?.planType || "pro";
 
-      // 检查用户是否已有相同订阅类型的活跃订阅
+      // 检查用户是否已有订阅记录（不区分 plan_type，因为数据库有 user_id 唯一约束）
       const { data: existingSubscription, error: fetchError } = await supabaseAdmin
         .from("user_subscriptions")
         .select("*")
         .eq("user_id", user_id)
-        .eq("status", "active")
-        .eq("plan_type", newPlanType)
-        .gte("subscription_end", new Date().toISOString())
         .single();
 
-      // 检查是否是升级场景（从 pro 升级到 enterprise）
-      let isUpgrade = false;
-      if (newPlanType === "enterprise") {
-        const { data: lowerPlanSubscription } = await supabaseAdmin
-          .from("user_subscriptions")
-          .select("*")
-          .eq("user_id", user_id)
-          .eq("status", "active")
-          .eq("plan_type", "pro")
-          .gte("subscription_end", new Date().toISOString())
-          .single();
-
-        if (lowerPlanSubscription) {
-          isUpgrade = true;
-          // 将旧的 pro 订阅标记为 inactive
-          await supabaseAdmin
-            .from("user_subscriptions")
-            .update({ status: "inactive", updated_at: new Date().toISOString() })
-            .eq("id", lowerPlanSubscription.id);
-
-          console.log(`User ${user_id} upgrading from pro to enterprise. Deactivated pro subscription.`);
-        }
-      }
-
       let subscriptionEnd: Date;
+      let isUpgrade = false;
 
       if (fetchError && fetchError.code !== 'PGRST116') {
         console.error("Error checking existing subscription:", fetchError);
       }
 
-      if (existingSubscription && !isUpgrade) {
-        // 用户已有相同类型的活跃订阅，叠加时间
-        console.log(`User ${user_id} has existing ${newPlanType} subscription ending at: ${existingSubscription.subscription_end}`);
-        subscriptionEnd = new Date(new Date(existingSubscription.subscription_end).getTime() + daysInMs);
-        console.log(`Extended ${newPlanType} subscription to: ${subscriptionEnd.toISOString()}`);
-      } else {
-        // 用户没有相同类型的活跃订阅，或者是升级场景，从当前时间开始计算新订阅
-        subscriptionEnd = new Date(Date.now() + daysInMs);
-        if (isUpgrade) {
-          console.log(`User ${user_id} upgraded to ${newPlanType}, new subscription ending at: ${subscriptionEnd.toISOString()}`);
+      if (existingSubscription) {
+        // 检查是否是升级场景
+        const existingPlanType = existingSubscription.plan_type;
+        const existingEnd = new Date(existingSubscription.subscription_end);
+        const now = new Date();
+        const isStillActive = existingEnd > now && existingSubscription.status === "active";
+
+        // 判断是否是升级（从低级别到高级别）
+        if (newPlanType === "enterprise" && existingPlanType === "pro") {
+          isUpgrade = true;
+          // 升级时，从当前时间开始计算新订阅
+          subscriptionEnd = new Date(Date.now() + daysInMs);
+          console.log(`User ${user_id} upgrading from pro to enterprise. New subscription ending at: ${subscriptionEnd.toISOString()}`);
+        } else if (newPlanType === existingPlanType && isStillActive) {
+          // 相同类型且未过期，叠加时间
+          subscriptionEnd = new Date(existingEnd.getTime() + daysInMs);
+          console.log(`User ${user_id} has existing ${newPlanType} subscription ending at: ${existingEnd.toISOString()}`);
+          console.log(`Extended ${newPlanType} subscription to: ${subscriptionEnd.toISOString()}`);
         } else {
-          console.log(`Created new ${newPlanType} subscription for user ${user_id} ending at: ${subscriptionEnd.toISOString()}`);
+          // 其他情况（过期、降级等），从当前时间开始
+          subscriptionEnd = new Date(Date.now() + daysInMs);
+          console.log(`User ${user_id} renewing/changing subscription from ${existingPlanType} to ${newPlanType}, ending at: ${subscriptionEnd.toISOString()}`);
         }
+      } else {
+        // 用户没有订阅，创建新订阅
+        subscriptionEnd = new Date(Date.now() + daysInMs);
+        console.log(`Created new ${newPlanType} subscription for user ${user_id} ending at: ${subscriptionEnd.toISOString()}`);
       }
 
       const { error: subscriptionError } = await supabaseAdmin

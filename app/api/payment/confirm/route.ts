@@ -163,104 +163,72 @@ export async function POST(request: NextRequest) {
     const daysToAdd = billingCycle === "yearly" ? 365 : 30;
     const daysInMs = daysToAdd * 24 * 60 * 60 * 1000;
 
-    // 检查是否已有相同订阅类型的记录
-    const { data: existingSubscription, error: subQueryError } = await supabaseAdmin
+    // 检查用户是否已有订阅记录（不区分 plan_type，因为数据库有 user_id 唯一约束）
+    const { data: existingSubscription, error: fetchError } = await supabaseAdmin
       .from("user_subscriptions")
       .select("*")
       .eq("user_id", user.id)
-      .eq("plan_type", planType)
-      .order("created_at", { ascending: false })
-      .limit(1)
       .single();
 
-    // 检查是否是升级场景（从 pro 升级到 enterprise）
-    let isUpgrade = false;
-    if (planType === "enterprise") {
-      const { data: lowerPlanSubscription } = await supabaseAdmin
-        .from("user_subscriptions")
-        .select("*")
-        .eq("user_id", user.id)
-        .eq("status", "active")
-        .eq("plan_type", "pro")
-        .gte("subscription_end", new Date().toISOString())
-        .single();
-
-      if (lowerPlanSubscription) {
-        isUpgrade = true;
-        // 将旧的 pro 订阅标记为 inactive
-        await supabaseAdmin
-          .from("user_subscriptions")
-          .update({ status: "inactive", updated_at: now })
-          .eq("id", lowerPlanSubscription.id);
-
-        console.log(`[Payment Confirm] User ${user.id} upgrading from pro to enterprise. Deactivated pro subscription.`);
-      }
-    }
-
     let subscriptionEnd: Date;
+    let isNewSubscription = false;
+    let isUpgrade = false;
 
-    if (subQueryError && subQueryError.code !== "PGRST116") {
-      console.error("[Payment Confirm] Error checking subscription:", subQueryError);
+    if (fetchError && fetchError.code !== 'PGRST116') {
+      console.error("[Payment Confirm] Error checking existing subscription:", fetchError);
     }
 
-    if (existingSubscription && !isUpgrade) {
-      // 用户已有相同类型的订阅记录，且不是升级场景
-      const currentEnd = new Date(existingSubscription.subscription_end);
+    if (existingSubscription) {
+      // 有现有订阅记录
+      const existingPlanType = existingSubscription.plan_type;
+      const existingEnd = new Date(existingSubscription.subscription_end);
       const nowDate = new Date();
+      const isStillActive = existingEnd > nowDate && existingSubscription.status === "active";
 
-      // 如果当前订阅还有效，则叠加时间
-      if (currentEnd > nowDate && existingSubscription.status === "active") {
-        subscriptionEnd = new Date(currentEnd.getTime() + daysInMs);
-        console.log(`[Payment Confirm] Extending ${planType} subscription to: ${subscriptionEnd.toISOString()}`);
-      } else {
-        // 订阅已过期，从现在开始计算
+      // 判断是否是升级（从低级别到高级别）
+      if (planType === "enterprise" && existingPlanType === "pro") {
+        isUpgrade = true;
+        // 升级时，从当前时间开始计算新订阅
         subscriptionEnd = new Date(Date.now() + daysInMs);
-        console.log(`[Payment Confirm] Reactivating ${planType} subscription to: ${subscriptionEnd.toISOString()}`);
-      }
-
-      // 更新现有订阅记录
-      const { error: updateSubError } = await supabaseAdmin
-        .from("user_subscriptions")
-        .update({
-          status: "active",
-          subscription_end: subscriptionEnd.toISOString(),
-          plan_type: planType,
-          currency,
-          updated_at: now,
-        })
-        .eq("id", existingSubscription.id);
-
-      if (updateSubError) {
-        console.error("[Payment Confirm] Error updating subscription:", updateSubError);
+        console.log(`[Payment Confirm] User ${user.id} upgrading from pro to enterprise. New subscription ending at: ${subscriptionEnd.toISOString()}`);
+      } else if (planType === existingPlanType && isStillActive) {
+        // 相同类型且未过期，叠加时间
+        subscriptionEnd = new Date(existingEnd.getTime() + daysInMs);
+        console.log(`[Payment Confirm] User ${user.id} has existing ${planType} subscription ending at: ${existingEnd.toISOString()}`);
+        console.log(`[Payment Confirm] Extended ${planType} subscription to: ${subscriptionEnd.toISOString()}`);
       } else {
-        console.log(`[Payment Confirm] Updated ${planType} subscription ${existingSubscription.id}`);
+        // 其他情况（过期、降级等），从当前时间开始
+        subscriptionEnd = new Date(Date.now() + daysInMs);
+        console.log(`[Payment Confirm] User ${user.id} renewing/changing subscription from ${existingPlanType} to ${planType}, ending at: ${subscriptionEnd.toISOString()}`);
       }
     } else {
-      // 创建新订阅记录（没有相同类型订阅或是升级场景）
+      // 用户没有订阅，创建新订阅
+      isNewSubscription = true;
       subscriptionEnd = new Date(Date.now() + daysInMs);
-      if (isUpgrade) {
-        console.log(`[Payment Confirm] User ${user.id} upgraded to ${planType}, new subscription ending at: ${subscriptionEnd.toISOString()}`);
-      } else {
-        console.log(`[Payment Confirm] Creating new ${planType} subscription ending at: ${subscriptionEnd.toISOString()}`);
-      }
+      console.log(`[Payment Confirm] Created new ${planType} subscription for user ${user.id} ending at: ${subscriptionEnd.toISOString()}`);
+    }
 
-      const { error: insertSubError } = await supabaseAdmin
-        .from("user_subscriptions")
-        .insert({
-          user_id: user.id,
-          status: "active",
-          subscription_end: subscriptionEnd.toISOString(),
-          plan_type: planType,
-          currency,
-          created_at: now,
-          updated_at: now,
-        });
+    // 更新或创建订阅记录
+    const { error } = await supabaseAdmin
+      .from("user_subscriptions")
+      .upsert({
+        user_id: user.id,
+        status: "active",
+        subscription_end: subscriptionEnd.toISOString(),
+        plan_type: planType,
+        currency,
+        updated_at: now,
+        // 只在创建新订阅时设置 created_at
+        ...(isNewSubscription && { created_at: now })
+      }, {
+        onConflict: 'user_id',
+        ignoreDuplicates: false
+      });
 
-      if (insertSubError) {
-        console.error("[Payment Confirm] Error inserting subscription:", insertSubError);
-      } else {
-        console.log(`[Payment Confirm] Inserted new ${planType} subscription for user ${user.id}`);
-      }
+    if (error) {
+      console.error("[Payment Confirm] Error upserting subscription:", error);
+    } else {
+      console.log(`[Payment Confirm] ${isNewSubscription ? 'Created' : 'Extended'} subscription for user ${user.id}: ${planType} plan ${daysToAdd} days, expires at ${subscriptionEnd.toISOString()}`);
     }
 
     // 更新用户元数据

@@ -672,42 +672,16 @@ async function updateUserSubscription(userId: string, amount: number, currency: 
     const isStatusActive = statusToSet === "active";
     const normalizedCurrency = currency?.toUpperCase?.() || "USD";
 
-    // 检查用户是否已有相同订阅类型的活跃订阅
+    // 检查用户是否已有订阅记录（不区分 plan_type，因为数据库有 user_id 唯一约束）
     const { data: existingSubscription, error: fetchError } = await supabaseAdmin
       .from("user_subscriptions")
       .select("*")
       .eq("user_id", userId)
-      .eq("status", "active")
-      .eq("plan_type", planType)
-      .gte("subscription_end", new Date().toISOString())
       .single();
-
-    // 检查是否是升级场景（从 pro 升级到 enterprise）
-    let isUpgrade = false;
-    if (planType === "enterprise") {
-      const { data: lowerPlanSubscription } = await supabaseAdmin
-        .from("user_subscriptions")
-        .select("*")
-        .eq("user_id", userId)
-        .eq("status", "active")
-        .eq("plan_type", "pro")
-        .gte("subscription_end", new Date().toISOString())
-        .single();
-
-      if (lowerPlanSubscription) {
-        isUpgrade = true;
-        // 将旧的 pro 订阅标记为 inactive
-        await supabaseAdmin
-          .from("user_subscriptions")
-          .update({ status: "inactive", updated_at: new Date().toISOString() })
-          .eq("id", lowerPlanSubscription.id);
-
-        console.log(`User ${userId} upgrading from pro to enterprise. Deactivated pro subscription.`);
-      }
-    }
 
     let subscriptionEnd: Date;
     let isNewSubscription = false;
+    let isUpgrade = false;
 
     if (fetchError && fetchError.code !== 'PGRST116') {
       console.error("Error checking existing subscription:", fetchError);
@@ -715,30 +689,44 @@ async function updateUserSubscription(userId: string, amount: number, currency: 
     }
 
     if (requestedEnd) {
-      if (existingSubscription && !isUpgrade) {
+      // 使用请求指定的结束时间
+      if (existingSubscription) {
         const currentEnd = new Date(existingSubscription.subscription_end);
         subscriptionEnd = currentEnd > requestedEnd ? currentEnd : requestedEnd;
       } else {
         isNewSubscription = true;
         subscriptionEnd = requestedEnd;
       }
-    } else if (existingSubscription && isStatusActive && !isUpgrade) {
-      // 用户已有相同类型的活跃订阅，且不是升级场景，叠加时间
-      console.log(`User ${userId} has existing ${planType} subscription ending at: ${existingSubscription.subscription_end}`);
+    } else if (existingSubscription) {
+      // 有现有订阅记录
+      const existingPlanType = existingSubscription.plan_type;
+      const existingEnd = new Date(existingSubscription.subscription_end);
+      const now = new Date();
+      const isStillActive = existingEnd > now && existingSubscription.status === "active";
 
-      subscriptionEnd = new Date(new Date(existingSubscription.subscription_end).getTime() + daysInMs);
-
-      console.log(`Extended ${planType} subscription to: ${subscriptionEnd.toISOString()}`);
-    } else if (existingSubscription && !isStatusActive) {
-      subscriptionEnd = new Date(existingSubscription.subscription_end);
+      // 判断是否是升级（从低级别到高级别）
+      if (planType === "enterprise" && existingPlanType === "pro") {
+        isUpgrade = true;
+        // 升级时，从当前时间开始计算新订阅
+        subscriptionEnd = new Date(Date.now() + (isStatusActive ? daysInMs : 0));
+        console.log(`User ${userId} upgrading from pro to enterprise. New subscription ending at: ${subscriptionEnd.toISOString()}`);
+      } else if (planType === existingPlanType && isStillActive && isStatusActive) {
+        // 相同类型且未过期且状态为active，叠加时间
+        subscriptionEnd = new Date(existingEnd.getTime() + daysInMs);
+        console.log(`User ${userId} has existing ${planType} subscription ending at: ${existingEnd.toISOString()}`);
+        console.log(`Extended ${planType} subscription to: ${subscriptionEnd.toISOString()}`);
+      } else if (!isStatusActive) {
+        // 状态不是active，保持原结束时间
+        subscriptionEnd = existingEnd;
+      } else {
+        // 其他情况（过期、降级等），从当前时间开始
+        subscriptionEnd = new Date(Date.now() + (isStatusActive ? daysInMs : 0));
+        console.log(`User ${userId} renewing/changing subscription from ${existingPlanType} to ${planType}, ending at: ${subscriptionEnd.toISOString()}`);
+      }
     } else {
       isNewSubscription = true;
       subscriptionEnd = new Date(Date.now() + (isStatusActive ? daysInMs : 0));
-      if (isUpgrade) {
-        console.log(`User ${userId} upgraded to ${planType}, new subscription ending at: ${subscriptionEnd.toISOString()}`);
-      } else {
-        console.log(`Created new ${planType} subscription for user ${userId} ending at: ${subscriptionEnd.toISOString()}`);
-      }
+      console.log(`Created new ${planType} subscription for user ${userId} ending at: ${subscriptionEnd.toISOString()}`);
     }
 
     // 更新或创建订阅记录
