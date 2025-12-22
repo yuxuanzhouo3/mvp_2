@@ -42,6 +42,22 @@ export default function RootLayout({
           <AuthProvider>
             <div className="min-h-screen bg-[#F7F9FC]">{children}</div>
             <Toaster />
+            {/* CN环境页脚备案信息 */}
+            {isCN && (
+              <footer className="w-full py-4 px-4 text-center text-xs text-gray-400 bg-gray-50 border-t border-gray-100">
+                <p>本页面含AI生成的内容，请仔细辨别</p>
+                <p className="mt-1">
+                  <a
+                    href="https://beian.miit.gov.cn/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hover:text-gray-600 transition-colors"
+                  >
+                    粤ICP备2024281756号-3
+                  </a>
+                </p>
+              </footer>
+            )}
           </AuthProvider>
         </LanguageProvider>
       </body>
