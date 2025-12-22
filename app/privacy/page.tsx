@@ -45,10 +45,10 @@ export default function LegalPage() {
           <Tabs defaultValue="terms" className="w-full">
             <TabsList className="grid w-full grid-cols-3 mb-8">
               <TabsTrigger value="terms">
-                {language === "zh" ? "服务条款" : "Terms"}
+                <span className="text-blue-600">{language === "zh" ? "服务条款" : "Terms"}</span>
               </TabsTrigger>
               <TabsTrigger value="privacy">
-                {language === "zh" ? "隐私政策" : "Privacy"}
+                <span className="text-blue-600">{language === "zh" ? "隐私政策" : "Privacy"}</span>
               </TabsTrigger>
               <TabsTrigger value="refund">
                 {language === "zh" ? "退款政策" : "Refund"}
