@@ -3,6 +3,11 @@
  * GET /api/recommend/ai/[category]
  *
  * 基于用户历史和偏好，使用 AI 生成个性化推荐
+ *
+ * 使用量限制：
+ * - Free: 30次/月，达到限制提示升级
+ * - Pro: 30次/日，达到限制提示等待或升级
+ * - Enterprise: 无限制
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -32,6 +37,7 @@ import {
 import { isValidUserId } from "@/lib/utils";
 import { getLocale } from "@/lib/utils/locale";
 import type { RecommendationCategory, AIRecommendResponse, LinkType } from "@/lib/types/recommendation";
+import { canUseRecommendation, recordRecommendationUsage, getUserUsageStats } from "@/lib/subscription/usage-tracker";
 
 // 有效的分类列表
 const VALID_CATEGORIES: RecommendationCategory[] = [
@@ -69,6 +75,69 @@ export async function GET(
     // 从请求参数获取locale，如果没有则使用环境变量配置
     const locale = (searchParams.get("locale") as "zh" | "en") || getLocale();
     const skipCache = searchParams.get("skipCache") === "true";
+
+    // ==========================================
+    // 使用量限制检查
+    // ==========================================
+    // 只对登录用户进行使用量检查（匿名用户不受限制，鼓励注册）
+    if (isValidUserId(userId)) {
+      try {
+        const usageCheck = await canUseRecommendation(userId);
+
+        if (!usageCheck.allowed) {
+          const stats = usageCheck.stats;
+          const isMonthly = stats.periodType === "monthly";
+
+          // 构建多语言错误消息
+          let errorMessage: string;
+          let upgradeMessage: string;
+
+          if (locale === "zh") {
+            if (isMonthly) {
+              // Free 用户达到月度限制
+              errorMessage = `您已达到本月 ${stats.periodLimit} 次推荐限制`;
+              upgradeMessage = "升级到 Pro 版获取每日 30 次推荐，或升级到企业版获取无限推荐";
+            } else {
+              // Pro 用户达到日度限制
+              errorMessage = `您已达到今日 ${stats.periodLimit} 次推荐限制`;
+              upgradeMessage = "请明天再试，或升级到企业版获取无限推荐";
+            }
+          } else {
+            if (isMonthly) {
+              errorMessage = `You have reached your monthly limit of ${stats.periodLimit} recommendations`;
+              upgradeMessage = "Upgrade to Pro for 30 daily recommendations, or Enterprise for unlimited";
+            } else {
+              errorMessage = `You have reached your daily limit of ${stats.periodLimit} recommendations`;
+              upgradeMessage = "Please try again tomorrow, or upgrade to Enterprise for unlimited recommendations";
+            }
+          }
+
+          return NextResponse.json(
+            {
+              success: false,
+              recommendations: [],
+              source: "fallback" as const,
+              error: errorMessage,
+              limitExceeded: true,
+              usage: {
+                current: stats.currentPeriodUsage,
+                limit: stats.periodLimit,
+                remaining: 0,
+                periodType: stats.periodType,
+                periodEnd: stats.periodEnd.toISOString(),
+                isUnlimited: false,
+              },
+              upgradeMessage,
+              upgradeUrl: "/pro",
+            },
+            { status: 429 } // Too Many Requests
+          );
+        }
+      } catch (usageError) {
+        // 使用量检查失败时，允许继续使用（优雅降级）
+        console.warn("[Usage] Failed to check usage limit, allowing request:", usageError);
+      }
+    }
 
     // 获取用户偏好和历史（仅当 userId 是有效 UUID 时）
     // 从请求参数获取历史记录限制，默认为 50
@@ -342,7 +411,7 @@ export async function GET(
 
       console.log(`[Search] 生成搜索链接数: ${validatedRecommendations.length}`);
 
-      // 5. 保存到数据库
+      // 5. 保存到数据库并记录使用量
       if (isValidUserId(userId) && validatedRecommendations.length > 0) {
         console.log(`[Save] Recording recommendation for user ${userId.slice(0, 8)}...`);
         saveRecommendationsToHistory(userId, validatedRecommendations)
@@ -360,6 +429,19 @@ export async function GET(
           .catch((err) => {
             console.error(`[Preferences] ✗ Failed to update preferences:`, err);
           });
+
+        // 记录使用量（用于限额统计）
+        recordRecommendationUsage(userId, { category, count: validatedRecommendations.length })
+          .then((result) => {
+            if (result.success) {
+              console.log(`[Usage] ✓ Recorded usage for ${category}`);
+            } else {
+              console.warn(`[Usage] ✗ Failed to record usage:`, result.error);
+            }
+          })
+          .catch((err) => {
+            console.error(`[Usage] ✗ Error recording usage:`, err);
+          });
       } else {
         console.log(`[Save] Skipping history save for anonymous user`);
       }
@@ -375,10 +457,29 @@ export async function GET(
           });
       }
 
+      // 7. 获取最新使用量信息并返回
+      let usageInfo = null;
+      if (isValidUserId(userId)) {
+        try {
+          const stats = await getUserUsageStats(userId);
+          usageInfo = {
+            current: stats.currentPeriodUsage + 1, // +1 因为刚记录了一次
+            limit: stats.periodLimit,
+            remaining: stats.isUnlimited ? -1 : Math.max(0, stats.remainingUsage - 1),
+            periodType: stats.periodType,
+            periodEnd: stats.periodEnd.toISOString(),
+            isUnlimited: stats.isUnlimited,
+          };
+        } catch (err) {
+          console.warn("[Usage] Failed to get usage stats for response:", err);
+        }
+      }
+
       return NextResponse.json({
         success: true,
         recommendations: validatedRecommendations.slice(0, count),
         source: "ai",
+        ...(usageInfo && { usage: usageInfo }),
       } satisfies AIRecommendResponse);
     } catch (aiError) {
       console.error("AI recommendation failed:", aiError);

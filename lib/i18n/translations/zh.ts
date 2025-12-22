@@ -642,8 +642,8 @@ export const zh = {
 
   // ==================== RandomLife ====================
   randomLife: {
-    title: "随机生活",
-    subtitle: "每日发现",
+    title: "辰汇个性推荐平台",
+    subtitle: "汇聚生活灵感，遇见更好的每一天",
     chooseCategory: "选择一个类别",
     discoverNew: "每天发现新事物",
     categories: {

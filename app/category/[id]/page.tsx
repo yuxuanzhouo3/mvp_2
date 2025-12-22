@@ -22,6 +22,16 @@ import { getClientLocale } from "@/lib/utils/locale"
 import { isValidUserId } from "@/lib/utils"
 import { fetchWithAuth } from "@/lib/auth/fetch-with-auth"
 
+// 使用量信息类型
+interface UsageInfo {
+  current: number;
+  limit: number;
+  remaining: number;
+  periodType: "daily" | "monthly";
+  periodEnd: string;
+  isUnlimited: boolean;
+}
+
 // 分类配置
 const categoryConfig: Record<
   RecommendationCategory,
@@ -193,6 +203,10 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
   const [isLoading, setIsLoading] = useState(false)
   const [source, setSource] = useState<"ai" | "fallback" | "cache" | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // 使用量限制状态
+  const [usageInfo, setUsageInfo] = useState<UsageInfo | null>(null)
+  const [limitExceeded, setLimitExceeded] = useState(false)
+  const [upgradeMessage, setUpgradeMessage] = useState<string | null>(null)
   // 使用环境变量中的地区设置
   const [locale] = useState<"zh" | "en">(() => getClientLocale())
 
@@ -427,6 +441,8 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
     setIsShaking(true)
     setIsLoading(true)
     setError(null)
+    setLimitExceeded(false)
+    setUpgradeMessage(null)
 
     try {
       const resolvedUserId = userId || getUserId()
@@ -436,10 +452,28 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
         { method: "GET" }
       )
 
-      const data: AIRecommendResponse = await response.json()
+      const data = await response.json()
+
+      // 处理使用量限制错误 (HTTP 429)
+      if (response.status === 429 || data.limitExceeded) {
+        setLimitExceeded(true)
+        setError(data.error || (locale === "zh" ? "已达到使用限制" : "Usage limit reached"))
+        setUpgradeMessage(data.upgradeMessage || null)
+        if (data.usage) {
+          setUsageInfo(data.usage as UsageInfo)
+        }
+        setIsShaking(false)
+        setIsLoading(false)
+        return
+      }
 
       if (!data.success || data.recommendations.length === 0) {
         throw new Error(data.error || "No recommendations received")
+      }
+
+      // 更新使用量信息（如果返回了）
+      if (data.usage) {
+        setUsageInfo(data.usage as UsageInfo)
       }
 
       // 延迟显示结果以保持动画效果
@@ -669,10 +703,68 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
             animate={{ opacity: 1, y: 0 }}
             className="mb-4"
           >
-            <Card className="p-4 bg-red-50 border-red-200">
-              <p className="text-red-600 text-sm text-center">{error}</p>
+            <Card className={`p-4 ${limitExceeded ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200'}`}>
+              <div className="text-center">
+                {limitExceeded && (
+                  <div className="text-3xl mb-2">
+                    {usageInfo?.periodType === "monthly" ? "📅" : "⏰"}
+                  </div>
+                )}
+                <p className={`${limitExceeded ? 'text-amber-700' : 'text-red-600'} text-sm font-medium`}>
+                  {error}
+                </p>
+                {upgradeMessage && (
+                  <p className="text-gray-600 text-xs mt-2">{upgradeMessage}</p>
+                )}
+                {limitExceeded && usageInfo && (
+                  <div className="mt-3 text-xs text-gray-500">
+                    {locale === "zh" ? (
+                      <>
+                        已使用 {usageInfo.current}/{usageInfo.limit} 次
+                        {usageInfo.periodType === "monthly" ? " (本月)" : " (今日)"}
+                      </>
+                    ) : (
+                      <>
+                        Used {usageInfo.current}/{usageInfo.limit}
+                        {usageInfo.periodType === "monthly" ? " this month" : " today"}
+                      </>
+                    )}
+                  </div>
+                )}
+                {limitExceeded && (
+                  <Link href="/pro" className="inline-block mt-4">
+                    <Button className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white">
+                      {locale === "zh" ? "升级获取更多" : "Upgrade for More"}
+                    </Button>
+                  </Link>
+                )}
+              </div>
             </Card>
           </motion.div>
+        )}
+
+        {/* 使用量信息显示（正常情况下） */}
+        {usageInfo && !limitExceeded && !usageInfo.isUnlimited && (
+          <div className="mb-4 text-center">
+            <span className="text-xs text-gray-500">
+              {locale === "zh" ? (
+                <>
+                  剩余 {usageInfo.remaining} 次
+                  {usageInfo.periodType === "monthly" ? " (本月)" : " (今日)"}
+                </>
+              ) : (
+                <>
+                  {usageInfo.remaining} remaining
+                  {usageInfo.periodType === "monthly" ? " this month" : " today"}
+                </>
+              )}
+            </span>
+            {usageInfo.remaining <= 5 && usageInfo.remaining > 0 && (
+              <Link href="/pro" className="ml-2 text-xs text-purple-600 hover:underline">
+                {locale === "zh" ? "升级获取更多" : "Upgrade for more"}
+              </Link>
+            )}
+          </div>
         )}
 
         {/* 当前推荐 */}
