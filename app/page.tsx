@@ -65,16 +65,17 @@ export default function HomePage() {
                   <Globe className="h-4 w-4 text-gray-600" />
                 </Button>
 
-                {/* Download Button Placeholder */}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 flex-shrink-0 hover:bg-white/30 transition-colors"
-                  title="Download"
-                  disabled
-                >
-                  <Download className="h-4 w-4 text-gray-400" />
-                </Button>
+                {/* Download Button */}
+                <Link href="/download">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 flex-shrink-0 hover:bg-white/30 transition-colors"
+                    title={t.header.download || "Download"}
+                  >
+                    <Download className="h-4 w-4 text-gray-600" />
+                  </Button>
+                </Link>
 
                 {isAuthenticated ? (
                   <>
