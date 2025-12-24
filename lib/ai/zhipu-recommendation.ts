@@ -11,7 +11,7 @@ export type AIMessage = {
 
 const DEFAULT_MODELS = {
   openai: process.env.OPENAI_MODEL || "gpt-4o-mini",
-  mistral: process.env.MISTRAL_MODEL || "mistral-large-latest",
+  mistral: process.env.MISTRAL_MODEL || "mistral-small-latest",
   zhipu: process.env.ZHIPU_MODEL || "glm-4.5-flash",
   "qwen-max": "qwen-max",
   "qwen-plus": "qwen-plus",
@@ -131,7 +131,7 @@ async function callQwen(messages: AIMessage[], temperature: number, model: "qwen
       model,
       messages,
       temperature,
-      max_tokens: 2000,
+      max_tokens: 1200,
     }),
   });
 
@@ -161,7 +161,7 @@ async function callOpenAI(messages: AIMessage[], temperature: number) {
     model: DEFAULT_MODELS.openai,
     messages,
     temperature,
-    max_tokens: 2000,
+    max_tokens: 1200,
   });
 
   const content = response.choices?.[0]?.message?.content;
@@ -187,7 +187,7 @@ async function callMistral(messages: AIMessage[], temperature: number) {
       model: DEFAULT_MODELS.mistral,
       messages,
       temperature,
-      max_tokens: 2000,
+      max_tokens: 1200,
       top_p: 0.9,
     }),
   });
@@ -371,43 +371,30 @@ export async function generateRecommendations(
   const desiredCount = Math.max(5, Math.min(10, count));
 
   const prompt = locale === 'zh' ? `
-基于用户历史和画像生成 ${desiredCount} 个个性化推荐。
+生成 ${desiredCount} 个个性化推荐。
 
 用户历史：${JSON.stringify(userHistory.slice(0, 15), null, 2)}
 ${userProfilePrompt}
 分类：${category}
 
-输出JSON数组，每项包含：title, description, reason, tags(3-5个), searchQuery, platform, entertainmentType
+输出JSON数组，每项必须包含：title, description, reason, tags(3-5个), searchQuery, platform${category === 'entertainment' ? ', entertainmentType' : ''}
 
-分类规则：
-${category === 'entertainment' ? `- 必含4类型：视频(豆瓣/B站)、游戏(${(config as any).gamePlatforms?.slice(0, 5).join('/')})、音乐(${(config as any).musicPlatforms?.slice(0, 3).join('/')})、影评
-- 游戏searchQuery仅写游戏名，勿加平台` : ''}
-${category === 'food' ? `- 3类型：食谱(纯菜名)、菜系(如"川菜餐厅")、场合(如"商务午餐 中餐")` : ''}
-${category === 'travel' ? `- 格式："国家·城市"，用真实地名，平台优先Booking/Agoda` : ''}
-${category === 'fitness' ? `- 必含3类：视频教程(B站/抖音)、健身房(地图)、器材教程(非购物)
-- 器材searchQuery用"XX使用教程"` : ''}
-${category === 'shopping' ? `- 平台：${config.platforms.slice(0, 5).join('、')}` : ''}
-
-平台选择：${config.platforms.slice(0, 8).join('、')}
+${category === 'entertainment' ? `必含4类型：视频(豆瓣/B站/爱奇艺)、游戏(${(config as any).gamePlatforms?.slice(0, 4).join('/')})、音乐(${(config as any).musicPlatforms?.slice(0, 3).join('/')})、影评
+游戏searchQuery仅写游戏名` : ''}${category === 'food' ? `3类型：食谱(纯菜名)、菜系(如"川菜餐厅")、场合(如"商务午餐")` : ''}${category === 'travel' ? `格式："国家·城市"，用真实地名` : ''}${category === 'fitness' ? `必含3类：视频教程(B站)、健身房(地图)、器材教程
+器材searchQuery用"XX使用教程"` : ''}
+平台选择：${config.platforms.slice(0, 6).join('、')}
 勿生成URL` : `
-Generate ${desiredCount} personalized recommendations based on user history and profile.
+Generate ${desiredCount} personalized recommendations.
 
 User history: ${JSON.stringify(userHistory.slice(0, 15), null, 2)}
 ${userProfilePrompt}
 Category: ${category}
 
-Output JSON array with: title, description, reason, tags(3-5), searchQuery, platform, entertainmentType
+Output JSON array with: title, description, reason, tags(3-5), searchQuery, platform${category === 'entertainment' ? ', entertainmentType' : ''}
 
-Category Rules:
-${category === 'entertainment' ? `- Must include 4 types: video(IMDb/YouTube), game(${(config as any).gamePlatforms?.slice(0, 5).join('/')}), music(Spotify), review
-- Game searchQuery: game name only, no platform` : ''}
-${category === 'food' ? `- 3 types: recipe(dish name), cuisine(e.g., "Italian restaurants"), occasion(e.g., "business lunch Italian")` : ''}
-${category === 'travel' ? `- Format: "Country·City", use real places, prefer Booking/Agoda` : ''}
-${category === 'fitness' ? `- Must include 3 types: video tutorial(YouTube), equipment review(GarageGymReviews), training plan(FitnessVolt)
-- Equipment searchQuery: "XX review recommendation"` : ''}
-${category === 'shopping' ? `- Platforms: ${config.platforms.slice(0, 5).join(', ')}` : ''}
-
-Platform choices: ${config.platforms.slice(0, 8).join(', ')}
+${category === 'entertainment' ? `Must include 4 types: video(IMDb/YouTube), game(${(config as any).gamePlatforms?.slice(0, 4).join('/')}), music(Spotify), review
+Game searchQuery: game name only` : ''}${category === 'food' ? `3 types: recipe, cuisine, occasion` : ''}${category === 'travel' ? `Format: "Country·City"` : ''}${category === 'fitness' ? `Must include 3 types: video tutorial(YouTube), equipment review(GarageGymReviews), training plan(FitnessVolt)` : ''}
+Platform choices: ${config.platforms.slice(0, 6).join(', ')}
 No URLs`;
 
   try {
@@ -416,8 +403,8 @@ No URLs`;
         {
           role: 'system',
           content: locale === 'zh'
-            ? '你是推荐分析师。只返回 JSON 数组，不要生成链接，不要有markdown标记。'
-            : 'You are a recommendation analyst. Only return JSON array, no links, no markdown.'
+            ? '推荐分析师。只返回JSON数组，无链接，无markdown。'
+            : 'Recommendation analyst. Return JSON array only, no links, no markdown.'
         },
         {
           role: 'user',

@@ -75,6 +75,7 @@ export async function GET(
     // 从请求参数获取locale，如果没有则使用环境变量配置
     const locale = (searchParams.get("locale") as "zh" | "en") || getLocale();
     const skipCache = searchParams.get("skipCache") === "true";
+    const enableStreaming = searchParams.get("stream") === "true"; // 新增：是否启用流式响应
 
     // ==========================================
     // 使用量限制检查
@@ -414,7 +415,75 @@ export async function GET(
 
       console.log(`[Search] 生成搜索链接数: ${validatedRecommendations.length}`);
 
-      // 5. 异步保存到数据库和缓存（不阻塞响应）
+      // 6. 如果启用流式响应，分批发送结果
+      if (enableStreaming) {
+        console.log(`[Stream] Streaming ${validatedRecommendations.length} recommendations...`);
+
+        // 创建流式响应
+        const stream = new ReadableStream({
+          async start(controller) {
+            const encoder = new TextEncoder();
+
+            // 分批大小：每次发送2个推荐
+            const batchSize = 2;
+            const selectedRecommendations = validatedRecommendations.slice(0, count);
+
+            // 分批发送推荐
+            for (let i = 0; i < selectedRecommendations.length; i += batchSize) {
+              const batch = selectedRecommendations.slice(i, i + batchSize);
+              const isLastBatch = i + batchSize >= selectedRecommendations.length;
+
+              // 构建流式数据包
+              const data = {
+                type: isLastBatch ? 'complete' : 'partial',
+                recommendations: batch,
+                index: i,
+                total: selectedRecommendations.length,
+                source: "ai",
+              };
+
+              // 发送SSE格式的数据
+              const message = `data: ${JSON.stringify(data)}\n\n`;
+              controller.enqueue(encoder.encode(message));
+
+              // 添加小延迟以模拟逐步加载（可选，提升用户体验）
+              if (!isLastBatch) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+              }
+            }
+
+            // 异步保存到数据库（不阻塞流式响应）
+            if (isValidUserId(userId) && selectedRecommendations.length > 0) {
+              Promise.all([
+                saveRecommendationsToHistory(userId, selectedRecommendations),
+                updateUserPreferences(userId, category, { incrementView: true }),
+                recordRecommendationUsage(userId, { category, count: selectedRecommendations.length }),
+              ]).catch((err) => {
+                console.error(`[Stream Save] Failed to save:`, err);
+              });
+            }
+
+            // 异步缓存（登录用户）
+            if (!isAnonymous) {
+              cacheRecommendations(category, preferenceHash, selectedRecommendations, 30).catch((err) => {
+                console.error("[Stream Cache] Failed to cache:", err);
+              });
+            }
+
+            controller.close();
+          },
+        });
+
+        return new Response(stream, {
+          headers: {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+          },
+        });
+      }
+
+      // 5. 异步保存到数据库和缓存（不阻塞响应）- 非流式模式
       if (isValidUserId(userId) && validatedRecommendations.length > 0) {
         console.log(`[Save] Recording recommendation for user ${userId.slice(0, 8)}...`);
         // 所有数据库操作都是异步的，不阻塞响应
