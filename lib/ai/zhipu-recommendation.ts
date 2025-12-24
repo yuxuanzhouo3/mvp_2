@@ -371,234 +371,44 @@ export async function generateRecommendations(
   const desiredCount = Math.max(5, Math.min(10, count));
 
   const prompt = locale === 'zh' ? `
-你是一个专业的推荐系统分析师。
+基于用户历史和画像生成 ${desiredCount} 个个性化推荐。
 
-任务：基于用户历史行为和画像，生成 ${desiredCount} 个多样化的个性化推荐（覆盖不同子类型和平台）。
-
-用户历史记录：
-${JSON.stringify(userHistory.slice(0, 20), null, 2)}
+用户历史：${JSON.stringify(userHistory.slice(0, 15), null, 2)}
 ${userProfilePrompt}
-当前分类：${category} (${config.examples})
+分类：${category}
 
-要求：
-1. 分析用户的偏好特征（风格、类型、主题等）${userPreference ? '，优先参考用户画像信息' : ''}
-2. 为每个推荐生成：
-   - 标题：具体的推荐名称
-   - 描述：简短介绍（1-2句话）
-   - 理由：为什么推荐给这个用户
-   - 标签：3-5个相关标签
-   - 搜索词：用于在搜索引擎中查找的关键词
-   - 平台：推荐在哪个平台查找（从：${config.platforms.join('、')} 中选择）
+输出JSON数组，每项包含：title, description, reason, tags(3-5个), searchQuery, platform, entertainmentType
 
-**特别说明**：
-- 如果是娱乐分类(entertainment)，必须确保推荐包含以下4种类型：
-  * 视频类：电影、电视剧、综艺、动漫等（平台：豆瓣、B站、爱奇艺、腾讯视频、优酷）
-  * 游戏类：PC游戏、手机游戏、主机游戏等（平台必须多样化！从以下平台中选择：${(config as any).gamePlatforms?.join('、') || 'Steam、TapTap、Epic Games、WeGame、小黑盒、3DM、游民星空'}）
-  * 音乐类：歌曲、专辑、演唱会等（平台：${(config as any).musicPlatforms?.join('、') || 'QQ音乐、酷狗音乐、汽水音乐、B站'}，注意：网易云音乐需要登录，请避免使用）
-  * 影评/资讯类：影评、娱乐新闻、明星资讯等（平台：豆瓣、B站、知乎、百度）
-  * 每个推荐必须明确标注属于哪种类型
-  * 确保生成的推荐涵盖至少3种不同的娱乐类型
-  * **游戏推荐重要要求**：
-    - 不要总是使用Steam！请根据游戏类型选择合适的平台：
-      * PC游戏：Steam、Epic Games、WeGame、GOG
-      * 手机游戏：TapTap、B站游戏、4399小游戏
-      * 主机游戏：PlayStation Store、Xbox Store、Nintendo eShop
-      * 独立游戏：itch.io、Humble Bundle、GOG
-      * 游戏资讯：小黑盒、3DM、游民星空
-    - **搜索词要求**：游戏的searchQuery只写游戏名称，不要添加平台名称后缀！例如：
-      * 正确：searchQuery: "艾尔登法环"
-      * 错误：searchQuery: "艾尔登法环 Steam"
-      * 正确：searchQuery: "原神"
-      * 错误：searchQuery: "原神 TapTap"
-  * 推荐内容必须是真实存在的作品或内容，使用准确的作品名称
-  * 搜索关键词示例：
-    - 视频："流浪地球2"、"三体 电视剧"
-    - 游戏："艾尔登法环"、"原神"、"塞尔达传说"、"哈迪斯"（不要加平台名称！）
-    - 音乐："周杰伦 新歌 2024"、"霉霉 Taylor Swift 巡演"
-    - 影评："奥本海默 影评解析"、"2024年电影排行榜"
-- 如果是美食分类(food)，**必须严格按照以下三种推荐类型生成内容**：
+分类规则：
+${category === 'entertainment' ? `- 必含4类型：视频(豆瓣/B站)、游戏(${(config as any).gamePlatforms?.slice(0, 5).join('/')})、音乐(${(config as any).musicPlatforms?.slice(0, 3).join('/')})、影评
+- 游戏searchQuery仅写游戏名，勿加平台` : ''}
+${category === 'food' ? `- 3类型：食谱(纯菜名)、菜系(如"川菜餐厅")、场合(如"商务午餐 中餐")` : ''}
+${category === 'travel' ? `- 格式："国家·城市"，用真实地名，平台优先Booking/Agoda` : ''}
+${category === 'fitness' ? `- 必含3类：视频教程(B站/抖音)、健身房(地图)、器材教程(非购物)
+- 器材searchQuery用"XX使用教程"` : ''}
+${category === 'shopping' ? `- 平台：${config.platforms.slice(0, 5).join('、')}` : ''}
 
-  **推荐类型要求**：
-  * **食谱类（Allrecipes）**：
-    - 推荐：具体的菜谱名称（如"麻婆豆腐"、"红烧肉"、"意大利面"）
-    - 内容：详细描述菜品特色、所需食材、烹饪难度、适合人群
-    - 搜索词：纯菜名，如"麻婆豆腐"、"红烧肉"、"chocolate cake"
-    - 标签：菜系、难度、口味（如"川菜、简单、麻辣"）
+平台选择：${config.platforms.slice(0, 8).join('、')}
+勿生成URL` : `
+Generate ${desiredCount} personalized recommendations based on user history and profile.
 
-  * **菜系类（Google Maps）**：
-    - 推荐：菜系类型（如"川菜"、"粤菜"、"意大利菜"、"日料"）
-    - 内容：介绍该菜系特点、代表菜品、适合场合、价格区间
-    - 搜索词：菜系名称，如"川菜餐厅"、"意大利菜"、"Japanese restaurants"
-    - 标签：菜系类型、特色、消费水平
-
-  * **特殊场合餐厅（OpenTable）**：
-    - 推荐：特定场合的餐厅选择（如"商务午餐"、"浪漫约会"、"家庭聚餐"）
-    - 内容：说明场合特点、适合餐厅类型、人均消费、预订注意事项
-    - 搜索词：场合 + 菜系，如"商务午餐 中餐"、"romantic dinner Italian"
-    - 标签：场合类型、菜系、价格区间
-
-  **关键要求：推荐内容必须与对应平台页面完全匹配！**
-- 如果是旅游分类(travel)，请推荐具体的旅游景点、城市或目的地，要求：
-  * 必须使用真实存在的国家、城市和景点名称（如：日本东京、泰国普吉岛、法国巴黎、印度尼西亚巴厘岛等）
-  * 推荐理由：详细说明为什么这个地方值得去（特色、体验、最佳季节等）
-  * 目的地名称：具体格式为"国家/地区 · 城市/景点名称"
-  * 关键词：包含具体的英文搜索词（如：Bali Indonesia, Tokyo Japan, Paris France）
-  * 平台：从${config.platforms.join('、')}中选择（优先使用国际平台如Booking.com、Agoda等）
-  * 示例推荐：
-    - "泰国 · 普吉岛" - 安达曼海上的热带天堂，以清澈海水和美丽海滩闻名
-    - "日本 · 京都" - 古老的寺庙和传统文化，春季樱花盛开
-    - "法国 · 巴黎" - 浪漫之都，埃菲尔铁塔和卢浮宫的故乡
-  * 重要：不要生成虚构的地名，确保所有地名都是真实存在的！
-- 如果是健身分类(fitness)，请推荐多样化的健身方式，要求：
-  * 推荐类型应包括：健身视频教程、健身房位置、健身器材使用教程等
-  * 每个推荐要明确具体并指向正确的内容：
-    - 视频教程：如"30分钟瑜伽入门"、"HIIT燃脂训练"（链接到B站健身、抖音健身、腾讯视频健身、优酷健身的教程）
-    - 健身房：如"附近瑜伽馆推荐"、"24小时健身房"（链接到百度地图健身、高德地图健身等位置服务）
-    - 器材使用教程：如"哑铃训练教程"、"跑步机正确使用方法"（链接到B站健身、抖音健身、腾讯视频健身的教程视频，不是购物链接）
-  * 根据推荐类型选择合适的平台（从以下平台选择）：
-    - 健身视频教程：选择B站健身、抖音健身、腾讯视频健身、优酷健身、小红书健身
-    - 健身房位置：选择百度地图健身、高德地图健身
-    - 器材使用教程：选择B站健身、抖音健身、腾讯视频健身（教程视频，不是购物）
-  * 生成3个推荐时必须满足以下要求：
-    - 第一个必须是健身视频教程（video type）
-    - 第二个必须是健身房地点推荐（location type）
-    - 第三个必须是器材使用教程（equipment type）
-    - 这三种类型缺一不可！
-  * 重要：器材推荐的searchQuery应该是"XX器材+使用教程/训练方法"而不是"XX器材+购买"
-  * 搜索词要与推荐内容精确匹配，例如：
-    - 视频教程："瑜伽入门教程"、"HIIT训练视频"
-    - 健身房："附近瑜伽馆"、"24小时健身房"
-    - 器材教程："哑铃训练教程"、"跑步机使用方法"、"瑜伽垫基础动作"
-- **重要：不要生成任何链接URL，只需要推荐内容！**
-
-返回 JSON 格式（严格遵守，不要有任何额外文字）：
-[
-  {
-    "title": "具体推荐名称",
-    "description": "简短描述",
-    "reason": "为什么推荐给这个用户",
-    "tags": ["标签1", "标签2", "标签3"],
-    "searchQuery": "用于搜索的关键词",
-    "platform": "淘宝|京东|豆瓣|B站|...",
-    "entertainmentType": "video|game|music|review"
-  }
-]` : `
-You are a professional recommendation system analyst.
-
-Task: Generate ${desiredCount} diverse personalized recommendations based on user history and profile (cover different subtypes/platforms).
-
-User history:
-${JSON.stringify(userHistory.slice(0, 20), null, 2)}
+User history: ${JSON.stringify(userHistory.slice(0, 15), null, 2)}
 ${userProfilePrompt}
-Current category: ${category} (${config.examples})
+Category: ${category}
 
-Requirements:
-1. Analyze user preferences (style, type, theme, etc.)${userPreference ? ', prioritize user profile information' : ''}
-2. For each recommendation, generate:
-   - title: specific recommendation name
-   - description: brief introduction (1-2 sentences)
-   - reason: why recommend to this user
-   - tags: 3-5 relevant tags
-   - searchQuery: keywords for search engine
-   - platform: which platform to search (from: ${config.platforms.join(', ')})
+Output JSON array with: title, description, reason, tags(3-5), searchQuery, platform, entertainmentType
 
-**Special Instructions**:
-- For entertainment category, must ensure recommendations include all 4 types:
-  * Video: movies, TV shows, variety shows, anime, etc. (Platforms: IMDb, YouTube, Netflix, Rotten Tomatoes)
-  * Game: PC games, mobile games, console games, etc. (Platforms MUST be diverse! Choose from: ${(config as any).gamePlatforms?.join(', ') || 'Steam, Epic Games, GOG, PlayStation Store, Xbox Store, Nintendo eShop, Humble Bundle, itch.io'})
-  * Music: songs, albums, concerts, etc. (Platforms: Spotify, YouTube, IMDb)
-  * Review/News: movie reviews, entertainment news, celebrity news, etc. (Platforms: IMDb, Rotten Tomatoes, Metacritic)
-  * Each recommendation must clearly indicate which type it belongs to
-  * Ensure the generated recommendations cover at least 3 different entertainment types
-  * **IMPORTANT for Game recommendations**: Do NOT always use Steam! Choose platform based on game type:
-    - PC games: Steam, Epic Games, GOG, Green Man Gaming
-    - Console games: PlayStation Store, Xbox Store, Nintendo eShop
-    - Indie games: itch.io, Humble Bundle, GOG
-    - Multi-platform: Game Pass, Steam
-  * Recommended content must be real existing works or content, use accurate titles
-  * Search keywords must precisely match work titles, for example:
-    - Video: "Oppenheimer 2023 review", "The Boys season 4 watch"
-    - Game: "Baldur's Gate 3 Steam", "Zelda Tears of the Kingdom Nintendo eShop", "Hades Epic Games", "Stardew Valley GOG"
-    - Music: "Taylor Swift new album 2024", "Bruno Mars concert"
-    - Review: "Dune Part Two review", "2024 Oscar predictions"
-- For food category, **MUST follow these three recommendation types strictly**:
+Category Rules:
+${category === 'entertainment' ? `- Must include 4 types: video(IMDb/YouTube), game(${(config as any).gamePlatforms?.slice(0, 5).join('/')}), music(Spotify), review
+- Game searchQuery: game name only, no platform` : ''}
+${category === 'food' ? `- 3 types: recipe(dish name), cuisine(e.g., "Italian restaurants"), occasion(e.g., "business lunch Italian")` : ''}
+${category === 'travel' ? `- Format: "Country·City", use real places, prefer Booking/Agoda` : ''}
+${category === 'fitness' ? `- Must include 3 types: video tutorial(YouTube), equipment review(GarageGymReviews), training plan(FitnessVolt)
+- Equipment searchQuery: "XX review recommendation"` : ''}
+${category === 'shopping' ? `- Platforms: ${config.platforms.slice(0, 5).join(', ')}` : ''}
 
-  **Recommendation Type Requirements**:
-  * **Recipe Type (Allrecipes)**:
-    - Recommend: Specific recipe names (e.g., "Chocolate Chip Cookies", "Spaghetti Carbonara", "Chicken Stir Fry")
-    - Content: Describe dish characteristics, required ingredients, difficulty level, suitable for
-    - Search terms: Pure recipe name, like "Chocolate Chip Cookies", "pasta carbonara"
-    - Tags: Cuisine type, difficulty, flavor profile (e.g., "Italian, easy, creamy")
-
-  * **Cuisine Type (Google Maps)**:
-    - Recommend: Cuisine categories (e.g., "Italian cuisine", "Chinese food", "Japanese restaurants", "Mexican")
-    - Content: Introduce cuisine features, signature dishes, suitable occasions, price range
-    - Search terms: Cuisine name, like "Italian restaurants", "Chinese food near me"
-    - Tags: Cuisine type, characteristics, price level
-
-  * **Special Occasion Restaurants (OpenTable)**:
-    - Recommend: Restaurants for specific occasions (e.g., "business lunch", "romantic dinner", "family gathering")
-    - Content: Explain occasion features, suitable restaurant types, average cost, booking tips
-    - Search terms: Occasion + cuisine, like "business lunch Italian", "romantic dinner French"
-    - Tags: Occasion type, cuisine, price range
-
-  **CRITICAL: Content must perfectly match the target platform page!**
-- For travel category, recommend specific tourist destinations, cities, or attractions:
-  * Requirements:
-    - Must use real existing countries, cities and attractions (e.g., Tokyo Japan, Phuket Thailand, Paris France, Bali Indonesia)
-    - Reason: detailed explanation why this place is worth visiting (highlights, experiences, best season, etc.)
-    - Destination name: specific format "Country/Region · City/Attraction Name"
-    - Keywords: include specific English search terms (e.g., Bali Indonesia, Tokyo Japan, Paris France)
-    - Platform: choose from ${config.platforms.join(', ')} (prioritize international platforms like Booking.com, Agoda)
-  * Example recommendations:
-    - "Thailand · Phuket" - Tropical paradise in the Andaman Sea, famous for clear waters and beautiful beaches
-    - "Japan · Kyoto" - Ancient temples and traditional culture, cherry blossoms in spring
-    - "France · Paris" - The city of romance, home to the Eiffel Tower and Louvre Museum
-  * Important: Do not generate fictional place names, ensure all locations are real and exist!
-- For fitness category, recommend three distinct types of fitness content:
-  * **Fitness Video Course (YouTube)**: Professional video tutorials and classes
-    - Examples: "30-minute Yoga Video Course", "HIIT Fat Burning Workout", "Pilates Basics"
-    - Platform: YouTube (video courses)
-    - Search: "yoga for beginners video", "HIIT workout tutorial"
-    - Tags: Should include exercise type, duration, difficulty
-  
-  * **Fitness Equipment Reviews (GarageGymReviews)**: Equipment reviews and purchasing guides
-    - Examples: "Dumbbell Reviews and Buying Guide", "Best Home Treadmill 2024", "Adjustable Dumbbells Comparison"
-    - Platform: GarageGymReviews (equipment reviews)
-    - Search: "dumbbell reviews recommendation", "home gym equipment guide"
-    - Tags: Should include equipment type, use case, price range
-  
-  * **Fitness Training Plans (FitnessVolt)**: Complete training programs and fitness plans
-    - Examples: "12-Week Muscle Building Program", "Fat Loss Training Plan", "Beginner Workout Routine"
-    - Platform: FitnessVolt (fitness plans)
-    - Search: "muscle building training program", "weight loss fitness plan"
-    - Tags: Should include goal, duration, difficulty level
-
-  * CRITICAL REQUIREMENTS:
-    - Each recommendation must be a different type (video, equipment, plan)
-    - Video recommendations ONLY link to YouTube (video courses)
-    - Equipment recommendations ONLY link to GarageGymReviews (reviews, NOT shopping sites)
-    - Plan recommendations ONLY link to FitnessVolt (article, NOT video platforms)
-    - Search queries must match the platform content precisely:
-      * Video: "exercise name video tutorial"
-      * Equipment: "equipment name review recommendation" 
-      * Plan: "goal name training program"
-    - All three types are REQUIRED for fitness recommendations!
-  * Important: Do NOT recommend shopping platforms like Amazon for fitness equipment - use GarageGymReviews instead
-- **Important: Do not generate any URLs, only recommend content!**
-
-Return JSON format (strictly, no extra text):
-[
-  {
-    "title": "Specific recommendation name",
-    "description": "Brief description",
-    "reason": "Why recommend to this user",
-    "tags": ["tag1", "tag2", "tag3"],
-    "searchQuery": "Search keywords",
-    "platform": "Amazon|eBay|IMDb|YouTube|...",
-    "entertainmentType": "video|game|music|review"
-  }
-]`;
+Platform choices: ${config.platforms.slice(0, 8).join(', ')}
+No URLs`;
 
   try {
     const aiContent = await callRecommendationAI(

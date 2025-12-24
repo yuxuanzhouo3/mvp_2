@@ -80,9 +80,12 @@ export async function GET(
     // 使用量限制检查
     // ==========================================
     // 只对登录用户进行使用量检查（匿名用户不受限制，鼓励注册）
+    let usageStats: Awaited<ReturnType<typeof getUserUsageStats>> | null = null;
     if (isValidUserId(userId)) {
       try {
         const usageCheck = await canUseRecommendation(userId);
+        // 保存使用量统计信息，用于后续响应
+        usageStats = usageCheck.stats;
 
         if (!usageCheck.allowed) {
           const stats = usageCheck.stats;
@@ -411,42 +414,32 @@ export async function GET(
 
       console.log(`[Search] 生成搜索链接数: ${validatedRecommendations.length}`);
 
-      // 5. 保存到数据库并记录使用量
+      // 5. 异步保存到数据库和缓存（不阻塞响应）
       if (isValidUserId(userId) && validatedRecommendations.length > 0) {
         console.log(`[Save] Recording recommendation for user ${userId.slice(0, 8)}...`);
-        saveRecommendationsToHistory(userId, validatedRecommendations)
-          .then((ids) => {
-            console.log(`[Save] ✓ Successfully saved ${ids.length} recommendations to history`);
-          })
-          .catch((err) => {
-            console.error(`[Save] ✗ Failed to save to history:`, err);
-          });
-
-        updateUserPreferences(userId, category, { incrementView: true })
-          .then(() => {
+        // 所有数据库操作都是异步的，不阻塞响应
+        Promise.all([
+          saveRecommendationsToHistory(userId, validatedRecommendations),
+          updateUserPreferences(userId, category, { incrementView: true }),
+          recordRecommendationUsage(userId, { category, count: validatedRecommendations.length }),
+        ])
+          .then(([ids, , usageResult]) => {
+            console.log(`[Save] ✓ Successfully saved ${ids.length} recommendations`);
             console.log(`[Preferences] ✓ Updated user preferences for ${category}`);
-          })
-          .catch((err) => {
-            console.error(`[Preferences] ✗ Failed to update preferences:`, err);
-          });
-
-        // 记录使用量（用于限额统计）
-        recordRecommendationUsage(userId, { category, count: validatedRecommendations.length })
-          .then((result) => {
-            if (result.success) {
+            if (usageResult.success) {
               console.log(`[Usage] ✓ Recorded usage for ${category}`);
             } else {
-              console.warn(`[Usage] ✗ Failed to record usage:`, result.error);
+              console.warn(`[Usage] ✗ Failed to record usage:`, usageResult.error);
             }
           })
           .catch((err) => {
-            console.error(`[Usage] ✗ Error recording usage:`, err);
+            console.error(`[Save] ✗ Failed to save recommendations:`, err);
           });
       } else {
         console.log(`[Save] Skipping history save for anonymous user`);
       }
 
-      // 6. 缓存推荐结果（用于登录用户）
+      // 6. 异步缓存推荐结果（用于登录用户）
       if (!isAnonymous) {
         cacheRecommendations(category, preferenceHash, validatedRecommendations, 30)
           .then(() => {
@@ -457,22 +450,17 @@ export async function GET(
           });
       }
 
-      // 7. 获取最新使用量信息并返回
+      // 7. 构建使用量信息并立即返回（使用缓存的统计数据）
       let usageInfo = null;
-      if (isValidUserId(userId)) {
-        try {
-          const stats = await getUserUsageStats(userId);
-          usageInfo = {
-            current: stats.currentPeriodUsage + 1, // +1 因为刚记录了一次
-            limit: stats.periodLimit,
-            remaining: stats.isUnlimited ? -1 : Math.max(0, stats.remainingUsage - 1),
-            periodType: stats.periodType,
-            periodEnd: stats.periodEnd.toISOString(),
-            isUnlimited: stats.isUnlimited,
-          };
-        } catch (err) {
-          console.warn("[Usage] Failed to get usage stats for response:", err);
-        }
+      if (usageStats) {
+        usageInfo = {
+          current: usageStats.currentPeriodUsage + 1, // +1 因为本次请求计入使用量
+          limit: usageStats.periodLimit,
+          remaining: usageStats.isUnlimited ? -1 : Math.max(0, usageStats.remainingUsage - 1),
+          periodType: usageStats.periodType,
+          periodEnd: usageStats.periodEnd.toISOString(),
+          isUnlimited: usageStats.isUnlimited,
+        };
       }
 
       return NextResponse.json({
