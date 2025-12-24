@@ -371,7 +371,7 @@ export async function generateRecommendations(
   const desiredCount = Math.max(5, Math.min(10, count));
 
   const prompt = locale === 'zh' ? `
-生成 ${desiredCount} 个个性化推荐。
+生成 ${desiredCount} 个多样化推荐，严格遵守类型分布要求。
 
 用户历史：${JSON.stringify(userHistory.slice(0, 15), null, 2)}
 ${userProfilePrompt}
@@ -379,9 +379,18 @@ ${userProfilePrompt}
 
 输出JSON数组，每项必须包含：title, description, reason, tags(3-5个), searchQuery, platform${category === 'entertainment' ? ', entertainmentType' : ''}
 
-${category === 'entertainment' ? `必含4类型：视频(豆瓣/B站/爱奇艺)、游戏(${(config as any).gamePlatforms?.slice(0, 4).join('/')})、音乐(${(config as any).musicPlatforms?.slice(0, 3).join('/')})、影评
-游戏searchQuery仅写游戏名` : ''}${category === 'food' ? `3类型：食谱(纯菜名)、菜系(如"川菜餐厅")、场合(如"商务午餐")` : ''}${category === 'travel' ? `格式："国家·城市"，用真实地名` : ''}${category === 'fitness' ? `必含3类：视频教程(B站)、健身房(地图)、器材教程
-器材searchQuery用"XX使用教程"` : ''}
+${category === 'entertainment' ? `【强制要求】必须包含4种不同类型，平均分配：
+- 视频类(豆瓣/B站/爱奇艺): 影视作品
+- 游戏类(${(config as any).gamePlatforms?.slice(0, 4).join('/')}): 游戏名称(不含平台名)
+- 音乐类(${(config as any).musicPlatforms?.slice(0, 3).join('/')}): 歌曲/专辑
+- 资讯类: 影评/排行/新闻
+每种类型至少1个，entertainmentType字段必填(video/game/music/review)` : ''}${category === 'food' ? `【强制要求】必须包含3种类型：
+- 食谱类: 纯菜名(如"宫保鸡丁")
+- 菜系类: "XX菜系餐厅"(如"川菜餐厅")
+- 场合类: "场合+菜系"(如"商务午餐")` : ''}${category === 'travel' ? `【格式要求】标题必须是"国家·城市"(如"日本·东京")，使用真实地名` : ''}${category === 'fitness' ? `【强制要求】必须包含3种类型，各至少1个：
+- 视频教程(B站): 健身课程视频
+- 地点推荐(地图): 健身房/运动场所
+- 器材教程: "XX使用教程"(不是购物链接)` : ''}
 平台选择：${config.platforms.slice(0, 6).join('、')}
 勿生成URL` : `
 Generate ${desiredCount} personalized recommendations.
@@ -403,8 +412,8 @@ No URLs`;
         {
           role: 'system',
           content: locale === 'zh'
-            ? '推荐分析师。只返回JSON数组，无链接，无markdown。'
-            : 'Recommendation analyst. Return JSON array only, no links, no markdown.'
+            ? '推荐分析师。返回JSON数组，包含指定类型，无链接，无markdown。'
+            : 'Recommendation analyst. Return JSON array with specified types, no links, no markdown.'
         },
         {
           role: 'user',
