@@ -27,11 +27,11 @@ function hasValidKey(value?: string | null) {
 
 function getProviderOrder(): AIProvider[] {
   if (isChinaDeployment()) {
-    // CN环境: 优先使用通义千问，智谱作为备用
+    // CN环境: 优先使用通义千问（qwen-turbo首选，速度快成本低），智谱作为备用
     const providers: AIProvider[] = [];
 
     if (hasValidKey(process.env.QWEN_API_KEY)) {
-      providers.push("qwen-max", "qwen-plus", "qwen-turbo");
+      providers.push("qwen-turbo", "qwen-plus", "qwen-max");
     }
     if (hasValidKey(process.env.ZHIPU_API_KEY)) {
       providers.push("zhipu");
