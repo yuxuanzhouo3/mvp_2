@@ -45,7 +45,8 @@
       "Bash(powershell -Command:*)",
       "Bash(npx eslint:*)",
       "Bash(xargs ls:*)",
-      "Bash(xargs basename:*)"
+      "Bash(xargs basename:*)",
+      "Bash(robocopy:*)"
     ],
     "deny": [],
     "ask": []
