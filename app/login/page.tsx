@@ -19,6 +19,7 @@ import {
   clearWxMpLoginParams,
   requestWxMpLogin,
 } from '@/lib/wechat-mp'
+import { saveAuthState } from '@/lib/auth/auth-state-manager'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -62,10 +63,28 @@ export default function LoginPage() {
             expiresIn: callback.expiresIn,
             nickName: callback.nickName,
             avatarUrl: callback.avatarUrl,
+            userId: callback.userId,
           }),
         })
 
         if (res.ok) {
+          const data = await res.json()
+
+          // 保存认证状态到 localStorage
+          if (data.user) {
+            const refreshToken = callback.refreshToken || callback.token
+            saveAuthState(
+              callback.token,
+              refreshToken,
+              data.user,
+              data.tokenMeta || {
+                accessTokenExpiresIn: parseInt(callback.expiresIn || '604800', 10),
+                refreshTokenExpiresIn: 604800,
+              }
+            )
+            console.log('[Login] MP login state saved to localStorage')
+          }
+
           clearWxMpLoginParams()
           // 登录成功，刷新页面以更新状态
           window.location.href = '/'
@@ -89,18 +108,38 @@ export default function LoginPage() {
 
         if (response.ok && data.success) {
           // 设置 cookie
-          await fetch('/api/auth/mp-callback', {
+          const callbackRes = await fetch('/api/auth/mp-callback', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
             body: JSON.stringify({
               token: data.token,
+              refreshToken: data.refreshToken,
               openid: data.openid,
               expiresIn: data.expiresIn,
               nickName: callback.nickName,
               avatarUrl: callback.avatarUrl,
+              userId: data.userId,
             }),
           })
+
+          if (callbackRes.ok) {
+            const callbackData = await callbackRes.json()
+
+            // 保存认证状态到 localStorage
+            if (callbackData.user) {
+              saveAuthState(
+                data.token,
+                data.refreshToken || data.token,
+                callbackData.user,
+                callbackData.tokenMeta || {
+                  accessTokenExpiresIn: data.expiresIn || 604800,
+                  refreshTokenExpiresIn: 604800,
+                }
+              )
+              console.log('[Login] MP login state saved to localStorage (code flow)')
+            }
+          }
 
           clearWxMpLoginParams()
           window.location.href = '/'

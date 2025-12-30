@@ -21,7 +21,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const { token, openid, expiresIn, nickName, avatarUrl } = await req.json();
+    const { token, refreshToken, openid, expiresIn, nickName, avatarUrl, userId } = await req.json();
 
     if (!token || !openid) {
       return NextResponse.json(
@@ -32,24 +32,27 @@ export async function POST(req: Request) {
 
     console.log("[mp-callback] Processing callback for openid:", openid);
 
-    // 更新用户资料（新用户首次登录时传递昵称和头像）
-    if (nickName || avatarUrl) {
-      try {
-        const db = getCloudBaseDatabase();
-        const usersCollection = db.collection(CloudBaseCollections.USERS);
+    let user = null;
 
-        // 查找用户
-        const userResult = await usersCollection.where({ wechatOpenId: openid }).get();
+    // 查找并更新用户资料
+    try {
+      const db = getCloudBaseDatabase();
+      const usersCollection = db.collection(CloudBaseCollections.USERS);
 
-        // 兼容早期用 email 存储 openid 的情况
-        let user = userResult.data?.[0];
-        if (!user) {
-          const wechatEmail = `wechat_${openid}@local.wechat`;
-          const emailResult = await usersCollection.where({ email: wechatEmail }).get();
-          user = emailResult.data?.[0];
-        }
+      // 查找用户
+      const userResult = await usersCollection.where({ wechatOpenId: openid }).get();
 
-        if (user) {
+      // 兼容早期用 email 存储 openid 的情况
+      user = userResult.data?.[0];
+      if (!user) {
+        const wechatEmail = `wechat_${openid}@local.wechat`;
+        const emailResult = await usersCollection.where({ email: wechatEmail }).get();
+        user = emailResult.data?.[0];
+      }
+
+      if (user) {
+        // 更新用户资料（新用户首次登录时传递昵称和头像）
+        if (nickName || avatarUrl) {
           // 只有当用户没有设置过资料，或资料是默认值时才更新
           const shouldUpdate = !user.name || user.name === "微信用户" || !user.avatar;
 
@@ -67,20 +70,46 @@ export async function POST(req: Request) {
 
             await usersCollection.doc(user._id).update(updateData);
             console.log("[mp-callback] Updated user profile:", { openid, nickName, avatarUrl });
+
+            // 更新本地 user 对象
+            user = { ...user, ...updateData };
           }
         }
-      } catch (updateError) {
-        console.error("[mp-callback] Update profile failed:", updateError);
-        // 更新失败不影响登录流程
       }
+    } catch (dbError) {
+      console.error("[mp-callback] Database operation failed:", dbError);
+      // 数据库操作失败不影响登录流程，但 user 可能为 null
     }
 
     const maxAge = expiresIn ? parseInt(String(expiresIn), 10) : 60 * 60 * 24 * 7; // 默认 7 天
+
+    // 构建用户信息返回给前端，用于保存到 localStorage
+    const userInfo = user ? {
+      id: user._id,
+      email: user.email,
+      name: user.name || nickName || "微信用户",
+      avatar: user.avatar || avatarUrl || null,
+      subscription_plan: user.plan || user.subscriptionTier || "free",
+      subscription_status: user.plan_exp ? "active" : null,
+    } : userId ? {
+      id: userId,
+      email: `wechat_${openid}@local.wechat`,
+      name: nickName || "微信用户",
+      avatar: avatarUrl || null,
+      subscription_plan: "free",
+      subscription_status: null,
+    } : null;
 
     const res = NextResponse.json({
       success: true,
       openid,
       message: "Cookie set successfully",
+      // 返回用户信息和 token 元数据，供前端保存到 localStorage
+      user: userInfo,
+      tokenMeta: {
+        accessTokenExpiresIn: maxAge,
+        refreshTokenExpiresIn: 7 * 24 * 60 * 60, // 默认 7 天
+      },
     });
 
     // 设置 httpOnly cookie（在 WebView 上下文中设置，H5 可以读取）

@@ -60,6 +60,7 @@ export interface WxMpLoginCallback {
   avatarUrl: string | null;
   code: string | null;
   userId: string | null;
+  refreshToken: string | null;
 }
 
 /**
@@ -85,6 +86,7 @@ export function parseWxMpLoginCallback(): WxMpLoginCallback | null {
     avatarUrl: params.get("mpAvatarUrl") ? decodeURIComponent(params.get("mpAvatarUrl")!) : null,
     code,
     userId: params.get("userId"),
+    refreshToken: params.get("refreshToken"),
   };
 }
 
