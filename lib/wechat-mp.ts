@@ -21,6 +21,64 @@ declare global {
 }
 
 /**
+ * 获取微信环境诊断信息
+ */
+export function getWxEnvironmentDiagnostics(): {
+  userAgent: string;
+  hasMiniProgramInUA: boolean;
+  wxjsEnvironment: string | undefined;
+  hasWxObject: boolean;
+  hasWxMiniProgram: boolean;
+  hasNavigateTo: boolean;
+  hasPostMessage: boolean;
+  hasGetEnv: boolean;
+  documentReadyState: string;
+  jsssdkLoaded: boolean;
+} {
+  if (typeof window === "undefined") {
+    return {
+      userAgent: "",
+      hasMiniProgramInUA: false,
+      wxjsEnvironment: undefined,
+      hasWxObject: false,
+      hasWxMiniProgram: false,
+      hasNavigateTo: false,
+      hasPostMessage: false,
+      hasGetEnv: false,
+      documentReadyState: "unknown",
+      jsssdkLoaded: false,
+    };
+  }
+
+  const ua = navigator.userAgent.toLowerCase();
+  const hasWxObject = typeof window.wx !== "undefined";
+  const hasWxMiniProgram = hasWxObject && typeof window.wx?.miniProgram !== "undefined";
+
+  // 检查 JSSDK 是否已加载（通过检查 script 标签）
+  const scripts = document.getElementsByTagName("script");
+  let jsssdkLoaded = false;
+  for (let i = 0; i < scripts.length; i++) {
+    if (scripts[i].src && scripts[i].src.includes("jweixin")) {
+      jsssdkLoaded = true;
+      break;
+    }
+  }
+
+  return {
+    userAgent: ua,
+    hasMiniProgramInUA: ua.includes("miniprogram"),
+    wxjsEnvironment: window.__wxjs_environment,
+    hasWxObject,
+    hasWxMiniProgram,
+    hasNavigateTo: hasWxMiniProgram && typeof window.wx?.miniProgram?.navigateTo === "function",
+    hasPostMessage: hasWxMiniProgram && typeof window.wx?.miniProgram?.postMessage === "function",
+    hasGetEnv: hasWxMiniProgram && typeof window.wx?.miniProgram?.getEnv === "function",
+    documentReadyState: document.readyState,
+    jsssdkLoaded,
+  };
+}
+
+/**
  * 检测是否在微信小程序 WebView 环境中
  */
 export function isMiniProgram(): boolean {
@@ -43,25 +101,52 @@ export function isMiniProgram(): boolean {
  * 等待 wx.miniProgram 对象可用
  * 小程序 WebView 中，wx.miniProgram 可能需要一些时间才能注入完成
  */
-export function waitForWxMiniProgram(timeout: number = 3000): Promise<WxMiniProgram | null> {
+export function waitForWxMiniProgram(timeout: number = 5000): Promise<WxMiniProgram | null> {
   return new Promise((resolve) => {
+    console.log("[wechat-mp] waitForWxMiniProgram started, timeout:", timeout);
+
+    // 输出初始诊断信息
+    const initialDiag = getWxEnvironmentDiagnostics();
+    console.log("[wechat-mp] Initial diagnostics:", JSON.stringify(initialDiag, null, 2));
+
     // 如果已经可用，直接返回
     if (window.wx?.miniProgram?.navigateTo) {
+      console.log("[wechat-mp] wx.miniProgram.navigateTo already available");
       resolve(window.wx.miniProgram);
       return;
     }
 
     const startTime = Date.now();
     const checkInterval = 100; // 每 100ms 检查一次
+    let checkCount = 0;
 
     const check = () => {
+      checkCount++;
+      const elapsed = Date.now() - startTime;
+
+      // 每秒输出一次诊断信息
+      if (checkCount % 10 === 0) {
+        const diag = getWxEnvironmentDiagnostics();
+        console.log(`[wechat-mp] Check #${checkCount}, elapsed: ${elapsed}ms, diagnostics:`, JSON.stringify(diag, null, 2));
+      }
+
       if (window.wx?.miniProgram?.navigateTo) {
+        console.log(`[wechat-mp] wx.miniProgram.navigateTo became available after ${elapsed}ms`);
         resolve(window.wx.miniProgram);
         return;
       }
 
-      if (Date.now() - startTime >= timeout) {
-        console.warn("[wechat-mp] Timeout waiting for wx.miniProgram");
+      // 也检查 postMessage 是否可用（作为备选）
+      if (window.wx?.miniProgram?.postMessage && elapsed > 2000) {
+        console.log(`[wechat-mp] Only postMessage available after ${elapsed}ms, returning miniProgram object`);
+        resolve(window.wx.miniProgram);
+        return;
+      }
+
+      if (elapsed >= timeout) {
+        const finalDiag = getWxEnvironmentDiagnostics();
+        console.warn("[wechat-mp] Timeout waiting for wx.miniProgram after", elapsed, "ms");
+        console.warn("[wechat-mp] Final diagnostics:", JSON.stringify(finalDiag, null, 2));
         resolve(null);
         return;
       }

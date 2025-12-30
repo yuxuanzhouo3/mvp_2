@@ -1,6 +1,7 @@
 import type React from "react"
 import type { Metadata, Viewport } from "next"
 import { Inter } from "next/font/google"
+import Script from "next/script"
 import "./globals.css"
 import AuthProvider from "@/components/auth-provider"
 import { LanguageProvider } from "@/components/language-provider"
@@ -37,6 +38,15 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
+      <head>
+        {/* 微信 JSSDK - 用于小程序 WebView 中调用 wx.miniProgram API */}
+        {isCN && (
+          <Script
+            src="https://res.wx.qq.com/open/js/jweixin-1.6.0.js"
+            strategy="beforeInteractive"
+          />
+        )}
+      </head>
       <body className={inter.className}>
         <LanguageProvider>
           <AuthProvider>
