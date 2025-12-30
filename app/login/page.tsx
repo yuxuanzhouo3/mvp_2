@@ -17,7 +17,7 @@ import {
   isMiniProgram,
   parseWxMpLoginCallback,
   clearWxMpLoginParams,
-  requestWxMpLogin,
+  requestWxMpLoginAsync,
 } from '@/lib/wechat-mp'
 import { saveAuthState } from '@/lib/auth/auth-state-manager'
 
@@ -240,9 +240,10 @@ export default function LoginPage() {
     try {
       // 小程序环境：跳转到小程序原生登录页面
       if (isInMiniProgram) {
-        const success = requestWxMpLogin(window.location.href)
+        console.log('[Login] Detected miniprogram environment, requesting native login...')
+        const success = await requestWxMpLoginAsync(window.location.href)
         if (!success) {
-          throw new Error('无法跳转到小程序登录页面')
+          throw new Error('无法跳转到小程序登录页面，请确认在微信小程序中打开')
         }
         // 跳转后不需要重置状态，页面会被小程序替换
         return

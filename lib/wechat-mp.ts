@@ -40,6 +40,40 @@ export function isMiniProgram(): boolean {
 }
 
 /**
+ * 等待 wx.miniProgram 对象可用
+ * 小程序 WebView 中，wx.miniProgram 可能需要一些时间才能注入完成
+ */
+export function waitForWxMiniProgram(timeout: number = 3000): Promise<WxMiniProgram | null> {
+  return new Promise((resolve) => {
+    // 如果已经可用，直接返回
+    if (window.wx?.miniProgram?.navigateTo) {
+      resolve(window.wx.miniProgram);
+      return;
+    }
+
+    const startTime = Date.now();
+    const checkInterval = 100; // 每 100ms 检查一次
+
+    const check = () => {
+      if (window.wx?.miniProgram?.navigateTo) {
+        resolve(window.wx.miniProgram);
+        return;
+      }
+
+      if (Date.now() - startTime >= timeout) {
+        console.warn("[wechat-mp] Timeout waiting for wx.miniProgram");
+        resolve(null);
+        return;
+      }
+
+      setTimeout(check, checkInterval);
+    };
+
+    check();
+  });
+}
+
+/**
  * 检测是否在微信环境中（包括小程序和公众号）
  */
 export function isWechatEnvironment(): boolean {
@@ -118,6 +152,58 @@ export function clearWxMpLoginParams(): void {
 /**
  * 请求微信小程序原生登录
  * 跳转到小程序的登录页面
+ * 异步版本：会等待 wx.miniProgram 对象可用，并有 postMessage 备用方案
+ */
+export async function requestWxMpLoginAsync(returnUrl?: string): Promise<boolean> {
+  console.log("[wechat-mp] requestWxMpLoginAsync called");
+
+  const currentUrl = returnUrl || window.location.href;
+
+  // 等待 wx.miniProgram 可用
+  const mp = await waitForWxMiniProgram(3000);
+
+  // 方案1：使用 navigateTo 直接跳转
+  if (mp && typeof mp.navigateTo === "function") {
+    const encodedUrl = encodeURIComponent(currentUrl);
+    console.log("[wechat-mp] Using navigateTo to login page");
+
+    mp.navigateTo({
+      url: `/pages/webshell/login?returnUrl=${encodedUrl}`,
+    });
+
+    return true;
+  }
+
+  // 方案2：通过 postMessage 请求小程序处理登录
+  console.log("[wechat-mp] navigateTo not available, trying postMessage fallback");
+
+  if (mp && typeof mp.postMessage === "function") {
+    mp.postMessage({
+      type: "REQUEST_WX_LOGIN",
+      returnUrl: currentUrl,
+    });
+    console.log("[wechat-mp] postMessage sent for login request");
+    return true;
+  }
+
+  // 方案3：直接使用 window.wx.miniProgram.postMessage
+  if (window.wx?.miniProgram?.postMessage) {
+    window.wx.miniProgram.postMessage({
+      type: "REQUEST_WX_LOGIN",
+      returnUrl: currentUrl,
+    });
+    console.log("[wechat-mp] Direct postMessage sent for login request");
+    return true;
+  }
+
+  console.error("[wechat-mp] All methods failed, cannot request login");
+  return false;
+}
+
+/**
+ * 请求微信小程序原生登录（同步版本，兼容旧代码）
+ * 跳转到小程序的登录页面
+ * @deprecated 推荐使用 requestWxMpLoginAsync
  */
 export function requestWxMpLogin(returnUrl?: string): boolean {
   const mp = window.wx?.miniProgram;
