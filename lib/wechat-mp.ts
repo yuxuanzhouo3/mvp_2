@@ -80,19 +80,20 @@ export function getWxEnvironmentDiagnostics(): {
 
 /**
  * 检测是否在微信小程序 WebView 环境中
+ * 注意：不能仅依赖 window.wx.miniProgram 对象存在，因为 JSSDK 在 PC 浏览器中也会创建该对象
  */
 export function isMiniProgram(): boolean {
   if (typeof window === "undefined") return false;
 
-  // 检测 User-Agent
+  // 检测 User-Agent（最可靠）
   const ua = navigator.userAgent.toLowerCase();
   if (ua.includes("miniprogram")) return true;
 
-  // 检测微信 JS 环境变量
+  // 检测微信 JS 环境变量（小程序 WebView 会设置此变量）
   if (window.__wxjs_environment === "miniprogram") return true;
 
-  // 检测 wx.miniProgram 对象
-  if (window.wx?.miniProgram) return true;
+  // 注意：不检测 window.wx?.miniProgram，因为 JSSDK 在所有环境都会创建该对象
+  // 这会导致 PC 浏览器被误判为小程序环境
 
   return false;
 }
