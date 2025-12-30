@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
@@ -13,6 +13,12 @@ import { auth } from '@/lib/auth/client'
 import { RegionConfig, isChinaRegion } from '@/lib/config/region'
 import { useLanguage } from '@/components/language-provider'
 import { useTranslations } from '@/lib/i18n'
+import {
+  isMiniProgram,
+  parseWxMpLoginCallback,
+  clearWxMpLoginParams,
+  requestWxMpLogin,
+} from '@/lib/wechat-mp'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -24,9 +30,102 @@ export default function LoginPage() {
   const [oauthLoading, setOauthLoading] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [agreeToPrivacy, setAgreeToPrivacy] = useState(false)
+  const [isInMiniProgram, setIsInMiniProgram] = useState(false)
+  const [mpLoginProcessing, setMpLoginProcessing] = useState(false)
   const isChineseLanguage = language === 'zh'
   const isChinaDeployment = RegionConfig.auth.provider === 'cloudbase'
   const isChina = isChinaRegion()
+
+  // 检测小程序环境
+  useEffect(() => {
+    setIsInMiniProgram(isMiniProgram())
+  }, [])
+
+  // 处理小程序登录回调
+  const handleMpLoginCallback = useCallback(async () => {
+    const callback = parseWxMpLoginCallback()
+    if (!callback) return
+
+    setMpLoginProcessing(true)
+    setError(null)
+
+    try {
+      // 情况1：直接收到 token（推荐流程）
+      if (callback.token && callback.openid) {
+        const res = await fetch('/api/auth/mp-callback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            token: callback.token,
+            openid: callback.openid,
+            expiresIn: callback.expiresIn,
+            nickName: callback.nickName,
+            avatarUrl: callback.avatarUrl,
+          }),
+        })
+
+        if (res.ok) {
+          clearWxMpLoginParams()
+          // 登录成功，刷新页面以更新状态
+          window.location.href = '/'
+          return
+        } else {
+          const errorData = await res.json().catch(() => ({}))
+          setError(errorData.error || '小程序登录失败')
+        }
+      }
+
+      // 情况2：收到 code（兜底流程）
+      if (callback.code) {
+        const response = await fetch('/api/wxlogin/check', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ code: callback.code }),
+        })
+
+        const data = await response.json()
+
+        if (response.ok && data.success) {
+          // 设置 cookie
+          await fetch('/api/auth/mp-callback', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+              token: data.token,
+              openid: data.openid,
+              expiresIn: data.expiresIn,
+              nickName: callback.nickName,
+              avatarUrl: callback.avatarUrl,
+            }),
+          })
+
+          clearWxMpLoginParams()
+          window.location.href = '/'
+          return
+        } else {
+          setError(data.message || '登录失败')
+        }
+      }
+
+      clearWxMpLoginParams()
+    } catch (err) {
+      console.error('[Login] MP callback error:', err)
+      setError(err instanceof Error ? err.message : '小程序登录处理失败')
+      clearWxMpLoginParams()
+    } finally {
+      setMpLoginProcessing(false)
+    }
+  }, [])
+
+  // 页面加载时检查小程序登录回调
+  useEffect(() => {
+    if (isChina) {
+      handleMpLoginCallback()
+    }
+  }, [handleMpLoginCallback, isChina])
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -100,7 +199,17 @@ export default function LoginPage() {
     setError(null)
 
     try {
-      // 获取微信登录二维码 URL
+      // 小程序环境：跳转到小程序原生登录页面
+      if (isInMiniProgram) {
+        const success = requestWxMpLogin(window.location.href)
+        if (!success) {
+          throw new Error('无法跳转到小程序登录页面')
+        }
+        // 跳转后不需要重置状态，页面会被小程序替换
+        return
+      }
+
+      // PC/手机浏览器：获取微信登录二维码 URL
       const nextPath = '/'
       const response = await fetch(`/api/auth/wechat/qrcode?next=${encodeURIComponent(nextPath)}`)
       const data = await response.json()
@@ -137,7 +246,18 @@ export default function LoginPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* 小程序登录处理中提示 */}
+          {mpLoginProcessing && (
+            <div className="flex flex-col items-center justify-center py-8 space-y-4">
+              <LoadingSpinner />
+              <p className="text-sm text-muted-foreground">
+                {isChineseLanguage ? '正在处理登录...' : 'Processing login...'}
+              </p>
+            </div>
+          )}
+
           {/* Email Login Form */}
+          {!mpLoginProcessing && (
           <form onSubmit={onSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">{t.auth.email}</Label>
@@ -241,9 +361,10 @@ export default function LoginPage() {
               )}
             </Button>
           </form>
+          )}
 
           {/* Google Login for International */}
-          {RegionConfig.auth.provider === 'supabase' && RegionConfig.auth.features.googleAuth && (
+          {!mpLoginProcessing && RegionConfig.auth.provider === 'supabase' && RegionConfig.auth.features.googleAuth && (
             <>
               <div className="relative">
                 <div className="absolute inset-0 flex items-center">
@@ -278,7 +399,7 @@ export default function LoginPage() {
           )}
 
           {/* WeChat Login for China */}
-          {isChinaDeployment && RegionConfig.auth.features.wechatAuth && (
+          {!mpLoginProcessing && isChinaDeployment && RegionConfig.auth.features.wechatAuth && (
             <>
               <div className="relative">
                 <div className="absolute inset-0 flex items-center">
