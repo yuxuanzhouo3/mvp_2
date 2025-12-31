@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { useAuth } from "@/hooks/use-auth"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
+import dynamic from "next/dynamic"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -14,11 +15,21 @@ import { useToast } from "@/hooks/use-toast"
 import { useLanguage } from "@/components/language-provider"
 import { useTranslations } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
-import { StripeCheckoutDialog } from "@/components/payment/stripe-checkout-dialog"
 import { CNPaymentDialog } from "@/components/payment/cn-payment-dialog"
 import { fetchWithAuth } from "@/lib/auth/fetch-with-auth"
 import { isChinaDeployment } from "@/lib/config/deployment.config"
 import { isMiniProgram } from "@/lib/wechat-mp"
+
+// 只在 INTL 环境加载 StripeCheckoutDialog，CN 环境完全不加载
+const StripeCheckoutDialog = isChinaDeployment()
+  ? () => null  // CN 环境返回空组件
+  : dynamic(
+      () => import("@/components/payment/stripe-checkout-dialog").then(mod => ({ default: mod.StripeCheckoutDialog })),
+      {
+        ssr: false,
+        loading: () => null,
+      }
+    )
 
 type PaymentMethodINTL = "stripe" | "paypal"
 type PaymentMethodCN = "wechat" | "alipay"
@@ -763,8 +774,8 @@ export default function PricingPage() {
         </div>
       </div>
       
-      {/* INTL Stripe 支付弹窗 */}
-      {stripeCheckout && (
+      {/* INTL Stripe 支付弹窗 - 只在非 CN 环境且非小程序环境渲染 */}
+      {!useCNPayment && stripeCheckout && (
         <StripeCheckoutDialog
           open={isStripeDialogOpen}
           clientSecret={stripeCheckout.clientSecret}

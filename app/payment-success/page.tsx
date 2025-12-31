@@ -7,8 +7,12 @@ import { CheckCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { SearchParamsBoundary } from "@/components/search-params-boundary";
-import { getStripePromise } from "@/lib/stripe-client";
+import { isChinaDeployment } from "@/lib/config/deployment.config";
+// 只在 INTL 环境才可能需要 Stripe，CN 环境完全不导入
 import { fetchWithAuth } from "@/lib/auth/fetch-with-auth";
+
+// CN 环境标记
+const isCN = isChinaDeployment();
 
 function PaymentSuccessContent() {
   const router = useRouter();
@@ -101,11 +105,20 @@ function PaymentSuccessContent() {
             throw new Error(result.error || "Payment capture failed");
           }
         } else if (provider === "stripe") {
+          // CN 环境不支持 Stripe，直接返回错误
+          if (isCN) {
+            setErrorMessage("Stripe payment is not supported in this region.");
+            setIsProcessing(false);
+            return;
+          }
+
           if (!paymentIntentClientSecret) {
             setErrorMessage("Stripe return data missing. Please retry from the pricing page.");
             return;
           }
 
+          // INTL 环境动态导入 Stripe SDK
+          const { getStripePromise } = await import("@/lib/stripe-client");
           const stripe = await getStripePromise();
           if (!stripe) {
             setErrorMessage("Stripe is not configured in this environment.");
