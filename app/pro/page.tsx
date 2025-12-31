@@ -18,6 +18,7 @@ import { StripeCheckoutDialog } from "@/components/payment/stripe-checkout-dialo
 import { CNPaymentDialog } from "@/components/payment/cn-payment-dialog"
 import { fetchWithAuth } from "@/lib/auth/fetch-with-auth"
 import { isChinaDeployment } from "@/lib/config/deployment.config"
+import { isMiniProgram } from "@/lib/wechat-mp"
 
 type PaymentMethodINTL = "stripe" | "paypal"
 type PaymentMethodCN = "wechat" | "alipay"
@@ -50,7 +51,10 @@ export default function PricingPage() {
   const { toast } = useToast()
   const { language } = useLanguage()
   const t = useTranslations(language)
-  
+
+  // 检测微信小程序环境
+  const [isInMiniProgram, setIsInMiniProgram] = useState(false)
+
   // 根据环境选择默认支付方式
   const [selectedPayment, setSelectedPayment] = useState<PaymentMethod>(
     isCN ? "wechat" : "stripe"
@@ -86,6 +90,17 @@ export default function PricingPage() {
 
   // 覆盖订阅层级（从服务器获取的最新值）
   const [overrideTier, setOverrideTier] = useState<Tier | null>(null)
+
+  // 检测微信小程序环境并调整支付方式
+  useEffect(() => {
+    const inMiniProgram = isMiniProgram()
+    setIsInMiniProgram(inMiniProgram)
+
+    // 如果在小程序环境中，自动切换到微信支付（小程序环境使用 CN 支付方式）
+    if (inMiniProgram && (selectedPayment === "stripe" || selectedPayment === "paypal")) {
+      setSelectedPayment("wechat")
+    }
+  }, [])
 
   // 从服务器获取订阅状态，确保显示最新值
   useEffect(() => {
@@ -157,8 +172,9 @@ export default function PricingPage() {
 
   const currentTier = overrideTier ?? (user?.subscriptionTier || "free")
   
-  // 获取当前定价配置
-  const pricing = isCN ? PRICING.CN : PRICING.INTL
+  // 获取当前定价配置（小程序环境使用 CN 版定价）
+  const useCNPayment = isCN || isInMiniProgram
+  const pricing = useCNPayment ? PRICING.CN : PRICING.INTL
   const currencySymbol = pricing.symbol
 
   const handleSubscribe = async (tier: Tier, billingCycle: "monthly" | "yearly" = "monthly") => {
@@ -187,8 +203,8 @@ export default function PricingPage() {
           ? t.pricing.plans.enterprise.name
           : t.pricing.plans.free.name
 
-      // 根据环境选择不同的API端点
-      const apiEndpoint = isCN ? "/api/payment/cn/create" : "/api/payment/create"
+      // 根据环境选择不同的API端点（小程序环境使用 CN API）
+      const apiEndpoint = useCNPayment ? "/api/payment/cn/create" : "/api/payment/create"
 
       // 支付宝使用电脑网站支付，微信使用二维码支付
       const paymentMode = selectedPayment === "alipay" ? "page" : "qrcode"
@@ -212,8 +228,8 @@ export default function PricingPage() {
         throw new Error(data.error || "支付创建失败")
       }
 
-      if (isCN) {
-        // CN 环境 - 根据支付方式处理
+      if (useCNPayment) {
+        // CN 环境或小程序环境 - 根据支付方式处理
         setProcessingPlan(null)
 
         if (data.paymentUrl) {
@@ -345,56 +361,61 @@ export default function PricingPage() {
     { question: t.pricing.faq.freeTrial.question, answer: t.pricing.faq.freeTrial.answer },
   ]
 
-  // 支付方式选项
-  const paymentMethods = isCN
-    ? [
-        {
-          id: "wechat" as PaymentMethodCN,
-          name: "微信支付",
-          description: "使用微信扫码支付",
-          icon: (
-            <div className="p-2 rounded-lg bg-gradient-to-br from-green-500 to-green-600 shadow-lg shadow-green-500/30">
-              <svg viewBox="0 0 24 24" className="h-4 w-4 text-white" fill="currentColor">
-                <path d="M8.691 2.188C3.891 2.188 0 5.476 0 9.53c0 2.212 1.17 4.203 3.002 5.55a.59.59 0 0 1 .213.665l-.39 1.48c-.019.07-.048.141-.048.213 0 .163.13.295.29.295a.326.326 0 0 0 .167-.054l1.903-1.114a.864.864 0 0 1 .717-.098 10.16 10.16 0 0 0 2.837.403c.276 0 .543-.027.811-.05-.857-2.578.157-4.972 1.932-6.446 1.703-1.415 3.882-1.98 5.853-1.838-.576-3.583-4.196-6.348-8.596-6.348z"/>
-              </svg>
-            </div>
-          ),
-        },
-        {
-          id: "alipay" as PaymentMethodCN,
-          name: "支付宝",
-          description: "使用支付宝扫码支付",
-          icon: (
-            <div className="p-2 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/30">
-              <svg viewBox="0 0 24 24" className="h-4 w-4 text-white" fill="currentColor">
-                <path d="M21.422 15.358c-.598-.191-1.218-.374-1.857-.548a24.57 24.57 0 0 0 1.524-5.31h-4.073v-1.717h5.127V6.333h-5.127V4.25h-2.776v2.083H9.098v1.45h5.142v1.717H9.6v1.45h6.86a21.847 21.847 0 0 1-.917 3.19c-1.925-.433-3.91-.749-5.855-.749-3.178 0-5.117 1.342-5.117 3.408 0 2.066 1.939 3.408 5.117 3.408 2.365 0 4.456-.67 6.203-1.99a44.424 44.424 0 0 0 5.993 2.483l1.538-3.34z"/>
-              </svg>
-            </div>
-          ),
-        },
-      ]
-    : [
-        {
-          id: "stripe" as PaymentMethodINTL,
-          name: "Stripe",
-          description: t.pricing.paymentMethod.creditCard,
-          icon: (
-            <div className="p-2 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/30">
-              <CreditCard className="h-4 w-4 text-white" />
-            </div>
-          ),
-        },
-        {
-          id: "paypal" as PaymentMethodINTL,
-          name: "PayPal",
-          description: t.pricing.paymentMethod.paypalAccount,
-          icon: (
-            <div className="p-2 rounded-lg bg-gradient-to-br from-blue-600 to-blue-700 shadow-lg shadow-blue-500/30">
-              <span className="text-white text-sm font-bold">P</span>
-            </div>
-          ),
-        },
-      ]
+  // 支付方式选项 - CN 版
+  const cnPaymentMethods = [
+    {
+      id: "wechat" as PaymentMethodCN,
+      name: "微信支付",
+      description: "使用微信扫码支付",
+      icon: (
+        <div className="p-2 rounded-lg bg-gradient-to-br from-green-500 to-green-600 shadow-lg shadow-green-500/30">
+          <svg viewBox="0 0 24 24" className="h-4 w-4 text-white" fill="currentColor">
+            <path d="M8.691 2.188C3.891 2.188 0 5.476 0 9.53c0 2.212 1.17 4.203 3.002 5.55a.59.59 0 0 1 .213.665l-.39 1.48c-.019.07-.048.141-.048.213 0 .163.13.295.29.295a.326.326 0 0 0 .167-.054l1.903-1.114a.864.864 0 0 1 .717-.098 10.16 10.16 0 0 0 2.837.403c.276 0 .543-.027.811-.05-.857-2.578.157-4.972 1.932-6.446 1.703-1.415 3.882-1.98 5.853-1.838-.576-3.583-4.196-6.348-8.596-6.348z"/>
+          </svg>
+        </div>
+      ),
+    },
+    {
+      id: "alipay" as PaymentMethodCN,
+      name: "支付宝",
+      description: "使用支付宝扫码支付",
+      icon: (
+        <div className="p-2 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/30">
+          <svg viewBox="0 0 24 24" className="h-4 w-4 text-white" fill="currentColor">
+            <path d="M21.422 15.358c-.598-.191-1.218-.374-1.857-.548a24.57 24.57 0 0 0 1.524-5.31h-4.073v-1.717h5.127V6.333h-5.127V4.25h-2.776v2.083H9.098v1.45h5.142v1.717H9.6v1.45h6.86a21.847 21.847 0 0 1-.917 3.19c-1.925-.433-3.91-.749-5.855-.749-3.178 0-5.117 1.342-5.117 3.408 0 2.066 1.939 3.408 5.117 3.408 2.365 0 4.456-.67 6.203-1.99a44.424 44.424 0 0 0 5.993 2.483l1.538-3.34z"/>
+          </svg>
+        </div>
+      ),
+    },
+  ]
+
+  // 支付方式选项 - INTL 版
+  const intlPaymentMethods = [
+    {
+      id: "stripe" as PaymentMethodINTL,
+      name: "Stripe",
+      description: t.pricing.paymentMethod.creditCard,
+      icon: (
+        <div className="p-2 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/30">
+          <CreditCard className="h-4 w-4 text-white" />
+        </div>
+      ),
+    },
+    {
+      id: "paypal" as PaymentMethodINTL,
+      name: "PayPal",
+      description: t.pricing.paymentMethod.paypalAccount,
+      icon: (
+        <div className="p-2 rounded-lg bg-gradient-to-br from-blue-600 to-blue-700 shadow-lg shadow-blue-500/30">
+          <span className="text-white text-sm font-bold">P</span>
+        </div>
+      ),
+    },
+  ]
+
+  // 在微信小程序环境中，无论部署区域如何，都使用 CN 支付方式（微信支付、支付宝）
+  // 因为小程序不支持 Stripe 的 iframe，且用户在微信环境中使用微信支付更方便
+  const paymentMethods = (isCN || isInMiniProgram) ? cnPaymentMethods : intlPaymentMethods
 
   return (
     <>

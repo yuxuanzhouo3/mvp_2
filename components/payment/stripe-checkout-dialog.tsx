@@ -1,14 +1,14 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import type { StripeElementsOptions, StripeElementLocale } from "@stripe/stripe-js";
-import { Loader2, Lock, ShieldCheck } from "lucide-react";
+import { Loader2, Lock, ShieldCheck, AlertTriangle } from "lucide-react";
 
 import { useLanguage } from "@/components/language-provider";
 import { useTranslations } from "@/lib/i18n";
-import { getStripePromise } from "@/lib/stripe-client";
+import { getStripePromise, shouldDisableStripe } from "@/lib/stripe-client";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
@@ -45,6 +45,13 @@ export function StripeCheckoutDialog({
   const t = useTranslations(language);
   const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
 
+  // 检测是否在微信小程序环境中
+  const [isStripeDisabled, setIsStripeDisabled] = useState(false);
+
+  useEffect(() => {
+    setIsStripeDisabled(shouldDisableStripe());
+  }, []);
+
   const options: StripeElementsOptions | undefined = useMemo(() => {
     if (!clientSecret) return undefined;
 
@@ -80,7 +87,16 @@ export function StripeCheckoutDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {!clientSecret ? (
+        {isStripeDisabled ? (
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>
+              {language === "zh"
+                ? "微信小程序环境暂不支持 Stripe 支付，请使用 PayPal 或在浏览器中打开本页面完成支付。"
+                : "Stripe payment is not supported in WeChat MiniProgram. Please use PayPal or open this page in a browser to complete payment."}
+            </AlertDescription>
+          </Alert>
+        ) : !clientSecret ? (
           <Alert variant="destructive">
             <AlertDescription>
               {language === "zh"
