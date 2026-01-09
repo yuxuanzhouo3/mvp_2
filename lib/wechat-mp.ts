@@ -160,6 +160,19 @@ export function waitForWxMiniProgram(timeout: number = 5000): Promise<WxMiniProg
 }
 
 /**
+ * 获取微信小程序 SDK 对象（同步版本）
+ * 用于需要立即访问 miniProgram API 的场景
+ */
+export function getWxMiniProgram(): WxMiniProgram | null {
+  if (typeof window === "undefined") return null;
+  const wxObj = window.wx;
+  if (!wxObj || typeof wxObj !== "object") return null;
+  const mp = wxObj.miniProgram;
+  if (!mp || typeof mp !== "object") return null;
+  return mp;
+}
+
+/**
  * 检测是否在微信环境中（包括小程序和公众号）
  */
 export function isWechatEnvironment(): boolean {

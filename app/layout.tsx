@@ -6,6 +6,7 @@ import "./globals.css"
 import AuthProvider from "@/components/auth-provider"
 import { LanguageProvider } from "@/components/language-provider"
 import { Toaster } from "@/components/ui/toaster"
+import { MpLinkInterceptor } from "@/components/mp-link-interceptor"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -50,6 +51,8 @@ export default function RootLayout({
       <body className={inter.className}>
         <LanguageProvider>
           <AuthProvider>
+            {/* 微信小程序外部链接拦截器 - 仅 CN 环境启用 */}
+            {isCN && <MpLinkInterceptor />}
             <div className="min-h-screen bg-[#F7F9FC]">{children}</div>
             <Toaster />
             {/* CN环境页脚备案信息 */}
