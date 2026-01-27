@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useAuth } from "@/hooks/use-auth"
+import { useIsIPhone } from "@/hooks/use-device"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -34,6 +35,7 @@ const PRICING = {
 
 export default function SettingsPage() {
   const { user, isAuthenticated, isLoading, refresh } = useAuth()
+  const isIPhone = useIsIPhone()
   const router = useRouter()
   const { toast } = useToast()
   const { language } = useLanguage()
@@ -478,13 +480,15 @@ export default function SettingsPage() {
                     </p>
                   </div>
 
-                  <Link href="/pro">
-                    <Button className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700">
-                      {currentPlan === "free"
-                        ? (language === "zh" ? "升级到 Pro" : "Upgrade to Pro")
-                        : (language === "zh" ? "管理订阅" : "Manage Subscription")}
-                    </Button>
-                  </Link>
+                  {!isIPhone && (
+                    <Link href="/pro">
+                      <Button className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700">
+                        {currentPlan === "free"
+                          ? (language === "zh" ? "升级到 Pro" : "Upgrade to Pro")
+                          : (language === "zh" ? "管理订阅" : "Manage Subscription")}
+                      </Button>
+                    </Link>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -630,11 +634,13 @@ export default function SettingsPage() {
                           {t.settingsPage.subscription.features.adFree}
                         </li>
                       </ul>
-                      <Link href="/pro">
-                        <Button className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700">
-                          {t.settingsPage.subscription.upgradeButton}
-                        </Button>
-                      </Link>
+                      {!isIPhone && (
+                        <Link href="/pro">
+                          <Button className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700">
+                            {t.settingsPage.subscription.upgradeButton}
+                          </Button>
+                        </Link>
+                      )}
                     </div>
                   </>
                 )}

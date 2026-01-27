@@ -18,6 +18,7 @@ import { ArrowLeft, Trash2, Search, Download, FileJson, FileText, FileType2, Loa
 import { useAuth } from "@/hooks/use-auth"
 import { useLanguage } from "@/components/language-provider"
 import { useTranslations } from "@/lib/i18n"
+import { useIsIPhone } from "@/hooks/use-device"
 import { RegionConfig } from "@/lib/config/region"
 import type { RecommendationHistory, RecommendationCategory } from "@/lib/types/recommendation"
 import { fetchWithAuth } from "@/lib/auth/fetch-with-auth"
@@ -67,6 +68,7 @@ const categoryConfig: Record<
 export default function HistoryPage() {
     const router = useRouter()
     const { user, isAuthenticated } = useAuth()
+    const isIPhone = useIsIPhone()
     const { language } = useLanguage()
     const locale = language as "zh" | "en"
     const t = useTranslations(locale)
@@ -421,13 +423,17 @@ export default function HistoryPage() {
                                                 <Lock className="h-4 w-4 mr-2" />
                                                 {locale === "zh" ? "需要Pro或Enterprise" : "Pro or Enterprise required"}
                                             </DropdownMenuItem>
-                                            <DropdownMenuSeparator />
-                                            <DropdownMenuItem asChild>
-                                                <Link href="/pro" className="cursor-pointer">
-                                                    <Crown className="h-4 w-4 mr-2 text-amber-500" />
-                                                    {locale === "zh" ? "升级计划" : "Upgrade Plan"}
-                                                </Link>
-                                            </DropdownMenuItem>
+                                            {!isIPhone && (
+                                                <>
+                                                    <DropdownMenuSeparator />
+                                                    <DropdownMenuItem asChild>
+                                                        <Link href="/pro" className="cursor-pointer">
+                                                            <Crown className="h-4 w-4 mr-2 text-amber-500" />
+                                                            {locale === "zh" ? "升级计划" : "Upgrade Plan"}
+                                                        </Link>
+                                                    </DropdownMenuItem>
+                                                </>
+                                            )}
                                         </>
                                     ) : (
                                         <>

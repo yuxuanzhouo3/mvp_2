@@ -11,6 +11,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { auth } from '@/lib/auth/client'
 import { RegionConfig, isChinaRegion } from '@/lib/config/region'
+import { useIsIPhone } from '@/hooks/use-device'
 import { useLanguage } from '@/components/language-provider'
 import { useTranslations } from '@/lib/i18n'
 import {
@@ -23,6 +24,7 @@ import { saveAuthState } from '@/lib/auth/auth-state-manager'
 
 export default function LoginPage() {
   const router = useRouter()
+  const isIPhone = useIsIPhone()
   const { language } = useLanguage()
   const t = useTranslations(language)
   const [email, setEmail] = useState('')
@@ -404,7 +406,7 @@ export default function LoginPage() {
           )}
 
           {/* Google Login for International */}
-          {!mpLoginProcessing && RegionConfig.auth.provider === 'supabase' && RegionConfig.auth.features.googleAuth && (
+          {!isIPhone && !mpLoginProcessing && RegionConfig.auth.provider === 'supabase' && RegionConfig.auth.features.googleAuth && (
             <>
               <div className="relative">
                 <div className="absolute inset-0 flex items-center">
@@ -439,7 +441,7 @@ export default function LoginPage() {
           )}
 
           {/* WeChat Login for China */}
-          {!mpLoginProcessing && isChinaDeployment && RegionConfig.auth.features.wechatAuth && (
+          {!isIPhone && !mpLoginProcessing && isChinaDeployment && RegionConfig.auth.features.wechatAuth && (
             <>
               <div className="relative">
                 <div className="absolute inset-0 flex items-center">

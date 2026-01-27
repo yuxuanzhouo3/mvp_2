@@ -2,8 +2,10 @@ import type React from "react"
 import type { Metadata, Viewport } from "next"
 import { Inter } from "next/font/google"
 import Script from "next/script"
+import { headers } from "next/headers"
 import "./globals.css"
 import AuthProvider from "@/components/auth-provider"
+import { DeviceProvider } from "@/components/device-provider"
 import { LanguageProvider } from "@/components/language-provider"
 import { Toaster } from "@/components/ui/toaster"
 import { MpLinkInterceptor } from "@/components/mp-link-interceptor"
@@ -37,6 +39,9 @@ export default function RootLayout({
 }: {
   children: React.ReactNode
 }) {
+  const userAgent = headers().get("user-agent") ?? ""
+  const initialIsIPhone = /iphone/i.test(userAgent)
+
   return (
     <html lang="en">
       <head>
@@ -49,30 +54,32 @@ export default function RootLayout({
         )}
       </head>
       <body className={inter.className}>
-        <LanguageProvider>
-          <AuthProvider>
-            {/* 微信小程序外部链接拦截器 - 仅 CN 环境启用 */}
-            {isCN && <MpLinkInterceptor />}
-            <div className="min-h-screen bg-[#F7F9FC]">{children}</div>
-            <Toaster />
-            {/* CN环境页脚备案信息 */}
-            {isCN && (
-              <footer className="w-full py-4 px-4 text-center text-xs text-gray-400 bg-gray-50 border-t border-gray-100">
-                <p>本页面含AI生成的内容，请仔细辨别</p>
-                <p className="mt-1">
-                  <a
-                    href="https://beian.miit.gov.cn/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="hover:text-gray-600 transition-colors"
-                  >
-                    粤ICP备2024281756号-3
-                  </a>
-                </p>
-              </footer>
-            )}
-          </AuthProvider>
-        </LanguageProvider>
+        <DeviceProvider initialIsIPhone={initialIsIPhone}>
+          <LanguageProvider>
+            <AuthProvider>
+              {/* 微信小程序外部链接拦截器 - 仅 CN 环境启用 */}
+              {isCN && <MpLinkInterceptor />}
+              <div className="min-h-screen bg-[#F7F9FC]">{children}</div>
+              <Toaster />
+              {/* CN环境页脚备案信息 */}
+              {isCN && (
+                <footer className="w-full py-4 px-4 text-center text-xs text-gray-400 bg-gray-50 border-t border-gray-100">
+                  <p>本页面含AI生成的内容，请仔细辨别</p>
+                  <p className="mt-1">
+                    <a
+                      href="https://beian.miit.gov.cn/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="hover:text-gray-600 transition-colors"
+                    >
+                      粤ICP备2024281756号-3
+                    </a>
+                  </p>
+                </footer>
+              )}
+            </AuthProvider>
+          </LanguageProvider>
+        </DeviceProvider>
       </body>
     </html>
   )

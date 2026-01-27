@@ -6,11 +6,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { SearchParamsBoundary } from "@/components/search-params-boundary"
 import { CheckCircle, XCircle, Loader2 } from "lucide-react"
+import { useIsIPhone } from "@/hooks/use-device"
 
 type PaymentStatus = "loading" | "success" | "failed" | "unknown"
 
 function PaymentResultContent() {
   const router = useRouter()
+  const isIPhone = useIsIPhone()
   const searchParams = useSearchParams()
   const [status, setStatus] = useState<PaymentStatus>("loading")
   const [message, setMessage] = useState("正在验证支付结果...")
@@ -146,7 +148,7 @@ function PaymentResultContent() {
                 查看订阅详情
               </Button>
             )}
-            {status === "failed" && (
+            {status === "failed" && !isIPhone && (
               <Button
                 variant="outline"
                 onClick={() => router.push("/pricing")}

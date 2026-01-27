@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useAuth } from "@/hooks/use-auth"
+import { useIsIPhone } from "@/hooks/use-device"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import dynamic from "next/dynamic"
@@ -58,6 +59,7 @@ const PRICING = {
 
 export default function PricingPage() {
   const { user, isAuthenticated } = useAuth()
+  const isIPhone = useIsIPhone()
   const router = useRouter()
   const { toast } = useToast()
   const { language } = useLanguage()
@@ -656,46 +658,48 @@ export default function PricingPage() {
                       </CardContent>
 
                       <CardFooter className="flex flex-col gap-3 pb-8">
-                        <Button
-                          onClick={() => handleSubscribe(plan.id, billingCycle)}
-                          disabled={processingPlan === plan.id || isCurrentPlan}
-                          className={cn(
-                            "w-full h-12 text-base font-semibold rounded-xl transition-all duration-300",
-                            isPro
-                              ? "bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 hover:shadow-xl hover:shadow-purple-500/30 hover:scale-[1.02]"
-                              : plan.id === "free"
-                                ? "bg-gray-100 text-gray-700 hover:bg-gray-200 border-0"
-                                : "bg-gradient-to-r from-amber-500 to-rose-500 hover:shadow-xl hover:shadow-orange-500/30 hover:scale-[1.02]"
-                          )}
-                          variant={plan.id === "free" ? "ghost" : "default"}
-                        >
-                          {processingPlan === plan.id ? (
-                            <>
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              {language === "zh" ? "处理中..." : "Processing..."}
-                            </>
-                          ) : isCurrentPlan ? (
-                            <>
-                              <Check className="mr-2 h-4 w-4" />
-                              {t.pricing.currentPlan}
-                            </>
-                          ) : plan.id === "free" ? (
-                            <>
-                              <Info className="mr-2 h-4 w-4" />
-                              {t.pricing.currentFreePlan}
-                            </>
-                          ) : (
-                            <>
-                              <CreditCard className="mr-2 h-4 w-4" />
-                              {language === "zh" 
-                                ? `使用${selectedPayment === "wechat" ? "微信" : selectedPayment === "alipay" ? "支付宝" : selectedPayment === "stripe" ? "Stripe" : "PayPal"}支付`
-                                : t.pricing.subscribeWith.replace("{method}", selectedPayment === "stripe" ? "Stripe" : "PayPal")
-                              }
-                            </>
-                          )}
-                        </Button>
+                        {(!isIPhone || plan.id === "free") && (
+                          <Button
+                            onClick={() => handleSubscribe(plan.id, billingCycle)}
+                            disabled={processingPlan === plan.id || isCurrentPlan}
+                            className={cn(
+                              "w-full h-12 text-base font-semibold rounded-xl transition-all duration-300",
+                              isPro
+                                ? "bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 hover:shadow-xl hover:shadow-purple-500/30 hover:scale-[1.02]"
+                                : plan.id === "free"
+                                  ? "bg-gray-100 text-gray-700 hover:bg-gray-200 border-0"
+                                  : "bg-gradient-to-r from-amber-500 to-rose-500 hover:shadow-xl hover:shadow-orange-500/30 hover:scale-[1.02]"
+                            )}
+                            variant={plan.id === "free" ? "ghost" : "default"}
+                          >
+                            {processingPlan === plan.id ? (
+                              <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                {language === "zh" ? "处理中..." : "Processing..."}
+                              </>
+                            ) : isCurrentPlan ? (
+                              <>
+                                <Check className="mr-2 h-4 w-4" />
+                                {t.pricing.currentPlan}
+                              </>
+                            ) : plan.id === "free" ? (
+                              <>
+                                <Info className="mr-2 h-4 w-4" />
+                                {t.pricing.currentFreePlan}
+                              </>
+                            ) : (
+                              <>
+                                <CreditCard className="mr-2 h-4 w-4" />
+                                {language === "zh" 
+                                  ? `使用${selectedPayment === "wechat" ? "微信" : selectedPayment === "alipay" ? "支付宝" : selectedPayment === "stripe" ? "Stripe" : "PayPal"}支付`
+                                  : t.pricing.subscribeWith.replace("{method}", selectedPayment === "stripe" ? "Stripe" : "PayPal")
+                                }
+                              </>
+                            )}
+                          </Button>
+                        )}
 
-                        {isCurrentPlan && plan.id !== "free" && (
+                        {!isIPhone && isCurrentPlan && plan.id !== "free" && (
                           <Link href="/settings?tab=subscription" className="w-full">
                             <Button variant="outline" size="sm" className="w-full rounded-xl border-2 hover:bg-gray-50">
                               <Settings className="mr-2 h-4 w-4" />

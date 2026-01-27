@@ -11,6 +11,7 @@ import { RecommendationCard, RecommendationList } from "@/components/Recommendat
 import { FeedbackDialog } from "@/components/FeedbackDialog"
 import { OnboardingPrompt } from "@/components/OnboardingPrompt"
 import { useOnboarding, useFeedbackTrigger, usePageVisibility } from "@/hooks/use-onboarding"
+import { useIsIPhone } from "@/hooks/use-device"
 import type {
   AIRecommendation,
   RecommendationCategory,
@@ -194,6 +195,7 @@ function getUserId(): string {
 
 export default function CategoryPage({ params }: { params: { id: string } }) {
   const router = useRouter()
+  const isIPhone = useIsIPhone()
   const [currentRecommendations, setCurrentRecommendations] = useState<AIRecommendation[]>([])
   const [history, setHistory] = useState<HistoryItem[]>([])
   const [historySource, setHistorySource] = useState<"local" | "supabase" | "cloudbase">("local")
@@ -731,7 +733,7 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
                     )}
                   </div>
                 )}
-                {limitExceeded && (
+                {limitExceeded && !isIPhone && (
                   <Link href="/pro" className="inline-block mt-4">
                     <Button className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white">
                       {locale === "zh" ? "升级获取更多" : "Upgrade for More"}
@@ -759,7 +761,7 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
                 </>
               )}
             </span>
-            {usageInfo.remaining <= 5 && usageInfo.remaining > 0 && (
+            {usageInfo.remaining <= 5 && usageInfo.remaining > 0 && !isIPhone && (
               <Link href="/pro" className="ml-2 text-xs text-purple-600 hover:underline">
                 {locale === "zh" ? "升级获取更多" : "Upgrade for more"}
               </Link>

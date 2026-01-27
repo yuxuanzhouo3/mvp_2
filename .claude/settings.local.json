@@ -46,7 +46,8 @@
       "Bash(npx eslint:*)",
       "Bash(xargs ls:*)",
       "Bash(xargs basename:*)",
-      "Bash(robocopy:*)"
+      "Bash(robocopy:*)",
+      "mcp__thinking__sequentialthinking"
     ],
     "deny": [],
     "ask": []

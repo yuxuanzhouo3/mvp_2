@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Check, Crown, Building2, Zap } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { useIsIPhone } from "@/hooks/use-device";
 import { useLanguage } from "@/components/language-provider";
 import { useTranslations } from "@/lib/i18n";
 
@@ -40,6 +41,7 @@ export function SubscriptionPlans({
   currentPlan,
 }: SubscriptionPlansProps) {
   const { user } = useAuth();
+  const isIPhone = useIsIPhone();
   const { language } = useLanguage();
   const t = useTranslations(language);
   const [billingCycle, setBillingCycle] = useState<"monthly" | "yearly">("monthly");
@@ -192,23 +194,25 @@ export function SubscriptionPlans({
             </CardContent>
 
             <CardFooter>
-              <Button
-                onClick={() => onSelectPlan(plan.id, billingCycle)}
-                disabled={isCurrentPlan(plan.id)}
-                className={`w-full ${
-                  plan.popular
-                    ? "bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
-                    : ""
-                }`}
-                variant={plan.id === "free" ? "outline" : "default"}
-              >
-                {isCurrentPlan(plan.id)
-                  ? (language === "zh" ? "当前计划" : "Current Plan")
-                  : plan.id === "free"
-                  ? (language === "zh" ? "当前免费计划" : "Current Free Plan")
-                  : (language === "zh" ? "选择此计划" : "Select This Plan")
-                }
-              </Button>
+              {(!isIPhone || plan.id === "free") && (
+                <Button
+                  onClick={() => onSelectPlan(plan.id, billingCycle)}
+                  disabled={isCurrentPlan(plan.id)}
+                  className={`w-full ${
+                    plan.popular
+                      ? "bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+                      : ""
+                  }`}
+                  variant={plan.id === "free" ? "outline" : "default"}
+                >
+                  {isCurrentPlan(plan.id)
+                    ? (language === "zh" ? "当前计划" : "Current Plan")
+                    : plan.id === "free"
+                    ? (language === "zh" ? "当前免费计划" : "Current Free Plan")
+                    : (language === "zh" ? "选择此计划" : "Select This Plan")
+                  }
+                </Button>
+              )}
             </CardFooter>
           </Card>
         ))}

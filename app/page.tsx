@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion"
 import Link from "next/link"
 import { Card } from "@/components/ui/card"
 import { useAuth } from "@/hooks/use-auth"
+import { useIsIPhone } from "@/hooks/use-device"
 import { Button } from "@/components/ui/button"
 import { Settings, Globe, Crown, History, Sparkles, Download } from "lucide-react"
 import { useLanguage } from "@/components/language-provider"
@@ -38,6 +39,7 @@ const categoryColors: Record<string, string> = {
 
 export default function HomePage() {
   const { user, isAuthenticated, signOut, refreshUser } = useAuth()
+  const isIPhone = useIsIPhone()
   const { language, toggleLanguage } = useLanguage()
   const t = useTranslations(language)
   const [mpLoginProcessing, setMpLoginProcessing] = useState(false)
@@ -237,11 +239,13 @@ export default function HomePage() {
                         <Settings className="h-4 w-4 text-gray-600" />
                       </Button>
                     </Link>
-                    <Link href="/pro">
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-amber-500 hover:text-amber-600 hover:bg-amber-50/30 transition-all flex-shrink-0">
-                        <Crown className="h-4 w-4" />
-                      </Button>
-                    </Link>
+                    {!isIPhone && (
+                      <Link href="/pro">
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-amber-500 hover:text-amber-600 hover:bg-amber-50/30 transition-all flex-shrink-0">
+                          <Crown className="h-4 w-4" />
+                        </Button>
+                      </Link>
+                    )}
                     <Button variant="ghost" size="sm" onClick={() => signOut()} className="flex-shrink-0 text-gray-600 hover:text-gray-800 hover:bg-white/30 transition-colors">
                       {t.auth.logout}
                     </Button>
