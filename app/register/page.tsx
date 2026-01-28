@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { auth } from '@/lib/auth/client'
-import { RegionConfig, isChinaRegion } from '@/lib/config/region'
+import { RegionConfig } from '@/lib/config/region'
 import { useIsIPhone } from '@/hooks/use-device'
 import { useLanguage } from '@/components/language-provider'
 import { useTranslations } from '@/lib/i18n'
@@ -31,7 +31,6 @@ export default function RegisterPage() {
   const [agreeToPrivacy, setAgreeToPrivacy] = useState(false)
   const isChineseLanguage = language === 'zh'
   const isChinaDeployment = RegionConfig.auth.provider === 'cloudbase'
-  const isChina = isChinaRegion()
 
   const validateForm = (): boolean => {
     // 所有区域都必须同意隐私政策

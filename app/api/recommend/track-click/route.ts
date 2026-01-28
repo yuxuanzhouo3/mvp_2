@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { userId, recommendationId, sessionId } = body;
+    const { userId, recommendationId } = body;
 
     if (!userId || !isValidUserId(userId)) {
       return NextResponse.json(
@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
 
     // 2. 更新推荐状态为已点击
     try {
-      const adapter = await getRecommendationAdapter();
+      await getRecommendationAdapter();
       // 注意：这个方法需要适配器支持
       // 如果适配器不支持，可以跳过此步骤
       console.log('[Track Click] 更新推荐点击状态');
@@ -86,6 +86,9 @@ async function shouldTriggerFeedback(
   recommendationId: string
 ): Promise<boolean> {
   try {
+    void userId;
+    void recommendationId;
+
     // 随机 30% 概率触发
     if (Math.random() > 0.3) {
       return false;

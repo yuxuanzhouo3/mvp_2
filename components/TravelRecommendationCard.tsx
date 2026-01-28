@@ -10,8 +10,7 @@ import { motion } from "framer-motion";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { AIRecommendation, RecommendationCategory } from "@/lib/types/recommendation";
-import { getIconForLinkType } from "@/lib/utils/icon-mapping";
+import type { AIRecommendation } from "@/lib/types/recommendation";
 
 // 图标组件
 const ExternalLinkIcon = () => (
@@ -61,11 +60,6 @@ const StarIcon = ({ filled }: { filled: boolean }) => (
   </svg>
 );
 
-const LinkTypeIcon = ({ linkType, metadata }: { linkType: string; metadata?: any }) => {
-  const icon = getIconForLinkType(linkType, metadata);
-  return <span className="text-lg">{icon}</span>;
-};
-
 interface TravelRecommendationCardProps {
   recommendation: AIRecommendation;
   onLinkClick?: (recommendation: AIRecommendation) => void;
@@ -82,7 +76,6 @@ export function TravelRecommendationCard({
   locale = "zh",
 }: TravelRecommendationCardProps) {
   const [isSaved, setIsSaved] = useState(false);
-  const [isHovered, setIsHovered] = useState(false);
 
   const {
     title,
@@ -92,7 +85,6 @@ export function TravelRecommendationCard({
     platform,
     metadata,
     reason,
-    tags,
   } = recommendation;
 
   const handleLinkClick = () => {
@@ -208,8 +200,6 @@ export function TravelRecommendationCard({
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       whileHover={{ scale: 1.02, y: -2 }}
-      onHoverStart={() => setIsHovered(true)}
-      onHoverEnd={() => setIsHovered(false)}
       transition={{ duration: 0.2 }}
     >
       <Card className="overflow-hidden shadow-lg hover:shadow-xl transition-shadow duration-300">

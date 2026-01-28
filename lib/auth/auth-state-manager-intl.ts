@@ -140,7 +140,7 @@ export function isSupabaseCacheValid(): boolean {
     const age = Date.now() - cache.cachedAt;
 
     return age <= cache.expiresIn * 1000;
-  } catch (error) {
+  } catch {
     return false;
   }
 }

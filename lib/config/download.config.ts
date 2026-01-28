@@ -65,7 +65,7 @@ const chinaDownloads: RegionDownloadConfig = {
       fileID:
         process.env.CN_WINDOWS_FILE_ID ||
         "cloud://your-bucket/downloads/windows-app.msi",
-      fileName: "辰汇个性推荐平台.msi",
+      fileName: "辰汇个性推荐.msi",
     },
     {
       platform: "macos",
@@ -74,7 +74,7 @@ const chinaDownloads: RegionDownloadConfig = {
       fileID:
         process.env.CN_MACOS_INTEL_FILE_ID ||
         "cloud://your-bucket/downloads/macos-intel-app.dmg",
-      fileName: "辰汇个性推荐平台.dmg",
+      fileName: "辰汇个性推荐.dmg",
       arch: "intel",
       available: false, // 已下线
     },

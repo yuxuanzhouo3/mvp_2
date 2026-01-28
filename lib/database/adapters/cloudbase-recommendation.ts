@@ -7,7 +7,6 @@
 import {
   getCloudBaseDatabase,
   CloudBaseCollections,
-  generateId,
   nowISO,
   getDbCommand,
   handleCloudBaseError,
@@ -52,7 +51,7 @@ export class CloudBaseRecommendationAdapter implements RecommendationDatabaseAda
 
       const collection = this.db.collection(CloudBaseCollections.RECOMMENDATION_HISTORY);
 
-      let query: any = { user_id: userId };
+      const query: any = { user_id: userId };
       if (category) {
         query.category = category;
       }
@@ -67,7 +66,7 @@ export class CloudBaseRecommendationAdapter implements RecommendationDatabaseAda
         .get();
 
       // 转换 CloudBase 的 _id 为 id
-      let data = (result.data || []).map((item: any) => ({
+      const data = (result.data || []).map((item: any) => ({
         ...item,
         id: item._id || item.id,
       }));
@@ -186,7 +185,10 @@ export class CloudBaseRecommendationAdapter implements RecommendationDatabaseAda
       const collection = this.db.collection(CloudBaseCollections.RECOMMENDATION_HISTORY);
 
       // 移除不应该更新的字段
-      const { id: _, user_id, created_at, ...updateData } = updates as any;
+      const updateData = { ...(updates as any) };
+      delete updateData.id;
+      delete updateData.user_id;
+      delete updateData.created_at;
 
       await collection.doc(id).update({
         ...updateData,
@@ -222,7 +224,7 @@ export class CloudBaseRecommendationAdapter implements RecommendationDatabaseAda
         }
       } else {
         // 删除用户的所有记录（可选按分类）
-        let query: any = { user_id: userId };
+        const query: any = { user_id: userId };
         if (category) {
           query.category = category;
         }
@@ -250,7 +252,7 @@ export class CloudBaseRecommendationAdapter implements RecommendationDatabaseAda
     try {
       const collection = this.db.collection(CloudBaseCollections.USER_PREFERENCES);
 
-      let query: any = { user_id: userId };
+      const query: any = { user_id: userId };
       if (category) {
         query.category = category;
       }
@@ -466,7 +468,7 @@ export class CloudBaseRecommendationAdapter implements RecommendationDatabaseAda
         } as RecommendationCache,
         error: null,
       };
-    } catch (error) {
+    } catch {
       return { data: null, error: null }; // 缓存查询失败不算错误
     }
   }

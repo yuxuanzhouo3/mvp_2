@@ -29,7 +29,6 @@ export default function OnboardingPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [aiProfile, setAiProfile] = useState<any>(null);
-  const [isLoadingProgress, setIsLoadingProgress] = useState(true);
   const [hasRestoredProgress, setHasRestoredProgress] = useState(false);
 
   // 保存进度到数据库
@@ -60,7 +59,6 @@ export default function OnboardingPage() {
   useEffect(() => {
     const loadProgress = async () => {
       if (!user?.id || hasRestoredProgress) {
-        setIsLoadingProgress(false);
         return;
       }
 
@@ -77,7 +75,6 @@ export default function OnboardingPage() {
       } catch (error) {
         console.error('恢复问卷进度失败:', error);
       } finally {
-        setIsLoadingProgress(false);
         setHasRestoredProgress(true);
       }
     };

@@ -12,11 +12,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
 import { CreditCard, Loader2 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { useLanguage } from "@/components/language-provider";
-import { useTranslations } from "@/lib/i18n";
+import { useHideSubscriptionUI } from "@/hooks/use-hide-subscription-ui";
 
 interface PaymentFormProps {
   planId: string;
@@ -44,7 +45,7 @@ export function PaymentForm({
   const [isProcessing, setIsProcessing] = useState(false);
   const { toast } = useToast();
   const { language } = useLanguage();
-  const t = useTranslations(language);
+  const hideSubscriptionUI = useHideSubscriptionUI();
 
   const paymentMethods = [
     {
@@ -130,6 +131,19 @@ export function PaymentForm({
       currency: currency.toLowerCase(),
     }).format(amount);
   };
+
+  if (hideSubscriptionUI) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>{language === "zh" ? "功能不可用" : "Not available"}</CardTitle>
+          <CardDescription>
+            {language === "zh" ? "当前设备暂不支持该功能" : "This feature is not available on this device."}
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    );
+  }
 
   return (
     <Card>

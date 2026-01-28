@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useAuth } from "@/hooks/use-auth"
-import { useIsIPhone } from "@/hooks/use-device"
+import { useHideSubscriptionUI } from "@/hooks/use-hide-subscription-ui"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import dynamic from "next/dynamic"
@@ -59,7 +59,7 @@ const PRICING = {
 
 export default function PricingPage() {
   const { user, isAuthenticated } = useAuth()
-  const isIPhone = useIsIPhone()
+  const hideSubscriptionUI = useHideSubscriptionUI()
   const router = useRouter()
   const { toast } = useToast()
   const { language } = useLanguage()
@@ -430,6 +430,42 @@ export default function PricingPage() {
   // 因为小程序不支持 Stripe 的 iframe，且用户在微信环境中使用微信支付更方便
   const paymentMethods = (isCN || isInMiniProgram) ? cnPaymentMethods : intlPaymentMethods
 
+  if (hideSubscriptionUI) {
+    return (
+      <div className="min-h-screen bg-[#F7F9FC] p-4">
+        <div className="max-w-2xl mx-auto pt-8">
+          <div className="flex items-center mb-8">
+            <Link href="/">
+              <Button variant="ghost" size="sm" className="mr-4">
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                {t.pricing.back}
+              </Button>
+            </Link>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>{language === "zh" ? "当前设备暂不支持该功能" : "This feature is not available on this device"}</CardTitle>
+              <CardDescription>
+                {language === "zh"
+                  ? "请在非 iPhone 设备上完成相关操作后再返回使用。"
+                  : "Please complete this action on a non‑iPhone device and come back later."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Button onClick={() => router.push("/")} className="w-full">
+                {language === "zh" ? "返回首页" : "Back to Home"}
+              </Button>
+              <Button variant="outline" onClick={() => router.push("/settings")} className="w-full">
+                {language === "zh" ? "前往设置" : "Go to Settings"}
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <>
       <div className="min-h-screen relative overflow-hidden">
@@ -561,7 +597,7 @@ export default function PricingPage() {
 
             {/* Pricing Cards */}
             <div className="grid md:grid-cols-3 gap-6 lg:gap-8 items-start">
-              {plans.map((plan, index) => {
+              {plans.map((plan) => {
                 const Icon = plan.icon
                 const isCurrentPlan = currentTier === plan.id
                 const isPro = plan.popular
@@ -658,7 +694,7 @@ export default function PricingPage() {
                       </CardContent>
 
                       <CardFooter className="flex flex-col gap-3 pb-8">
-                        {(!isIPhone || plan.id === "free") && (
+                        {(!hideSubscriptionUI || plan.id === "free") && (
                           <Button
                             onClick={() => handleSubscribe(plan.id, billingCycle)}
                             disabled={processingPlan === plan.id || isCurrentPlan}
@@ -699,7 +735,7 @@ export default function PricingPage() {
                           </Button>
                         )}
 
-                        {!isIPhone && isCurrentPlan && plan.id !== "free" && (
+                        {!hideSubscriptionUI && isCurrentPlan && plan.id !== "free" && (
                           <Link href="/settings?tab=subscription" className="w-full">
                             <Button variant="outline" size="sm" className="w-full rounded-xl border-2 hover:bg-gray-50">
                               <Settings className="mr-2 h-4 w-4" />

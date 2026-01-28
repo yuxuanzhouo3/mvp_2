@@ -31,6 +31,7 @@ export async function requireAuth(request: NextRequest): Promise<{
 
     // Remove sensitive fields like hashed password if present
     const { password, ...safeUser } = verification.user;
+    void password;
 
     return {
       user: safeUser,

@@ -74,6 +74,7 @@ export async function verifyAuthToken(token: string): Promise<{
       }
 
       const { password, ...userWithoutPassword } = res.data[0];
+      void password;
 
       return {
         success: true,

@@ -205,6 +205,10 @@ async function getUserUsageStatsSupabase(userId: string): Promise<UsageStats> {
     .gte("created_at", start.toISOString())
     .lte("created_at", end.toISOString());
 
+  if (error) {
+    console.error("[Usage Tracker] Failed to fetch usage stats:", error);
+  }
+
   const currentPeriodUsage = count || 0;
 
   return {

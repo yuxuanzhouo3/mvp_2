@@ -15,7 +15,6 @@ import { useIsIPhone } from "@/hooks/use-device"
 import type {
   AIRecommendation,
   RecommendationCategory,
-  AIRecommendResponse,
   RecommendationHistory,
 } from "@/lib/types/recommendation"
 import { RegionConfig } from "@/lib/config/region"
@@ -214,8 +213,6 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
 
   // 用户画像状态
   const {
-    loading: onboardingLoading,
-    completed: onboardingCompleted,
     profileCompleteness,
     redirectToOnboarding,
     shouldShowOnboardingPrompt
@@ -228,7 +225,6 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
     pendingFeedback,
     feedbackDialogOpen,
     closeFeedbackDialog,
-    triggerFeedback
   } = useFeedbackTrigger(userId)
 
   // 记录最近点击的推荐，用于返回时追踪
@@ -258,7 +254,7 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
     useCallback(async (timeAway: number) => {
       if (!lastClickedRef.current || !userId) return
       
-      const { recommendationId, title, category: recCategory, clickTime } = lastClickedRef.current
+      const { recommendationId } = lastClickedRef.current
       
       // 只有离开时间超过 5 秒才认为是真正的外部访问
       if (timeAway < 5) return

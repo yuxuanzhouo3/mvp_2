@@ -7,6 +7,8 @@
  */
 
 import { isChinaDeployment } from "@/lib/config/deployment.config";
+import { PRICING_TABLE } from "./payment-config";
+import { PRICING_TABLE_CN } from "./payment-config-cn";
 
 // 导出通用类型
 export type { PaymentOrder, PaymentResult, PaymentAdapter } from "./adapter";
@@ -75,7 +77,6 @@ export function getPricing(planType: "pro" | "enterprise", billingCycle: "monthl
   formatted: string;
 } {
   if (isChinaDeployment()) {
-    const { PRICING_TABLE_CN } = require("./payment-config-cn");
     const amount = PRICING_TABLE_CN.CNY[planType][billingCycle];
     return {
       amount,
@@ -83,7 +84,6 @@ export function getPricing(planType: "pro" | "enterprise", billingCycle: "monthl
       formatted: `¥${amount}`,
     };
   } else {
-    const { PRICING_TABLE } = require("./payment-config");
     const amount = PRICING_TABLE.USD[planType][billingCycle];
     return {
       amount,

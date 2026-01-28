@@ -235,6 +235,7 @@ export async function generateCSRFToken(
   request: NextRequest
 ): Promise<NextResponse> {
   try {
+    void request;
     const secret = csrfManager.generateSecret();
     const token = csrfManager.generateToken(secret);
 
@@ -251,7 +252,7 @@ export async function generateCSRFToken(
     });
 
     return response;
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       { error: "Failed to generate CSRF token" },
       { status: 500 }

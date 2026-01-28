@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { isChinaRegion } from "@/lib/config/region";
 import { cloudbaseSignInWithWechat } from "@/lib/auth/cloudbase-auth";
 import { getCloudBaseDatabase, CloudBaseCollections } from "@/lib/database/cloudbase-client";
@@ -39,7 +38,7 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const { code, state } = body;
+    const { code } = body;
 
     if (!code) {
       return NextResponse.json(
@@ -142,7 +141,6 @@ export async function POST(request: Request) {
     }
 
     // 5. 设置 auth-token cookie
-    const cookieStore = await cookies();
     const response = NextResponse.json({
       success: true,
       user: {

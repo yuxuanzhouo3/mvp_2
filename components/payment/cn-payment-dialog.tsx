@@ -15,6 +15,7 @@ import { Loader2, CheckCircle2, XCircle, RefreshCw, Smartphone, ExternalLink } f
 import { useToast } from "@/hooks/use-toast";
 import { fetchWithAuth } from "@/lib/auth/fetch-with-auth";
 import { cn } from "@/lib/utils";
+import { useHideSubscriptionUI } from "@/hooks/use-hide-subscription-ui";
 
 type PaymentMethodCN = "wechat" | "alipay";
 type PaymentModeCN = "qrcode" | "page";
@@ -72,7 +73,6 @@ export function CNPaymentDialog({
   mode,
   method,
   amount,
-  currency,
   planName,
   billingCycle,
   onClose,
@@ -83,6 +83,7 @@ export function CNPaymentDialog({
   const [isPolling, setIsPolling] = useState(false);
   const [countdown, setCountdown] = useState(300); // 5分钟超时
   const { toast } = useToast();
+  const hideSubscriptionUI = useHideSubscriptionUI();
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
   const countdownRef = useRef<NodeJS.Timeout | null>(null);
   const [hasTriedOpen, setHasTriedOpen] = useState(false);
@@ -238,231 +239,191 @@ export function CNPaymentDialog({
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
       <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-3">
-            <div className={cn("p-2 rounded-lg text-white", config.bgColor)}>
-              {config.icon}
+        {hideSubscriptionUI ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>{"功能不可用"}</DialogTitle>
+              <DialogDescription>{"当前设备暂不支持该功能"}</DialogDescription>
+            </DialogHeader>
+            <div className="py-6 text-sm text-gray-600">
+              {"请在非 iPhone 设备或桌面浏览器中打开。"}
             </div>
-            <span>{config.name}</span>
-            {mode === "page" && (
-              <Badge variant="secondary" className="ml-2">
-                <ExternalLink className="w-3 h-3 mr-1" />
-                网站支付
-              </Badge>
-            )}
-          </DialogTitle>
-          <DialogDescription>
-            {mode === "qrcode"
-              ? `请使用${config.name}扫描下方二维码完成支付`
-              : `请在打开的${config.name}页面中完成支付`
-            }
-          </DialogDescription>
-        </DialogHeader>
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={onClose}>
+                {"返回"}
+              </Button>
+            </div>
+          </>
+        ) : (
+          <>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-3">
+                <div className={cn("p-2 rounded-lg text-white", config.bgColor)}>{config.icon}</div>
+                <span>{config.name}</span>
+                {mode === "page" && (
+                  <Badge variant="secondary" className="ml-2">
+                    <ExternalLink className="w-3 h-3 mr-1" />
+                    网站支付
+                  </Badge>
+                )}
+              </DialogTitle>
+              <DialogDescription>
+                {mode === "qrcode" ? `请使用${config.name}扫描下方二维码完成支付` : `请在打开的${config.name}页面中完成支付`}
+              </DialogDescription>
+            </DialogHeader>
 
-        <div className="flex flex-col items-center space-y-6 py-4">
-          {/* 订单信息 */}
-          <div className="w-full bg-gray-50 rounded-lg p-4 space-y-2">
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">订阅计划</span>
-              <span className="font-medium">{planName}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">账单周期</span>
-              <span>{billingCycle === "yearly" ? "年付" : "月付"}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">订单号</span>
-              <span className="font-mono text-xs">{orderId}</span>
-            </div>
-            <div className="border-t pt-2 mt-2">
-              <div className="flex justify-between">
-                <span className="text-gray-500">支付金额</span>
-                <span className={cn("text-xl font-bold", config.textColor)}>
-                  {formatAmount(amount)}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* 支付区域 */}
-          {mode === "qrcode" ? (
-            // 二维码模式
-            <div className={cn(
-              "relative p-4 rounded-xl border-2",
-              status === "pending" ? config.borderColor : "border-gray-200"
-            )}>
-              {status === "pending" && qrCodeImage ? (
-                <>
-                  <img
-                    src={qrCodeImage}
-                    alt="支付二维码"
-                    className="w-48 h-48"
-                  />
-                  {/* 扫描提示 */}
-                  <div className="absolute -bottom-3 left-1/2 -translate-x-1/2">
-                    <Badge variant="secondary" className="whitespace-nowrap">
-                      <Smartphone className="w-3 h-3 mr-1" />
-                      打开{config.name}扫一扫
-                    </Badge>
+            <div className="flex flex-col items-center space-y-6 py-4">
+              <div className="w-full bg-gray-50 rounded-lg p-4 space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">订阅计划</span>
+                  <span className="font-medium">{planName}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">账单周期</span>
+                  <span>{billingCycle === "yearly" ? "年付" : "月付"}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">订单号</span>
+                  <span className="font-mono text-xs">{orderId}</span>
+                </div>
+                <div className="border-t pt-2 mt-2">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">支付金额</span>
+                    <span className={cn("text-xl font-bold", config.textColor)}>{formatAmount(amount)}</span>
                   </div>
-                </>
-              ) : status === "completed" ? (
-                <div className="w-48 h-48 flex flex-col items-center justify-center text-green-500">
-                  <CheckCircle2 className="w-16 h-16 mb-2" />
-                  <span className="font-medium">支付成功</span>
                 </div>
-              ) : status === "failed" || status === "cancelled" ? (
-                <div className="w-48 h-48 flex flex-col items-center justify-center text-red-500">
-                  <XCircle className="w-16 h-16 mb-2" />
-                  <span className="font-medium">
-                    {status === "failed" ? "支付失败" : "订单已取消"}
-                  </span>
-                </div>
-              ) : status === "expired" ? (
-                <div className="w-48 h-48 flex flex-col items-center justify-center text-gray-400">
-                  <XCircle className="w-16 h-16 mb-2" />
-                  <span className="font-medium">二维码已过期</span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="mt-4"
-                    onClick={handleRefresh}
-                  >
-                    <RefreshCw className="w-4 h-4 mr-2" />
-                    刷新二维码
-                  </Button>
+              </div>
+
+              {mode === "qrcode" ? (
+                <div
+                  className={cn("relative p-4 rounded-xl border-2", status === "pending" ? config.borderColor : "border-gray-200")}
+                >
+                  {status === "pending" && qrCodeImage ? (
+                    <>
+                      <img src={qrCodeImage} alt="支付二维码" className="w-48 h-48" />
+                      <div className="absolute -bottom-3 left-1/2 -translate-x-1/2">
+                        <Badge variant="secondary" className="whitespace-nowrap">
+                          <Smartphone className="w-3 h-3 mr-1" />
+                          打开{config.name}扫一扫
+                        </Badge>
+                      </div>
+                    </>
+                  ) : status === "completed" ? (
+                    <div className="w-48 h-48 flex flex-col items-center justify-center text-green-500">
+                      <CheckCircle2 className="w-16 h-16 mb-2" />
+                      <span className="font-medium">支付成功</span>
+                    </div>
+                  ) : status === "failed" || status === "cancelled" ? (
+                    <div className="w-48 h-48 flex flex-col items-center justify-center text-red-500">
+                      <XCircle className="w-16 h-16 mb-2" />
+                      <span className="font-medium">{status === "failed" ? "支付失败" : "订单已取消"}</span>
+                    </div>
+                  ) : status === "expired" ? (
+                    <div className="w-48 h-48 flex flex-col items-center justify-center text-gray-400">
+                      <XCircle className="w-16 h-16 mb-2" />
+                      <span className="font-medium">二维码已过期</span>
+                      <Button variant="outline" size="sm" className="mt-4" onClick={handleRefresh}>
+                        <RefreshCw className="w-4 h-4 mr-2" />
+                        刷新二维码
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="w-48 h-48 flex items-center justify-center">
+                      <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+                    </div>
+                  )}
                 </div>
               ) : (
-                <div className="w-48 h-48 flex items-center justify-center">
-                  <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+                <div
+                  className={cn("relative p-6 rounded-xl border-2 w-full", status === "pending" ? config.borderColor : "border-gray-200")}
+                >
+                  {status === "pending" ? (
+                    <div className="flex flex-col items-center space-y-4">
+                      <div className={cn("p-4 rounded-full", config.bgColor)}>
+                        <ExternalLink className="w-8 h-8 text-white" />
+                      </div>
+                      {!hasTriedOpen ? (
+                        <>
+                          <p className="text-center text-gray-600 font-medium">点击下方按钮打开{config.name}支付</p>
+                          <Button className={cn("w-full bg-gradient-to-r text-white", `${config.bgGradient}`)} size="lg" onClick={handleOpenPaymentUrl}>
+                            <ExternalLink className="w-5 h-5 mr-2" />
+                            打开{config.name}支付
+                          </Button>
+                          <p className="text-center text-xs text-gray-400">
+                            如按钮无响应，
+                            <button className="text-blue-500 underline hover:text-blue-600" onClick={handleRedirectToPayment}>
+                              点此直接跳转
+                            </button>
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-center text-gray-600">已打开{config.name}支付页面</p>
+                          <p className="text-center text-sm text-gray-400">请在支付页面完成付款后返回</p>
+                          <Button variant="outline" onClick={handleOpenPaymentUrl} className="mt-2">
+                            <ExternalLink className="w-4 h-4 mr-2" />
+                            重新打开支付页面
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  ) : status === "completed" ? (
+                    <div className="flex flex-col items-center justify-center text-green-500 py-4">
+                      <CheckCircle2 className="w-16 h-16 mb-2" />
+                      <span className="font-medium">支付成功</span>
+                    </div>
+                  ) : status === "failed" || status === "cancelled" ? (
+                    <div className="flex flex-col items-center justify-center text-red-500 py-4">
+                      <XCircle className="w-16 h-16 mb-2" />
+                      <span className="font-medium">{status === "failed" ? "支付失败" : "订单已取消"}</span>
+                    </div>
+                  ) : status === "expired" ? (
+                    <div className="flex flex-col items-center justify-center text-gray-400 py-4">
+                      <XCircle className="w-16 h-16 mb-2" />
+                      <span className="font-medium">订单已过期</span>
+                      <Button variant="outline" size="sm" className="mt-4" onClick={handleRefresh}>
+                        <RefreshCw className="w-4 h-4 mr-2" />
+                        重新创建订单
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+                    </div>
+                  )}
                 </div>
               )}
-            </div>
-          ) : (
-            // 电脑网站支付模式
-            <div className={cn(
-              "relative p-6 rounded-xl border-2 w-full",
-              status === "pending" ? config.borderColor : "border-gray-200"
-            )}>
-              {status === "pending" ? (
-                <div className="flex flex-col items-center space-y-4">
-                  <div className={cn("p-4 rounded-full", config.bgColor)}>
-                    <ExternalLink className="w-8 h-8 text-white" />
-                  </div>
-                  {!hasTriedOpen ? (
+
+              {status === "pending" && (
+                <div className="flex items-center gap-2 text-sm text-gray-500">
+                  {isPolling && (
                     <>
-                      <p className="text-center text-gray-600 font-medium">
-                        点击下方按钮打开{config.name}支付
-                      </p>
-                      <Button
-                        className={cn("w-full bg-gradient-to-r text-white", `${config.bgGradient}`)}
-                        size="lg"
-                        onClick={handleOpenPaymentUrl}
-                      >
-                        <ExternalLink className="w-5 h-5 mr-2" />
-                        打开{config.name}支付
-                      </Button>
-                      <p className="text-center text-xs text-gray-400">
-                        如按钮无响应，
-                        <button
-                          className="text-blue-500 underline hover:text-blue-600"
-                          onClick={handleRedirectToPayment}
-                        >
-                          点此直接跳转
-                        </button>
-                      </p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-center text-gray-600">
-                        已打开{config.name}支付页面
-                      </p>
-                      <p className="text-center text-sm text-gray-400">
-                        请在支付页面完成付款后返回
-                      </p>
-                      <Button
-                        variant="outline"
-                        onClick={handleOpenPaymentUrl}
-                        className="mt-2"
-                      >
-                        <ExternalLink className="w-4 h-4 mr-2" />
-                        重新打开支付页面
-                      </Button>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>等待支付中... {formatCountdown(countdown)}</span>
                     </>
                   )}
                 </div>
-              ) : status === "completed" ? (
-                <div className="flex flex-col items-center justify-center text-green-500 py-4">
-                  <CheckCircle2 className="w-16 h-16 mb-2" />
-                  <span className="font-medium">支付成功</span>
-                </div>
-              ) : status === "failed" || status === "cancelled" ? (
-                <div className="flex flex-col items-center justify-center text-red-500 py-4">
-                  <XCircle className="w-16 h-16 mb-2" />
-                  <span className="font-medium">
-                    {status === "failed" ? "支付失败" : "订单已取消"}
-                  </span>
-                </div>
-              ) : status === "expired" ? (
-                <div className="flex flex-col items-center justify-center text-gray-400 py-4">
-                  <XCircle className="w-16 h-16 mb-2" />
-                  <span className="font-medium">订单已过期</span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="mt-4"
-                    onClick={handleRefresh}
-                  >
-                    <RefreshCw className="w-4 h-4 mr-2" />
-                    重新创建订单
-                  </Button>
-                </div>
-              ) : (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
-                </div>
+              )}
+
+              {status === "completed" && <div className="text-green-600 font-medium">订阅已激活，正在跳转...</div>}
+            </div>
+
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={onClose}>
+                取消支付
+              </Button>
+              {status === "pending" && (
+                <Button className={cn("flex-1 bg-gradient-to-r text-white", `${config.bgGradient}`)} onClick={checkPaymentStatus}>
+                  我已完成支付
+                </Button>
               )}
             </div>
-          )}
 
-          {/* 状态提示 */}
-          {status === "pending" && (
-            <div className="flex items-center gap-2 text-sm text-gray-500">
-              {isPolling && (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>等待支付中... {formatCountdown(countdown)}</span>
-                </>
-              )}
+            <div className="text-center text-xs text-gray-400 mt-2">
+              <span>🔒 安全支付由{config.name}提供</span>
             </div>
-          )}
-
-          {status === "completed" && (
-            <div className="text-green-600 font-medium">
-              订阅已激活，正在跳转...
-            </div>
-          )}
-        </div>
-
-        {/* 底部按钮 */}
-        <div className="flex gap-3">
-          <Button variant="outline" className="flex-1" onClick={onClose}>
-            取消支付
-          </Button>
-          {status === "pending" && (
-            <Button
-              className={cn("flex-1 bg-gradient-to-r text-white", `${config.bgGradient}`)}
-              onClick={checkPaymentStatus}
-            >
-              我已完成支付
-            </Button>
-          )}
-        </div>
-
-        {/* 安全提示 */}
-        <div className="text-center text-xs text-gray-400 mt-2">
-          <span>🔒 安全支付由{config.name}提供</span>
-        </div>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );

@@ -24,7 +24,7 @@ import {
   selectFitnessPlatform
 } from "@/lib/ai/fitness-enhancer";
 import { validateAndFixPlatforms } from "@/lib/search/platform-validator";
-import { generateDiverseRecommendations, analyzeEntertainmentDiversity, supplementEntertainmentTypes } from "@/lib/ai/entertainment-diversity-checker";
+import { analyzeEntertainmentDiversity, supplementEntertainmentTypes } from "@/lib/ai/entertainment-diversity-checker";
 import {
   getUserRecommendationHistory,
   getUserCategoryPreference,
@@ -704,9 +704,10 @@ async function generateFallbackRecommendations(
   };
 
   const recs = fallbacks[locale]?.[category] || fallbacks.zh.entertainment;
+  const limitedRecs = recs.slice(0, Math.max(1, count));
 
   // 为每个推荐生成搜索链接
-  return recs.map((rec, index) => {
+  return limitedRecs.map((rec, index) => {
     // 对于 food 分类，使用轮换函数确保平台多样性
     let platform: string;
     if (category === 'food') {

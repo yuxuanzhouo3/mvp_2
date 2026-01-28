@@ -6,13 +6,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { SearchParamsBoundary } from "@/components/search-params-boundary"
 import { CheckCircle, XCircle, Loader2 } from "lucide-react"
-import { useIsIPhone } from "@/hooks/use-device"
+import { useHideSubscriptionUI } from "@/hooks/use-hide-subscription-ui"
 
 type PaymentStatus = "loading" | "success" | "failed" | "unknown"
 
 function PaymentResultContent() {
   const router = useRouter()
-  const isIPhone = useIsIPhone()
+  const hideSubscriptionUI = useHideSubscriptionUI()
   const searchParams = useSearchParams()
   const [status, setStatus] = useState<PaymentStatus>("loading")
   const [message, setMessage] = useState("正在验证支付结果...")
@@ -40,7 +40,7 @@ function PaymentResultContent() {
     if (method === "alipay.trade.page.pay.return" && outTradeNo && tradeNo) {
       // 支付成功（同步回调只能初步判断，实际以异步通知为准）
       setStatus("success")
-      setMessage("支付成功！感谢您的订阅")
+      setMessage(hideSubscriptionUI ? "支付成功！感谢您的支持" : "支付成功！感谢您的订阅")
 
       // 刷新用户订阅状态
       refreshSubscriptionStatus()
@@ -139,7 +139,7 @@ function PaymentResultContent() {
             <Button onClick={() => router.push("/")} className="w-full">
               返回首页
             </Button>
-            {status === "success" && (
+            {status === "success" && !hideSubscriptionUI && (
               <Button
                 variant="outline"
                 onClick={() => router.push("/settings")}
@@ -148,7 +148,7 @@ function PaymentResultContent() {
                 查看订阅详情
               </Button>
             )}
-            {status === "failed" && !isIPhone && (
+            {status === "failed" && !hideSubscriptionUI && (
               <Button
                 variant="outline"
                 onClick={() => router.push("/pricing")}
@@ -160,7 +160,7 @@ function PaymentResultContent() {
           </div>
 
           {/* 提示信息 */}
-          {status === "success" && (
+          {status === "success" && !hideSubscriptionUI && (
             <p className="text-xs text-center text-muted-foreground pt-2">
               订阅状态可能需要几分钟更新，如有问题请联系客服
             </p>

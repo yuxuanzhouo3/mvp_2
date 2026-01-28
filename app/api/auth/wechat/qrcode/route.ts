@@ -17,7 +17,6 @@ export async function GET(request: Request) {
   }
 
   const appId = process.env.WECHAT_APP_ID || process.env.NEXT_PUBLIC_WECHAT_APP_ID;
-  const appSecret = process.env.WECHAT_APP_SECRET;
 
   if (!appId) {
     console.error("[WeChat QRCode] Missing WECHAT_APP_ID");

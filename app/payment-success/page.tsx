@@ -10,12 +10,14 @@ import { SearchParamsBoundary } from "@/components/search-params-boundary";
 import { isChinaDeployment } from "@/lib/config/deployment.config";
 // 只在 INTL 环境才可能需要 Stripe，CN 环境完全不导入
 import { fetchWithAuth } from "@/lib/auth/fetch-with-auth";
+import { useHideSubscriptionUI } from "@/hooks/use-hide-subscription-ui";
 
 // CN 环境标记
 const isCN = isChinaDeployment();
 
 function PaymentSuccessContent() {
   const router = useRouter();
+  const hideSubscriptionUI = useHideSubscriptionUI();
   const searchParams = useSearchParams();
   const [isProcessing, setIsProcessing] = useState(true);
   const [paymentDetails, setPaymentDetails] = useState<any>(null);
@@ -209,7 +211,7 @@ function PaymentSuccessContent() {
             支付成功！
           </CardTitle>
           <CardDescription>
-            感谢您的购买，您的订阅已激活
+            {hideSubscriptionUI ? "感谢您的购买" : "感谢您的购买，您的订阅已激活"}
           </CardDescription>
         </CardHeader>
 
@@ -256,7 +258,7 @@ function PaymentSuccessContent() {
               )}
 
               <div className="bg-blue-50 p-3 rounded-lg">
-                <div className="text-sm text-blue-600">订阅状态</div>
+                <div className="text-sm text-blue-600">{hideSubscriptionUI ? "订单状态" : "订阅状态"}</div>
                 <div className="font-medium text-blue-800">
                   {subscriptionStatusLabel}
                 </div>
@@ -272,13 +274,15 @@ function PaymentSuccessContent() {
           )}
 
           <div className="pt-4 space-y-2">
-            <Button
-              onClick={() => router.push("/settings")}
-              className="w-full"
-              disabled={isProcessing}
-            >
-              查看订阅详情
-            </Button>
+            {!hideSubscriptionUI && (
+              <Button
+                onClick={() => router.push("/settings")}
+                className="w-full"
+                disabled={isProcessing}
+              >
+                查看订阅详情
+              </Button>
+            )}
 
             <Button
               variant="outline"

@@ -3,7 +3,6 @@ import { supabase } from "@/lib/integrations/supabase";
 import { isChinaRegion } from "@/lib/config/region";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
-import * as jwt from "jsonwebtoken";
 import cloudbase from "@cloudbase/node-sdk";
 import { nowISO } from "@/lib/database/cloudbase-client";
 

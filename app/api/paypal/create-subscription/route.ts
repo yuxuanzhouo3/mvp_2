@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
-import { PAYPAL_PLANS } from '@/lib/paypal'
-import { getBaseUrl } from '@/lib/utils/get-base-url'
 
 export async function POST(request: NextRequest) {
   try {

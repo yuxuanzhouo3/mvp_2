@@ -317,6 +317,7 @@ class CloudBaseAuthAdapter implements AuthAdapter {
   }
 
   async toDefaultLoginPage(redirectUrl?: string): Promise<void> {
+    void redirectUrl;
     throw new Error("Not implemented");
   }
 

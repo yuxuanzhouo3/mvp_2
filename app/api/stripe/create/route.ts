@@ -3,7 +3,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { stripe } from "@/lib/stripe";
 import { requireAuth } from "@/lib/auth/auth";
 import { supabaseAdmin } from "@/lib/integrations/supabase-admin";
-import { getPricingByMethod } from "@/lib/payment/payment-config";
 
 export async function POST(request: NextRequest) {
   try {

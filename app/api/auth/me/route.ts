@@ -36,6 +36,7 @@ export async function GET(request: NextRequest) {
     }
 
     const { password, ...safeUser } = verification.user;
+    void password;
 
     return NextResponse.json({
       success: true,

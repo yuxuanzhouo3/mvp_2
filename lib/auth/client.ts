@@ -572,6 +572,7 @@ class CloudBaseAuthClient implements AuthClient {
     email: string;
     options?: any;
   }): Promise<{ error: Error | null }> {
+    void params;
     return {
       error: new Error(
         "OTP is not supported in China region. Please use WeChat login."
@@ -584,6 +585,7 @@ class CloudBaseAuthClient implements AuthClient {
     token: string;
     type: string;
   }): Promise<AuthResponse> {
+    void params;
     return {
       data: { user: null, session: null },
       error: new Error(
@@ -702,6 +704,7 @@ class CloudBaseAuthClient implements AuthClient {
     callback: (event: string, session: AuthSession | null) => void
   ): { data: { subscription: { unsubscribe: () => void } } } {
     // CloudBase 不支持实时状态变化监听
+    void callback;
     return {
       data: {
         subscription: {

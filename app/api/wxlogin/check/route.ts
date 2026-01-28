@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { openid, unionid, session_key } = wxData;
+    const { openid, unionid } = wxData;
     console.log("[wxlogin/check] Got openid:", openid);
 
     // 使用 CloudBase 认证服务创建或查询用户

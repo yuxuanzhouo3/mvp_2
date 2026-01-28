@@ -3,7 +3,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { paypalClient } from "@/lib/paypal";
 import { requireAuth } from "@/lib/auth/auth";
 import { supabaseAdmin } from "@/lib/integrations/supabase-admin";
-import { getPricingByMethod } from "@/lib/payment/payment-config";
 import { getBaseUrl } from "@/lib/utils/get-base-url";
 
 export async function POST(request: NextRequest) {

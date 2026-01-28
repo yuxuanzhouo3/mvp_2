@@ -5,13 +5,12 @@
  * 显示单条推荐历史，支持滑动删除和点击删除
  */
 
-import { useState, useRef, forwardRef } from "react"
+import { useState, forwardRef } from "react"
 import { motion } from "framer-motion"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import type { RecommendationHistory, RecommendationCategory } from "@/lib/types/recommendation"
-import { getIconForLinkType } from "@/lib/utils/icon-mapping"
 import { X, ExternalLink } from "lucide-react"
 
 interface HistoryCardProps {
@@ -104,7 +103,6 @@ const HistoryCardComponent = forwardRef<HTMLDivElement, HistoryCardProps>(
         const [showDeleteButton, setShowDeleteButton] = useState(false)
         const [startX, setStartX] = useState(0)
         const [currentX, setCurrentX] = useState(0)
-        const cardRef = useRef<HTMLDivElement>(null)
 
         const linkTypeLabel = item.link_type
             ? linkTypeLabels[item.link_type]?.[locale] || item.link_type
@@ -200,7 +198,7 @@ const HistoryCardComponent = forwardRef<HTMLDivElement, HistoryCardProps>(
                 className="relative overflow-hidden"
             >
                 <div
-                    ref={cardRef}
+                    ref={ref}
                     className="relative"
                     onTouchStart={handleTouchStart}
                     onTouchMove={handleTouchMove}

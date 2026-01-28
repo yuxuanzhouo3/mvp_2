@@ -17,7 +17,6 @@ import {
   ShoppingCart, 
   Eye, 
   Star, 
-  X,
   Loader2,
   Sparkles
 } from 'lucide-react';
@@ -46,7 +45,6 @@ export function FeedbackDialog({
   const { language } = useLanguage();
   const t = useTranslations(language);
   const [step, setStep] = useState<FeedbackStep>('interest');
-  const [isInterested, setIsInterested] = useState<boolean | null>(null);
   const [hasPurchased, setHasPurchased] = useState<boolean | null>(null);
   const [rating, setRating] = useState<number>(0);
   const [comment, setComment] = useState('');
@@ -56,7 +54,6 @@ export function FeedbackDialog({
   // 重置状态
   const resetState = () => {
     setStep('interest');
-    setIsInterested(null);
     setHasPurchased(null);
     setRating(0);
     setComment('');
@@ -72,7 +69,6 @@ export function FeedbackDialog({
 
   // 处理感兴趣选择
   const handleInterestSelect = (interested: boolean) => {
-    setIsInterested(interested);
     if (interested) {
       setStep('purchase');
     } else {

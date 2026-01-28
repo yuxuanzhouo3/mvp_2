@@ -21,7 +21,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const { token, refreshToken, openid, expiresIn, nickName, avatarUrl, userId } = await req.json();
+    const { token, openid, expiresIn, nickName, avatarUrl, userId } = await req.json();
 
     if (!token || !openid) {
       return NextResponse.json(

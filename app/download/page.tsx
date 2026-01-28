@@ -8,7 +8,6 @@ import {
   getDownloadConfig,
   detectUserPlatform,
   PlatformType,
-  MacOSArchType,
   DownloadItem,
 } from "@/lib/config/download.config";
 import { isChinaDeployment } from "@/lib/config/deployment.config";
@@ -71,7 +70,7 @@ export default function DownloadPage() {
   /**
    * 获取平台图标
    */
-  const getPlatformIcon = (platform: PlatformType, arch?: MacOSArchType) => {
+  const getPlatformIcon = (platform: PlatformType) => {
     switch (platform) {
       case "android":
         return <Smartphone className="w-12 h-12" />;
@@ -118,7 +117,7 @@ export default function DownloadPage() {
           </h1>
           <p className="text-lg text-gray-600 max-w-2xl mx-auto">
             {isChina
-              ? "下载辰汇个性推荐平台客户端，享受更流畅的AI推荐体验"
+              ? "下载辰汇个性推荐客户端，享受更流畅的AI推荐体验"
               : "Download RandomLife client for a better AI recommendation experience"}
           </p>
         </motion.div>

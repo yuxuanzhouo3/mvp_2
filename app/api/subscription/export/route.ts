@@ -325,7 +325,7 @@ async function generatePDF(history: { data: any[]; total: number; retentionDays:
     });
 
     // 处理分类名
-    let categoryRaw = (recommendation?.category as string) || 'N/A';
+    const categoryRaw = (recommendation?.category as string) || 'N/A';
     const categoryMap = useChinese ? categoryMapZh : categoryMapEn;
     let category = categoryMap[categoryRaw.toLowerCase()] || categoryMap[categoryRaw] || categoryRaw;
     category = sanitizeTextForPdf(category, useChinese);

@@ -19,10 +19,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Receipt, RefreshCw, CreditCard, X, CheckCircle, Trash2 } from "lucide-react";
+import { Receipt, RefreshCw, CheckCircle, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useLanguage } from "@/components/language-provider";
-import { useTranslations } from "@/lib/i18n";
 import { isChinaDeployment } from "@/lib/config/deployment.config";
 
 // 检测是否CN环境
@@ -50,7 +49,6 @@ export function BillingHistory() {
   const [refreshKey, setRefreshKey] = useState(0);
   const { toast } = useToast();
   const { language } = useLanguage();
-  const t = useTranslations(language);
 
   useEffect(() => {
     const fetchBillingHistory = async () => {

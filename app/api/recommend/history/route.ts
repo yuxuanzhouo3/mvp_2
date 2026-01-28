@@ -15,7 +15,7 @@ import { type NextRequest, NextResponse } from "next/server"
 export const dynamic = 'force-dynamic';
 import { isValidUserId } from "@/lib/utils"
 import { getRecommendationAdapter } from "@/lib/database"
-import type { RecommendationCategory, UserAction } from "@/lib/database/types"
+import type { RecommendationCategory } from "@/lib/database/types"
 import { requireAuth } from "@/lib/auth/auth"
 
 async function resolveRecommendationAdapter(provider?: string) {

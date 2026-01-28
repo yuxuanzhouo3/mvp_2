@@ -1,4 +1,4 @@
-# 辰汇个性推荐平台
+# 辰汇个性推荐
 
 基于 Next.js 14 + TypeScript 的多语言推荐应用，支持 **INTL（Supabase + Stripe/PayPal + OpenAI/Mistral）** 与 **CN（CloudBase + 支付宝/微信 + 智谱 AI）** 两套环境，前端一套代码通过环境变量自动适配。
 
@@ -64,5 +64,4 @@ docs/                # 架构、优化、验证文档
 - 区域切换：`NEXT_PUBLIC_DEPLOYMENT_REGION=INTL|CN` 控制 Auth/DB/支付/AI 的适配逻辑，相关说明见 `docs/2025-12-19/DUAL_ENVIRONMENT_GUIDE.md`。
 - 下载入口：INTL 使用 `NEXT_PUBLIC_INTL_*_URL` 外链，CN 使用 `CN_*_FILE_ID` CloudBase 文件 ID。
 - 演示账户：`LOGIN_INFO.md` 提供 Free/Pro/Enterprise 示例账号（如需本地验证可按文档补充数据）。
-
 

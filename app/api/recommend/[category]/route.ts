@@ -143,6 +143,9 @@ function getRandomItem<T>(array: T[]): T {
 }
 
 function aiRecommendation(history: any[], category: string) {
+  void history
+  void category
+
   // Simple AI logic - in real app, this would use ML models
   const preferences = ["川菜", "日料", "西餐", "粤菜"]
   const randomPreference = preferences[Math.floor(Math.random() * preferences.length)]
@@ -157,6 +160,7 @@ export async function POST(request: NextRequest, { params }: { params: { categor
   try {
     const body = await request.json()
     const { user_id } = body
+    void user_id
     const category = params.category
 
     let recommendation

@@ -7,7 +7,7 @@ import { checkPlanTransition, getAmountByCurrency } from "@/lib/payment/payment-
 import { getUserPlan } from "@/lib/subscription/usage-tracker";
 import { isChinaDeployment } from "@/lib/config/deployment.config";
 import { getUserAdapter } from "@/lib/database";
-import type { PlanType, BillingCycle } from "@/lib/payment/payment-config";
+import type { PlanType } from "@/lib/payment/payment-config";
 
 // 升级请求验证schema - 支持 CN 和 INTL 支付方式
 const upgradeSchema = z.object({

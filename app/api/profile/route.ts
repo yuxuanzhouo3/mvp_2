@@ -88,7 +88,7 @@ async function handleChinaProfile(request: NextRequest) {
     } else if (userResult.data && !Array.isArray(userResult.data)) {
       userData = userResult.data;
     }
-  } catch (e) {
+  } catch {
     console.log("[/api/profile CN] Failed to fetch user from users collection");
   }
 
@@ -113,7 +113,7 @@ async function handleChinaProfile(request: NextRequest) {
         subscriptionData = subscription;
       }
     }
-  } catch (e) {
+  } catch {
     console.log("[/api/profile CN] No active subscription found");
   }
 
@@ -244,7 +244,7 @@ async function handleIntlProfile(request: NextRequest) {
 
     subscriptionData = subscription;
     console.log("[/api/profile] Found active subscription:", subscription?.plan_type);
-  } catch (error) {
+  } catch {
     console.log("[/api/profile] No active subscription found or table doesn't exist");
   }
 
@@ -262,7 +262,7 @@ async function handleIntlProfile(request: NextRequest) {
       .maybeSingle();
 
     latestPayment = payment;
-  } catch (error) {
+  } catch {
     console.log("[/api/profile] Failed to fetch latest payment");
   }
 

@@ -4,8 +4,6 @@ import { getPayment } from "@/lib/payment/adapter";
 import { requireAuth } from "@/lib/auth/auth";
 import { supabaseAdmin } from "@/lib/integrations/supabase-admin";
 import { z } from "zod";
-import { getPricingByMethod, getDaysByBillingCycle } from "@/lib/payment/payment-config";
-import type { PaymentMethod, BillingCycle } from "@/lib/payment/payment-config";
 
 // 支付创建请求验证schema
 const createPaymentSchema = z.object({
@@ -58,7 +56,6 @@ export async function POST(request: NextRequest) {
       description,
       planType,
       billingCycle,
-      idempotencyKey,
     } = validationResult.data;
 
     // 使用验证的用户ID

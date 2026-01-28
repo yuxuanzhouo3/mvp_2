@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { userId, recommendationId, timeAway, sessionId } = body;
+    const { userId, recommendationId, timeAway } = body;
 
     if (!userId || !isValidUserId(userId)) {
       return NextResponse.json(
@@ -103,6 +103,9 @@ async function checkExistingFeedback(
   recommendationId: string
 ): Promise<boolean> {
   try {
+    void userId;
+    void recommendationId;
+
     // TODO: 实现检查已有反馈的逻辑
     // 简化实现：返回 false 表示没有已有反馈
     return false;
@@ -119,8 +122,6 @@ async function getRecommendationDetails(
   recommendationId: string
 ): Promise<{ id: string; title: string; category: string } | null> {
   try {
-    const adapter = await getRecommendationAdapter();
-    
     // 尝试从历史记录中获取推荐详情
     // 注意：这需要适配器支持按 ID 查询
     // 简化实现：返回基本信息

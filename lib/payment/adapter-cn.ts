@@ -150,7 +150,7 @@ class WeChatPayAdapter implements PaymentAdapterCN {
     if (!key) return "";
 
     // 处理转义的换行符
-    let formattedKey = key.replace(/\\n/g, "\n");
+    const formattedKey = key.replace(/\\n/g, "\n");
 
     // 检测原始格式类型
     const isPKCS1 = formattedKey.includes("RSA PRIVATE KEY");
@@ -258,7 +258,6 @@ class WeChatPayAdapter implements PaymentAdapterCN {
       throw new Error("微信支付配置不完整，请检查环境变量");
     }
 
-    const mode = options.mode || "qrcode";
     const orderId = generateOrderIdCN();
     const amountInCents = Math.round(amount * 100); // 转换为分
 
@@ -722,7 +721,7 @@ class AlipayAdapter implements PaymentAdapterCN {
     let passbackParams = {};
     try {
       passbackParams = JSON.parse(decodeURIComponent(response.passback_params || "{}"));
-    } catch (e) {}
+    } catch {}
 
     return {
       id: orderId,

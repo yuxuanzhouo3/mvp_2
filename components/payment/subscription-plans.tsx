@@ -12,10 +12,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Check, Crown, Building2, Zap } from "lucide-react";
-import { useAuth } from "@/hooks/use-auth";
 import { useIsIPhone } from "@/hooks/use-device";
 import { useLanguage } from "@/components/language-provider";
-import { useTranslations } from "@/lib/i18n";
 
 interface SubscriptionPlan {
   id: string;
@@ -40,10 +38,8 @@ export function SubscriptionPlans({
   onSelectPlan,
   currentPlan,
 }: SubscriptionPlansProps) {
-  const { user } = useAuth();
   const isIPhone = useIsIPhone();
   const { language } = useLanguage();
-  const t = useTranslations(language);
   const [billingCycle, setBillingCycle] = useState<"monthly" | "yearly">("monthly");
 
   const plans: SubscriptionPlan[] = [

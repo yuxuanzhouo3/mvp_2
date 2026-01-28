@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useAuth } from "@/hooks/use-auth"
-import { useIsIPhone } from "@/hooks/use-device"
+import { useHideSubscriptionUI } from "@/hooks/use-hide-subscription-ui"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -35,7 +35,7 @@ const PRICING = {
 
 export default function SettingsPage() {
   const { user, isAuthenticated, isLoading, refresh } = useAuth()
-  const isIPhone = useIsIPhone()
+  const hideSubscriptionUI = useHideSubscriptionUI()
   const router = useRouter()
   const { toast } = useToast()
   const { language } = useLanguage()
@@ -69,6 +69,7 @@ export default function SettingsPage() {
   useEffect(() => {
     const fetchSubscriptionInfo = async () => {
       if (!isAuthenticated || !user) return
+      if (hideSubscriptionUI) return
 
       const plan = user?.subscriptionTier ? normalizePlan(user.subscriptionTier) : "free"
       if (plan === "free") return
@@ -99,7 +100,7 @@ export default function SettingsPage() {
     fetchSubscriptionInfo()
     // 只依赖 user.id 而不是整个 user 对象，避免无限循环
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated, user?.id])
+  }, [hideSubscriptionUI, isAuthenticated, user?.id])
 
   if (isLoading) {
     return (
@@ -316,19 +317,23 @@ export default function SettingsPage() {
         </div>
 
         <Tabs defaultValue="account" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className={hideSubscriptionUI ? "grid w-full grid-cols-1" : "grid w-full grid-cols-3"}>
             <TabsTrigger value="account">
               <User className="h-4 w-4 mr-2" />
               {t.settingsPage.tabs.account}
             </TabsTrigger>
-            <TabsTrigger value="payment">
-              <CreditCard className="h-4 w-4 mr-2" />
-              {t.settingsPage.tabs.payment}
-            </TabsTrigger>
-            <TabsTrigger value="subscription">
-              <Crown className="h-4 w-4 mr-2" />
-              {t.settingsPage.tabs.pro}
-            </TabsTrigger>
+            {!hideSubscriptionUI && (
+              <TabsTrigger value="payment">
+                <CreditCard className="h-4 w-4 mr-2" />
+                {t.settingsPage.tabs.payment}
+              </TabsTrigger>
+            )}
+            {!hideSubscriptionUI && (
+              <TabsTrigger value="subscription">
+                <Crown className="h-4 w-4 mr-2" />
+                {t.settingsPage.tabs.pro}
+              </TabsTrigger>
+            )}
           </TabsList>
 
           {/* Account Tab */}
@@ -391,96 +396,97 @@ export default function SettingsPage() {
                   <Label>{t.settingsPage.account.email}</Label>
                   <Input value={user?.email || ""} disabled />
                 </div>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label>{t.settingsPage.account.subscriptionTier}</Label>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleRefreshSubscription}
-                      disabled={isRefreshing}
-                    >
-                      {isRefreshing
-                        ? (language === "zh" ? "刷新中..." : "Refreshing...")
-                        : (language === "zh" ? "刷新状态" : "Refresh Status")
-                      }
-                    </Button>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {currentPlan === "enterprise" && (
-                      <span className="px-3 py-1 text-sm rounded-full bg-purple-100 text-purple-700 font-medium">
-                        {t.settingsPage.account.tiers.enterprise}
-                      </span>
-                    )}
-                    {currentPlan === "pro" && (
-                      <span className="px-3 py-1 text-sm rounded-full bg-green-100 text-green-700 font-medium">
-                        {t.settingsPage.account.tiers.pro}
-                      </span>
-                    )}
-                    {currentPlan === "free" && (
-                      <span className="px-3 py-1 text-sm rounded-full bg-gray-100 text-gray-700 font-medium">
-                        {t.settingsPage.account.tiers.free}
-                      </span>
-                    )}
-                  </div>
-                  {/* Subscription Expiry Date */}
-                  {(currentPlan === "pro" || currentPlan === "enterprise") && (
-                    <div className="text-sm text-gray-600 mt-2">
-                      {subscriptionEnd ? (
-                        <span>
-                          {language === "zh" ? "到期时间：" : "Expires: "}
-                          {new Date(subscriptionEnd).toLocaleDateString(language === "zh" ? "zh-CN" : "en-US", {
-                            year: "numeric",
-                            month: "long",
-                            day: "numeric",
-                          })}
+                {!hideSubscriptionUI && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label>{t.settingsPage.account.subscriptionTier}</Label>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleRefreshSubscription}
+                        disabled={isRefreshing}
+                      >
+                        {isRefreshing
+                          ? (language === "zh" ? "刷新中..." : "Refreshing...")
+                          : (language === "zh" ? "刷新状态" : "Refresh Status")
+                        }
+                      </Button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {currentPlan === "enterprise" && (
+                        <span className="px-3 py-1 text-sm rounded-full bg-purple-100 text-purple-700 font-medium">
+                          {t.settingsPage.account.tiers.enterprise}
                         </span>
-                      ) : (
-                        <span className="text-gray-400">
-                          {language === "zh" ? "点击\"刷新状态\"查看到期时间" : "Click \"Refresh Status\" to see expiry date"}
+                      )}
+                      {currentPlan === "pro" && (
+                        <span className="px-3 py-1 text-sm rounded-full bg-green-100 text-green-700 font-medium">
+                          {t.settingsPage.account.tiers.pro}
+                        </span>
+                      )}
+                      {currentPlan === "free" && (
+                        <span className="px-3 py-1 text-sm rounded-full bg-gray-100 text-gray-700 font-medium">
+                          {t.settingsPage.account.tiers.free}
                         </span>
                       )}
                     </div>
-                  )}
-                </div>
+                    {(currentPlan === "pro" || currentPlan === "enterprise") && (
+                      <div className="text-sm text-gray-600 mt-2">
+                        {subscriptionEnd ? (
+                          <span>
+                            {language === "zh" ? "到期时间：" : "Expires: "}
+                            {new Date(subscriptionEnd).toLocaleDateString(language === "zh" ? "zh-CN" : "en-US", {
+                              year: "numeric",
+                              month: "long",
+                              day: "numeric",
+                            })}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400">
+                            {language === "zh" ? "点击\"刷新状态\"查看到期时间" : "Click \"Refresh Status\" to see expiry date"}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
 
           {/* Payment Tab */}
-          <TabsContent value="payment" className="mt-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>{t.settingsPage.paymentTab.title}</CardTitle>
-                <CardDescription>
-                  {language === "zh"
-                    ? "管理您的订阅和支付方式"
-                    : "Manage your subscription and payment methods"}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-center py-8">
-                  <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-100 mb-4">
-                    <CreditCard className="h-8 w-8 text-blue-600" />
-                  </div>
-                  <h3 className="text-xl font-semibold mb-2">
-                    {language === "zh" ? "安全支付" : "Secure Payment"}
-                  </h3>
-                  <p className="text-gray-600 mb-6 max-w-md mx-auto">
+          {!hideSubscriptionUI && (
+            <TabsContent value="payment" className="mt-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>{t.settingsPage.paymentTab.title}</CardTitle>
+                  <CardDescription>
                     {language === "zh"
-                      ? isCN 
-                        ? "我们使用支付宝和微信支付进行安全支付处理。您可以在订阅页面选择您偏好的支付方式。"
-                        : "我们使用 Stripe 和 PayPal 进行安全支付处理。您可以在订阅页面选择您偏好的支付方式。"
-                      : "We use Stripe and PayPal for secure payment processing. You can choose your preferred payment method on the subscription page."}
-                  </p>
-
-                  <div className="bg-blue-50 p-4 rounded-lg mb-6">
-                    <p className="text-sm text-blue-800">
-                      {t.settingsPage.paymentTab.securityNote}
+                      ? "管理您的订阅和支付方式"
+                      : "Manage your subscription and payment methods"}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-center py-8">
+                    <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-100 mb-4">
+                      <CreditCard className="h-8 w-8 text-blue-600" />
+                    </div>
+                    <h3 className="text-xl font-semibold mb-2">
+                      {language === "zh" ? "安全支付" : "Secure Payment"}
+                    </h3>
+                    <p className="text-gray-600 mb-6 max-w-md mx-auto">
+                      {language === "zh"
+                        ? isCN 
+                          ? "我们使用支付宝和微信支付进行安全支付处理。您可以在订阅页面选择您偏好的支付方式。"
+                          : "我们使用 Stripe 和 PayPal 进行安全支付处理。您可以在订阅页面选择您偏好的支付方式。"
+                        : "We use Stripe and PayPal for secure payment processing. You can choose your preferred payment method on the subscription page."}
                     </p>
-                  </div>
 
-                  {!isIPhone && (
+                    <div className="bg-blue-50 p-4 rounded-lg mb-6">
+                      <p className="text-sm text-blue-800">
+                        {t.settingsPage.paymentTab.securityNote}
+                      </p>
+                    </div>
+
                     <Link href="/pro">
                       <Button className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700">
                         {currentPlan === "free"
@@ -488,13 +494,14 @@ export default function SettingsPage() {
                           : (language === "zh" ? "管理订阅" : "Manage Subscription")}
                       </Button>
                     </Link>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          )}
 
           {/* Subscription Tab */}
+          {!hideSubscriptionUI && (
           <TabsContent value="subscription" className="mt-6 space-y-6">
             <Card>
               <CardHeader>
@@ -634,13 +641,11 @@ export default function SettingsPage() {
                           {t.settingsPage.subscription.features.adFree}
                         </li>
                       </ul>
-                      {!isIPhone && (
-                        <Link href="/pro">
-                          <Button className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700">
-                            {t.settingsPage.subscription.upgradeButton}
-                          </Button>
-                        </Link>
-                      )}
+                      <Link href="/pro">
+                        <Button className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700">
+                          {t.settingsPage.subscription.upgradeButton}
+                        </Button>
+                      </Link>
                     </div>
                   </>
                 )}
@@ -650,6 +655,7 @@ export default function SettingsPage() {
             {/* Billing History */}
             <BillingHistory />
           </TabsContent>
+          )}
         </Tabs>
       </div>
     </div>

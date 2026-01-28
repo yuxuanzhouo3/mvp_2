@@ -176,7 +176,6 @@ export async function POST(request: NextRequest) {
         .single();
 
       let subscriptionEnd: Date;
-      let isUpgrade = false;
 
       if (fetchError && fetchError.code !== 'PGRST116') {
         console.error("Error checking existing subscription:", fetchError);
@@ -191,7 +190,6 @@ export async function POST(request: NextRequest) {
 
         // 判断是否是升级（从低级别到高级别）
         if (newPlanType === "enterprise" && existingPlanType === "pro") {
-          isUpgrade = true;
           // 升级时，从当前时间开始计算新订阅
           subscriptionEnd = new Date(Date.now() + daysInMs);
           console.log(`User ${user_id} upgrading from pro to enterprise. New subscription ending at: ${subscriptionEnd.toISOString()}`);

@@ -32,10 +32,10 @@ export function enhanceTravelRecommendation(
   const destination = extractDestinationInfo(recommendation.title, recommendation.description);
 
   // 生成高度相关的搜索查询 - 使用目的地名称而不是通用关键词
-  let enhancedSearchQuery = generateDestinationSearchQuery(recommendation, destination, locale);
+  const enhancedSearchQuery = generateDestinationSearchQuery(recommendation, destination, locale);
 
   // 智能选择最佳平台 - 根据推荐类型选择
-  let bestPlatform = selectPlatformByRecommendationType(recommendation, destination, locale);
+  const bestPlatform = selectPlatformByRecommendationType(recommendation);
 
   // 注意：不在这里生成链接，由 route.ts 处理
 
@@ -80,7 +80,7 @@ function generateDestinationSearchQuery(
   locale: string
 ): string {
   // 提取核心地点名称
-  const locationName = extractCoreLocationName(recommendation.title, destination);
+  const locationName = extractCoreLocationName(recommendation.title);
 
   // 根据推荐类型添加特定关键词
   const typeKeywords = getTypeSpecificKeywords(recommendation, locale);
@@ -95,7 +95,7 @@ function generateDestinationSearchQuery(
 
   // 优先使用英文搜索，因为大多数旅游平台是国际化的
   if (locale === 'zh') {
-    const englishName = getEnglishLocationName(locationName, destination);
+    const englishName = getEnglishLocationName(locationName);
     if (englishName && englishName !== locationName) {
       searchQuery = englishName + (typeKeywords ? ` ${typeKeywords}` : '');
     }
@@ -108,12 +108,9 @@ function generateDestinationSearchQuery(
  * 根据推荐类型选择最佳平台
  */
 function selectPlatformByRecommendationType(
-  recommendation: any,
-  destination: TravelRecommendation['destination'],
-  locale: string
+  recommendation: any
 ): string {
   const title = recommendation.title?.toLowerCase() || '';
-  const desc = recommendation.description?.toLowerCase() || '';
   const tags = recommendation.tags || [];
 
   // 所有类型都优先使用 TripAdvisor
@@ -154,26 +151,10 @@ function selectPlatformByRecommendationType(
 }
 
 /**
- * 确定搜索语言
- */
-function determineSearchLocale(
-  destination: TravelRecommendation['destination'],
-  userLocale: string
-): string {
-  // 如果是国际目的地，使用英文搜索
-  if (destination.country && destination.country !== '中国') {
-    return 'en';
-  }
-  // 否则使用用户语言
-  return userLocale;
-}
-
-/**
  * 提取核心地点名称
  */
 function extractCoreLocationName(
-  title: string,
-  destination: TravelRecommendation['destination']
+  title: string
 ): string {
   // 移除常见的后缀
   const suffixes = [
@@ -250,7 +231,7 @@ function getTypeSpecificKeywords(recommendation: any, locale: string): string {
 /**
  * 获取地点的英文名称
  */
-function getEnglishLocationName(name: string, destination: TravelRecommendation['destination']): string | null {
+function getEnglishLocationName(name: string): string | null {
   const nameMappings: Record<string, string> = {
     '巴厘岛': 'Bali Indonesia',
     '普吉岛': 'Phuket Thailand',

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
-  GAME_PLATFORMS,
   GameType,
   identifyGameType,
   selectGamePlatforms,

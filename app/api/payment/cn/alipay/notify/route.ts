@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
     });
 
     // 更新用户订阅状态 - 使用 CloudBase
-    const { days, planType, billingCycle } = payment.metadata || {};
+    const { days, planType } = payment.metadata || {};
     const subscriptionEndDate = new Date();
     subscriptionEndDate.setDate(subscriptionEndDate.getDate() + (days || 30));
 

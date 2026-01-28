@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
         .limit(1)
         .get();
       payment = findResult.data?.[0];
-    } catch (findError) {
+    } catch {
       console.log("[CN Query] 数据库查询失败，尝试从支付平台查询:", orderId);
     }
 
@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
 
       // 如果支付平台显示已完成，但数据库未更新，进行更新
       if (orderInfo.status === "completed" && payment && payment.status !== "completed") {
-        const { days, planType, billingCycle } = payment.metadata || {};
+        const { days, planType } = payment.metadata || {};
         const subscriptionEndDate = new Date();
         subscriptionEndDate.setDate(subscriptionEndDate.getDate() + (days || 30));
 

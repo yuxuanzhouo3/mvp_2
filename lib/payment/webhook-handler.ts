@@ -371,7 +371,6 @@ async function handlePayPalOrderApproved(data: any) {
 
   const amount = parseFloat(purchaseUnit.amount?.value || '0');
   const currency = purchaseUnit.amount?.currency_code || 'USD';
-  const referenceId = purchaseUnit.reference_id;
 
   console.log(`PayPal order approved: ${orderId}, amount: ${amount} ${currency}`);
 
@@ -407,7 +406,6 @@ async function handlePayPalOrderCompleted(data: any) {
 
   const amount = parseFloat(purchaseUnit.amount?.value || '0');
   const currency = purchaseUnit.amount?.currency_code || 'USD';
-  const referenceId = purchaseUnit.reference_id;
 
   console.log(`PayPal order completed: ${orderId}, amount: ${amount} ${currency}`);
 
@@ -681,7 +679,6 @@ async function updateUserSubscription(userId: string, amount: number, currency: 
 
     let subscriptionEnd: Date;
     let isNewSubscription = false;
-    let isUpgrade = false;
 
     if (fetchError && fetchError.code !== 'PGRST116') {
       console.error("Error checking existing subscription:", fetchError);
@@ -706,7 +703,6 @@ async function updateUserSubscription(userId: string, amount: number, currency: 
 
       // 判断是否是升级（从低级别到高级别）
       if (planType === "enterprise" && existingPlanType === "pro") {
-        isUpgrade = true;
         // 升级时，从当前时间开始计算新订阅
         subscriptionEnd = new Date(Date.now() + (isStatusActive ? daysInMs : 0));
         console.log(`User ${userId} upgrading from pro to enterprise. New subscription ending at: ${subscriptionEnd.toISOString()}`);

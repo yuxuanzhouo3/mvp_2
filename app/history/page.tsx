@@ -8,7 +8,6 @@
 import { useState, useEffect, useCallback } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -17,8 +16,7 @@ import { HistoryCard } from "@/components/HistoryCard"
 import { ArrowLeft, Trash2, Search, Download, FileJson, FileText, FileType2, Loader2, Lock, Crown } from "lucide-react"
 import { useAuth } from "@/hooks/use-auth"
 import { useLanguage } from "@/components/language-provider"
-import { useTranslations } from "@/lib/i18n"
-import { useIsIPhone } from "@/hooks/use-device"
+import { useHideSubscriptionUI } from "@/hooks/use-hide-subscription-ui"
 import { RegionConfig } from "@/lib/config/region"
 import type { RecommendationHistory, RecommendationCategory } from "@/lib/types/recommendation"
 import { fetchWithAuth } from "@/lib/auth/fetch-with-auth"
@@ -66,12 +64,10 @@ const categoryConfig: Record<
 }
 
 export default function HistoryPage() {
-    const router = useRouter()
     const { user, isAuthenticated } = useAuth()
-    const isIPhone = useIsIPhone()
+    const hideSubscriptionUI = useHideSubscriptionUI()
     const { language } = useLanguage()
     const locale = language as "zh" | "en"
-    const t = useTranslations(locale)
     const historyProvider = RegionConfig.database.provider
 
     // 状态管理
@@ -111,8 +107,12 @@ export default function HistoryPage() {
                     toast({
                         title: locale === "zh" ? "需要升级" : "Upgrade Required",
                         description: locale === "zh"
-                            ? "请升级到Pro或Enterprise以使用导出功能"
-                            : "Please upgrade to Pro or Enterprise to use export feature",
+                            ? hideSubscriptionUI
+                                ? "当前功能需要更高权限"
+                                : "请升级到Pro或Enterprise以使用导出功能"
+                            : hideSubscriptionUI
+                                ? "This feature requires higher access."
+                                : "Please upgrade to Pro or Enterprise to use export feature",
                         variant: "destructive",
                     })
                     return
@@ -298,41 +298,6 @@ export default function HistoryPage() {
         }
     }
 
-    // 清空该分类的历史记录
-    const handleClearCategory = async (category: RecommendationCategory) => {
-        if (!user?.id) return
-
-        const confirmed = window.confirm(
-            locale === "zh"
-                ? `确定要删除所有${categoryConfig[category].label.zh}相关的历史记录吗？`
-                : `Delete all ${categoryConfig[category].label.en} records?`
-        )
-
-        if (!confirmed) return
-
-        setDeleteState({ isDeleting: true, deletingId: null })
-        try {
-            const response = await fetchWithAuth("/api/recommend/history", {
-                method: "DELETE",
-                body: JSON.stringify({
-                    userId: user.id,
-                    category,
-                    provider: historyProvider,
-                }),
-            })
-
-            if (response.ok) {
-                setHistory((prev) => prev.filter((item) => item.category !== category))
-            } else {
-                console.error("Failed to delete category records")
-            }
-        } catch (error) {
-            console.error("Error deleting category records:", error)
-        } finally {
-            setDeleteState({ isDeleting: false, deletingId: null })
-        }
-    }
-
     // 未认证用户处理
     if (!isAuthenticated) {
         return (
@@ -421,9 +386,15 @@ export default function HistoryPage() {
                                                 className="text-gray-500"
                                             >
                                                 <Lock className="h-4 w-4 mr-2" />
-                                                {locale === "zh" ? "需要Pro或Enterprise" : "Pro or Enterprise required"}
+                                                {locale === "zh"
+                                                    ? hideSubscriptionUI
+                                                        ? "需要更高权限"
+                                                        : "需要Pro或Enterprise"
+                                                    : hideSubscriptionUI
+                                                        ? "Higher access required"
+                                                        : "Pro or Enterprise required"}
                                             </DropdownMenuItem>
-                                            {!isIPhone && (
+                                            {!hideSubscriptionUI && (
                                                 <>
                                                     <DropdownMenuSeparator />
                                                     <DropdownMenuItem asChild>
@@ -459,7 +430,7 @@ export default function HistoryPage() {
                                             >
                                                 <FileType2 className="h-4 w-4 mr-2" />
                                                 PDF
-                                                {!canExportPDF && (
+                                                {!canExportPDF && !hideSubscriptionUI && (
                                                     <Badge variant="outline" className="ml-2 text-xs">Enterprise</Badge>
                                                 )}
                                             </DropdownMenuItem>
@@ -627,7 +598,7 @@ export default function HistoryPage() {
                         </motion.div>
                     ) : (
                         <AnimatePresence mode="popLayout">
-                            {filteredHistory.map((item, index) => (
+                            {filteredHistory.map((item) => (
                                 <HistoryCard
                                     key={item.id}
                                     item={item}

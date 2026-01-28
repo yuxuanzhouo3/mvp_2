@@ -1,27 +1,24 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowLeft } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "@/components/language-provider";
-import { isChinaDeployment } from "@/lib/config/deployment.config";
+import { getSiteInfo } from "@/lib/config/site-info";
 
 export default function LegalPage() {
   const router = useRouter();
   const { language } = useLanguage();
-  const [isChina, setIsChina] = useState(false);
-
-  useEffect(() => {
-    setIsChina(isChinaDeployment());
-  }, []);
+  const site = getSiteInfo();
+  const isChina = site.region === "CN";
 
   // 获取平台名称
-  const platformName = isChina ? "辰汇个性推荐平台" : "RandomLife-DailyDiscovory";
+  const platformName = isChina ? "辰汇个性推荐" : "RandomLife-DailyDiscovory";
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-b from-background to-muted">
       <div className="max-w-4xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
         <Button
           variant="ghost"
@@ -32,15 +29,68 @@ export default function LegalPage() {
           <span>{language === "zh" ? "返回" : "Back"}</span>
         </Button>
 
-        <div className="bg-white rounded-lg shadow-sm p-8">
+        <div className="bg-card text-card-foreground rounded-lg shadow-sm p-8 border border-border">
           <h1 className="text-3xl font-bold mb-2">
             {language === "zh" ? "法律与政策" : "Legal & Policies"}
           </h1>
-          <p className="text-gray-600 mb-8">
+          <p className="text-muted-foreground mb-8">
             {language === "zh"
               ? "最后更新：2025年12月"
               : "Last updated: December 2025"}
           </p>
+
+          <div className="rounded-xl border border-border bg-muted/50 p-6 mb-8">
+            <h2 className="text-lg font-semibold">
+              {language === "zh" ? "基础服务信息" : "Service Information"}
+            </h2>
+            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-muted-foreground">
+              <p>
+                <span className="font-medium text-foreground">
+                  {language === "zh" ? "应用名称：" : "App Name: "}
+                </span>
+                {platformName}
+              </p>
+              <p>
+                <span className="font-medium text-foreground">
+                  {language === "zh" ? "版权所有者/运营者：" : "Owner/Operator: "}
+                </span>
+                {site.ownerName}
+              </p>
+              <p className="break-all">
+                <span className="font-medium text-foreground">
+                  {language === "zh" ? "联系邮箱：" : "Contact Email: "}
+                </span>
+                {site.contactEmail}
+              </p>
+              {isChina && site.icpBeian ? (
+                <p>
+                  <span className="font-medium text-foreground">
+                    {language === "zh" ? "网站备案：" : "ICP Filing: "}
+                  </span>
+                  <a
+                    href="https://beian.miit.gov.cn/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:opacity-90 transition-opacity"
+                  >
+                    {site.icpBeian}
+                  </a>
+                </p>
+              ) : null}
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-3">
+              <Button asChild variant="outline" size="sm">
+                <Link href="/">{language === "zh" ? "首页" : "Home"}</Link>
+              </Button>
+              <Button asChild variant="outline" size="sm">
+                <Link href="/about">{language === "zh" ? "关于我们" : "About"}</Link>
+              </Button>
+              <Button asChild variant="outline" size="sm">
+                <Link href="/contact">{language === "zh" ? "联系我们" : "Contact"}</Link>
+              </Button>
+            </div>
+          </div>
 
           <Tabs defaultValue="terms" className="w-full">
             <TabsList className="grid w-full grid-cols-3 mb-8">

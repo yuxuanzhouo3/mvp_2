@@ -116,7 +116,7 @@ export function inferEntertainmentType(rec: RecommendationItem): EntertainmentTy
   if (maxScore === 0) return null;
 
   const topTypes = Object.entries(scores)
-    .filter(([_, score]) => score === maxScore)
+    .filter(([, score]) => score === maxScore)
     .map(([type]) => type as EntertainmentType);
 
   // 如果有平局，优先级：video > game > music > review

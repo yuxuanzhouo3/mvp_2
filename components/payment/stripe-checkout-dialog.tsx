@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
+import { useHideSubscriptionUI } from "@/hooks/use-hide-subscription-ui";
 
 type BillingCycle = "monthly" | "yearly";
 
@@ -43,6 +44,7 @@ export function StripeCheckoutDialog({
 }: StripeCheckoutDialogProps) {
   const { language } = useLanguage();
   const t = useTranslations(language);
+  const hideSubscriptionUI = useHideSubscriptionUI();
   const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
 
   // 检测是否在微信小程序环境中
@@ -74,94 +76,112 @@ export function StripeCheckoutDialog({
   return (
     <Dialog open={open} onOpenChange={(value) => !value && onClose()}>
       <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <ShieldCheck className="h-5 w-5 text-blue-600" />
-            {language === "zh" ? "安全结账" : "Secure checkout"}
-          </DialogTitle>
-          <DialogDescription className="flex items-center gap-2">
-            <Lock className="h-4 w-4" />
-            {language === "zh"
-              ? "您的支付信息会通过 Stripe 安全加密处理"
-              : "Your payment details are encrypted and handled by Stripe"}
-          </DialogDescription>
-        </DialogHeader>
+        {hideSubscriptionUI ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>{language === "zh" ? "功能不可用" : "Not available"}</DialogTitle>
+              <DialogDescription>
+                {language === "zh" ? "当前设备暂不支持该功能" : "This feature is not available on this device."}
+              </DialogDescription>
+            </DialogHeader>
 
-        {isStripeDisabled ? (
-          <Alert variant="destructive">
-            <AlertTriangle className="h-4 w-4" />
-            <AlertDescription>
-              {language === "zh"
-                ? "微信小程序环境暂不支持 Stripe 支付，请使用 PayPal 或在浏览器中打开本页面完成支付。"
-                : "Stripe payment is not supported in WeChat MiniProgram. Please use PayPal or open this page in a browser to complete payment."}
-            </AlertDescription>
-          </Alert>
-        ) : !clientSecret ? (
-          <Alert variant="destructive">
-            <AlertDescription>
-              {language === "zh"
-                ? "未能创建 Stripe 支付意向，请稍后再试。"
-                : "Unable to start Stripe checkout right now. Please try again."}
-            </AlertDescription>
-          </Alert>
-        ) : !publishableKey ? (
-          <Alert variant="destructive">
-            <AlertDescription>
-              {language === "zh"
-                ? "缺少 Stripe 公钥，请检查 NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY 配置。"
-                : "Stripe publishable key is missing. Please set NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY."}
-            </AlertDescription>
-          </Alert>
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                {language === "zh"
+                  ? "请在非 iPhone 设备或桌面浏览器中打开。"
+                  : "Please open this on a non-iPhone device or in a desktop browser."}
+              </AlertDescription>
+            </Alert>
+
+            <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-between sm:gap-3">
+              <Button variant="outline" className="w-full sm:w-auto" onClick={onClose}>
+                {t.pricing.back}
+              </Button>
+            </DialogFooter>
+          </>
         ) : (
           <>
-            <div className="rounded-lg border bg-muted/40 p-4 space-y-2">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">
-                  {language === "zh" ? "计划" : "Plan"}
-                </span>
-                <span className="font-medium">{planName}</span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">
-                  {language === "zh" ? "账单周期" : "Billing cycle"}
-                </span>
-                <Badge variant="secondary" className="capitalize">
-                  {billingCycle}
-                </Badge>
-              </div>
-              <Separator />
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">
-                  {language === "zh" ? "应付金额" : "Amount due"}
-                </span>
-                <span className="text-lg font-semibold">
-                  {new Intl.NumberFormat(language === "zh" ? "zh-CN" : "en-US", {
-                    style: "currency",
-                    currency,
-                  }).format(amount)}
-                </span>
-              </div>
-            </div>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <ShieldCheck className="h-5 w-5 text-blue-600" />
+                {language === "zh" ? "安全结账" : "Secure checkout"}
+              </DialogTitle>
+              <DialogDescription className="flex items-center gap-2">
+                <Lock className="h-4 w-4" />
+                {language === "zh"
+                  ? "您的支付信息会通过 Stripe 安全加密处理"
+                  : "Your payment details are encrypted and handled by Stripe"}
+              </DialogDescription>
+            </DialogHeader>
 
-            <div className="rounded-lg border p-3 sm:p-4">
-              {options && (
-                <Elements stripe={stripePromise} options={options}>
-                  <StripePaymentForm
-                    clientSecret={clientSecret}
-                    orderId={orderId}
-                    onSucceeded={onSucceeded}
-                  />
-                </Elements>
-              )}
-            </div>
+            {isStripeDisabled ? (
+              <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>
+                  {language === "zh"
+                    ? "微信小程序环境暂不支持 Stripe 支付，请使用 PayPal 或在浏览器中打开本页面完成支付。"
+                    : "Stripe payment is not supported in WeChat MiniProgram. Please use PayPal or open this page in a browser to complete payment."}
+                </AlertDescription>
+              </Alert>
+            ) : !clientSecret ? (
+              <Alert variant="destructive">
+                <AlertDescription>
+                  {language === "zh"
+                    ? "未能创建 Stripe 支付意向，请稍后再试。"
+                    : "Unable to start Stripe checkout right now. Please try again."}
+                </AlertDescription>
+              </Alert>
+            ) : !publishableKey ? (
+              <Alert variant="destructive">
+                <AlertDescription>
+                  {language === "zh"
+                    ? "缺少 Stripe 公钥，请检查 NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY 配置。"
+                    : "Stripe publishable key is missing. Please set NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY."}
+                </AlertDescription>
+              </Alert>
+            ) : (
+              <>
+                <div className="rounded-lg border bg-muted/40 p-4 space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">{language === "zh" ? "计划" : "Plan"}</span>
+                    <span className="font-medium">{planName}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">{language === "zh" ? "账单周期" : "Billing cycle"}</span>
+                    <Badge variant="secondary" className="capitalize">
+                      {billingCycle}
+                    </Badge>
+                  </div>
+                  <Separator />
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">{language === "zh" ? "应付金额" : "Amount due"}</span>
+                    <span className="text-lg font-semibold">
+                      {new Intl.NumberFormat(language === "zh" ? "zh-CN" : "en-US", {
+                        style: "currency",
+                        currency,
+                      }).format(amount)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border p-3 sm:p-4">
+                  {options && (
+                    <Elements stripe={stripePromise} options={options}>
+                      <StripePaymentForm clientSecret={clientSecret} orderId={orderId} onSucceeded={onSucceeded} />
+                    </Elements>
+                  )}
+                </div>
+              </>
+            )}
+
+            <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-between sm:gap-3">
+              <Button variant="outline" className="w-full sm:w-auto" onClick={onClose}>
+                {t.pricing.back}
+              </Button>
+            </DialogFooter>
           </>
         )}
-
-        <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-between sm:gap-3">
-          <Button variant="outline" className="w-full sm:w-auto" onClick={onClose}>
-            {t.pricing.back}
-          </Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

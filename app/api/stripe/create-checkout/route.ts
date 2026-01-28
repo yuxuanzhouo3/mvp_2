@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
-import { stripe, STRIPE_PLANS } from '@/lib/stripe'
-import { getBaseUrl } from '@/lib/utils/get-base-url'
 
 export async function POST(request: NextRequest) {
   try {

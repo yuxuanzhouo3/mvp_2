@@ -7,10 +7,9 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { GamePlatform, GameType } from '@/lib/search/search-engine';
+import { GameType } from '@/lib/search/search-engine';
 
 interface GameSearchResult {
   id: string;
@@ -61,7 +60,7 @@ export default function GameSearchEngine() {
       } else {
         setError(data.error || '搜索失败');
       }
-    } catch (err) {
+    } catch {
       setError('网络错误，请重试');
     } finally {
       setIsLoading(false);
@@ -218,7 +217,7 @@ export default function GameSearchEngine() {
                         rel="noopener noreferrer"
                         className="text-blue-600 hover:text-blue-800 underline text-sm"
                       >
-                        搜索 "{results.gameName}"
+                        搜索 &quot;{results.gameName}&quot;
                       </a>
                     </div>
                     <div className="ml-4">

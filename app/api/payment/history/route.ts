@@ -139,6 +139,10 @@ async function getPaymentHistoryINTL(userId: string, page: number, pageSize: num
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
+  if (allError) {
+    console.warn(`[Payment History INTL DEBUG] Failed to fetch all payments for user ${userId}:`, allError);
+  }
+
   console.log(`[Payment History INTL DEBUG] All payments for user ${userId}:`, JSON.stringify(allPayments, null, 2));
 
   // 查询支付记录 - 显示completed状态和PayPal的pending状态（可能需要手动确认）

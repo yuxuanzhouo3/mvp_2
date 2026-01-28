@@ -642,7 +642,7 @@ export const zh = {
 
   // ==================== RandomLife ====================
   randomLife: {
-    title: "辰汇个性推荐平台",
+    title: "辰汇个性推荐",
     subtitle: "汇聚生活灵感，遇见更好的每一天",
     chooseCategory: "选择一个类别",
     discoverNew: "每天发现新事物",
@@ -672,8 +672,8 @@ export const zh = {
 
   // ==================== Pricing Page ====================
   pricing: {
-    title: "解锁辰汇个性推荐平台",
-    subtitle: "解锁辰汇个性推荐平台的全部功能",
+    title: "解锁辰汇个性推荐",
+    subtitle: "解锁辰汇个性推荐的全部功能",
     back: "返回",
     current: "当前",
     currentPlan: "当前计划",

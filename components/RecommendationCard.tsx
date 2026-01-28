@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { AIRecommendation, RecommendationCategory } from "@/lib/types/recommendation";
 import { TravelRecommendationCard } from "./TravelRecommendationCard";
-import { getIconForLinkType, getLabelForLinkType } from "@/lib/utils/icon-mapping";
+import { getIconForLinkType } from "@/lib/utils/icon-mapping";
 
 // 图标组件
 const ExternalLinkIcon = () => (
@@ -57,17 +57,6 @@ interface RecommendationCardProps {
 }
 
 /**
- * 分类图标映射
- */
-const categoryIcons: Record<RecommendationCategory, string> = {
-  entertainment: "🎭",
-  shopping: "🛍️",
-  food: "🍜",
-  travel: "✈️",
-  fitness: "💪",
-};
-
-/**
  * 链接类型标签
  */
 const linkTypeLabels: Record<string, { zh: string; en: string }> = {
@@ -97,7 +86,6 @@ export function RecommendationCard({
   compact = false,
   locale = "zh",
 }: RecommendationCardProps) {
-  const [isHovered, setIsHovered] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
 
   const {
@@ -314,8 +302,6 @@ export function RecommendationCard({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
       whileHover={{ scale: 1.02 }}
-      onHoverStart={() => setIsHovered(true)}
-      onHoverEnd={() => setIsHovered(false)}
     >
       <Card className="overflow-hidden">
         {/* 卡片头部 */}
