@@ -12,6 +12,7 @@ import { getLocalizedQuestions, type Question, type CategoryQuestions } from '@/
 import { CheckCircle2, ChevronLeft, ChevronRight, Sparkles, Loader2 } from 'lucide-react';
 import { useLanguage } from '@/components/language-provider';
 import { useTranslations } from '@/lib/i18n';
+import { trackClientEvent } from '@/lib/analytics/client';
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -90,6 +91,38 @@ export default function OnboardingPage() {
   const totalQuestions = allQuestions.reduce((sum, cat) => sum + cat.questions.length, 0);
   const answeredQuestions = Object.keys(answers).length;
   const progressPercent = Math.round((answeredQuestions / totalQuestions) * 100);
+
+  useEffect(() => {
+    if (!hasRestoredProgress) return;
+    trackClientEvent({
+      eventType: 'onboarding_step_view',
+      userId: user?.id,
+      step: `${currentCategoryIndex}.${currentQuestionIndex}`,
+      path: '/onboarding',
+      properties: {
+        progressPercent,
+        language,
+      },
+    });
+  }, [hasRestoredProgress, user?.id, currentCategoryIndex, currentQuestionIndex, progressPercent, language]);
+
+  useEffect(() => {
+    if (!hasRestoredProgress) return;
+    return () => {
+      if (showSuccess) return;
+      trackClientEvent({
+        eventType: "onboarding_abandon",
+        userId: user?.id,
+        step: `${currentCategoryIndex}.${currentQuestionIndex}`,
+        path: "/onboarding",
+        properties: {
+          progressPercent,
+          language,
+          reason: "leave",
+        },
+      });
+    };
+  }, [hasRestoredProgress, showSuccess, user?.id, currentCategoryIndex, currentQuestionIndex, progressPercent, language]);
 
   // 获取当前问题的答案键
   const getAnswerKey = (category: CategoryQuestions, question: Question) => {
@@ -208,6 +241,12 @@ export default function OnboardingPage() {
       const data = await response.json();
 
       if (data.success) {
+        trackClientEvent({
+          eventType: 'onboarding_complete',
+          userId: user.id,
+          path: '/onboarding',
+          properties: { progressPercent: 100, language },
+        });
         setAiProfile(data.profile);
         setShowSuccess(true);
 
@@ -237,6 +276,17 @@ export default function OnboardingPage() {
 
   // 跳过问卷
   const handleSkip = () => {
+    trackClientEvent({
+      eventType: "onboarding_abandon",
+      userId: user?.id,
+      step: `${currentCategoryIndex}.${currentQuestionIndex}`,
+      path: "/onboarding",
+      properties: {
+        progressPercent,
+        language,
+        reason: "skip",
+      },
+    });
     router.push('/');
   };
 

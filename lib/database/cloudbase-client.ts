@@ -79,6 +79,9 @@ export const CloudBaseCollections = {
   USER_SUBSCRIPTIONS: 'user_subscriptions',
   PAYMENTS: 'payments',
   SUBSCRIPTIONS: 'subscriptions',
+
+  // 埋点与分析
+  ANALYTICS_EVENTS: 'analytics_events',
 } as const;
 
 /**

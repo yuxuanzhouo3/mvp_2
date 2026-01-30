@@ -7,6 +7,7 @@
     "dev": "next dev",
     "lint": "next lint",
     "start": "next start",
+    "test:admin": "tsx scripts/test-admin-session.ts",
     "test:zhipu": "tsx test-zhipu-api.ts",
     "verify:env": "tsx verify-env.ts"
   },

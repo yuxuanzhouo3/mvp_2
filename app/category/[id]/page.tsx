@@ -21,6 +21,7 @@ import { RegionConfig } from "@/lib/config/region"
 import { getClientLocale } from "@/lib/utils/locale"
 import { isValidUserId } from "@/lib/utils"
 import { fetchWithAuth } from "@/lib/auth/fetch-with-auth"
+import { trackClientEvent } from "@/lib/analytics/client"
 
 // 使用量信息类型
 interface UsageInfo {
@@ -263,6 +264,18 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
 
       // 追踪返回并可能触发反馈
       const result = await trackReturn(recommendationId, timeAway, sessionIdRef.current)
+
+      trackClientEvent({
+        eventType: "recommend_return",
+        userId,
+        path: `/category/${categoryId}`,
+        step: null,
+        properties: {
+          recommendationId,
+          timeAway,
+          sessionId: sessionIdRef.current,
+        },
+      })
       
       if (result.triggerFeedback && result.recommendation) {
         // 反馈弹窗已经由 trackReturn 内部处理
@@ -271,7 +284,7 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
 
       // 清除上次点击记录
       lastClickedRef.current = null
-    }, [userId, trackReturn])
+    }, [userId, trackReturn, categoryId])
   )
 
   const loadLocalHistory = useCallback(() => {
@@ -445,6 +458,19 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
     try {
       const resolvedUserId = userId || getUserId()
       const queryUserId = isValidUserId(resolvedUserId) ? resolvedUserId : "anonymous"
+
+      trackClientEvent({
+        eventType: "recommend_request",
+        userId: resolvedUserId,
+        path: `/category/${categoryId}`,
+        step: null,
+        properties: {
+          categoryId,
+          locale,
+          count: 5,
+          skipCache: true,
+        },
+      })
       const response = await fetch(
         `/api/recommend/ai/${categoryId}?userId=${queryUserId}&count=5&locale=${locale}&skipCache=true`,
         { method: "GET" }
@@ -454,6 +480,18 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
 
       // 处理使用量限制错误 (HTTP 429)
       if (response.status === 429 || data.limitExceeded) {
+        trackClientEvent({
+          eventType: "recommend_error",
+          userId: resolvedUserId,
+          path: `/category/${categoryId}`,
+          step: null,
+          properties: {
+            categoryId,
+            locale,
+            reason: "limit",
+            status: response.status,
+          },
+        })
         setLimitExceeded(true)
         setError(data.error || (locale === "zh" ? "已达到使用限制" : "Usage limit reached"))
         setUpgradeMessage(data.upgradeMessage || null)
@@ -469,6 +507,19 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
         throw new Error(data.error || "No recommendations received")
       }
 
+      trackClientEvent({
+        eventType: "recommend_success",
+        userId: resolvedUserId,
+        path: `/category/${categoryId}`,
+        step: null,
+        properties: {
+          categoryId,
+          locale,
+          returned: Array.isArray(data.recommendations) ? data.recommendations.length : 0,
+          source: data.source || null,
+        },
+      })
+
       // 更新使用量信息（如果返回了）
       if (data.usage) {
         setUsageInfo(data.usage as UsageInfo)
@@ -479,6 +530,19 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
         const uniqueRecs = dedupeHistory(data.recommendations)
         setCurrentRecommendations(uniqueRecs)
         setSource(data.source)
+
+        trackClientEvent({
+          eventType: "recommend_result_view",
+          userId: resolvedUserId,
+          path: `/category/${categoryId}`,
+          step: null,
+          properties: {
+            categoryId,
+            locale,
+            shown: uniqueRecs.length,
+            source: data.source || null,
+          },
+        })
 
         // 更新历史（保留最近 10 条）
         const newHistory: HistoryItem[] = dedupeHistory([
@@ -498,11 +562,23 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
       }, 1500)
     } catch (err) {
       console.error("Error fetching recommendations:", err)
+      trackClientEvent({
+        eventType: "recommend_error",
+        userId,
+        path: `/category/${categoryId}`,
+        step: null,
+        properties: {
+          categoryId,
+          locale,
+          reason: "exception",
+          message: err instanceof Error ? err.message : String(err || ""),
+        },
+      })
       setError(err instanceof Error ? err.message : "Failed to get recommendations")
       setIsShaking(false)
       setIsLoading(false)
     }
-  }, [categoryId, locale, history, params.id, recordAction, fetchRemoteHistory, userId])
+  }, [categoryId, locale, history, params.id, recordAction, fetchRemoteHistory, userId, router])
 
   // 处理链接点击 - 增强版，包含追踪功能
   const handleLinkClick = useCallback(
@@ -517,6 +593,18 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
         category: categoryId,
         clickTime: Date.now()
       }
+
+      trackClientEvent({
+        eventType: "recommend_click",
+        userId,
+        path: `/category/${categoryId}`,
+        step: null,
+        properties: {
+          recommendationId: historyId || null,
+          title: recommendation.title,
+          categoryId,
+        },
+      })
 
       // 如果用户已登录，追踪点击行为
       if (userId && historyId) {

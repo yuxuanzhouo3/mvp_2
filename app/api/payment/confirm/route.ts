@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { stripe } from "@/lib/stripe";
 import { supabaseAdmin } from "@/lib/integrations/supabase-admin";
 import { requireAuth } from "@/lib/auth/auth";
+import { recordAnalyticsEvent } from "@/lib/analytics/store";
 
 /**
  * POST /api/payment/confirm
@@ -158,6 +159,24 @@ export async function POST(request: NextRequest) {
         );
       }
     }
+
+    await recordAnalyticsEvent({
+      eventType: "payment_success",
+      userId: user.id,
+      sessionId: null,
+      path: "/payment-confirm",
+      step: null,
+      referrer: null,
+      userAgent: request.headers.get("user-agent"),
+      properties: {
+        amount,
+        currency,
+        paymentMethod: "stripe",
+        transactionId: targetTransactionId,
+        billingCycle,
+        planType,
+      },
+    });
 
     // 更新用户订阅状态
     const daysToAdd = billingCycle === "yearly" ? 365 : 30;

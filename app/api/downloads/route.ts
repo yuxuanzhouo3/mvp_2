@@ -11,6 +11,8 @@ import {
   MacOSArchType,
   getDownloadConfig,
 } from "@/lib/config/download.config";
+import { getCloudBaseDatabase } from "@/lib/database/cloudbase-client";
+import { getSupabaseAdmin } from "@/lib/integrations/supabase-admin";
 import { downloadFileFromCloudBase } from "@/lib/services/cloudbase-download";
 import { downloadFileFromSupabase } from "@/lib/services/supabase-download";
 
@@ -37,6 +39,126 @@ const MIME_TYPES: Record<string, string> = {
 function getMimeType(fileName: string): string {
   const extension = fileName.split(".").pop()?.toLowerCase();
   return MIME_TYPES[extension || ""] || "application/octet-stream";
+}
+
+function hasCnDbConfig(): boolean {
+  return !!(
+    process.env.NEXT_PUBLIC_WECHAT_CLOUDBASE_ID &&
+    process.env.CLOUDBASE_SECRET_ID &&
+    process.env.CLOUDBASE_SECRET_KEY
+  );
+}
+
+function hasIntlDbConfig(): boolean {
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+  return Boolean(url && serviceRoleKey);
+}
+
+type DbReleaseRow = {
+  platform: string | null;
+  arch: string | null;
+  fileName: string | null;
+  storageRef: string | null;
+};
+
+function normalizeDbRow(raw: any): DbReleaseRow {
+  const platform = raw?.platform != null ? String(raw.platform) : null;
+  const arch = raw?.arch != null ? String(raw.arch) : null;
+  const fileName =
+    raw?.file_name != null ? String(raw.file_name) : raw?.fileName != null ? String(raw.fileName) : null;
+  const storageRef =
+    raw?.storage_ref != null
+      ? String(raw.storage_ref)
+      : raw?.storageRef != null
+        ? String(raw.storageRef)
+        : raw?.file_id != null
+          ? String(raw.file_id)
+          : raw?.fileId != null
+            ? String(raw.fileId)
+            : null;
+  return { platform, arch, fileName, storageRef };
+}
+
+async function findActiveReleaseFromDb(params: {
+  region: "CN" | "INTL";
+  platform: PlatformType;
+  arch?: MacOSArchType;
+}): Promise<DbReleaseRow | null> {
+  const wantArch = params.arch || null;
+  const isMac = params.platform === "macos";
+
+  if (params.region === "CN") {
+    if (!hasCnDbConfig()) return null;
+    const db = getCloudBaseDatabase();
+    const collection = db.collection("releases");
+    let listRes: any;
+    try {
+      listRes = await collection
+        .where({ platform: params.platform, active: true })
+        .orderBy("created_at", "desc")
+        .limit(50)
+        .get();
+    } catch {
+      listRes = await collection
+        .where({ platform: params.platform, active: true })
+        .orderBy("createdAt", "desc")
+        .limit(50)
+        .get();
+    }
+    const rows = (listRes?.data || []).map(normalizeDbRow);
+
+    const pick = (candidateArch: string | null): DbReleaseRow | null => {
+      for (const r of rows) {
+        if (!r.storageRef) continue;
+        const a = (r.arch || "").trim();
+        if (candidateArch == null) {
+          if (!a) return r;
+        } else {
+          if (a === candidateArch) return r;
+        }
+      }
+      return null;
+    };
+
+    if (isMac) {
+      if (wantArch) return pick(wantArch);
+      return pick("apple-silicon") || pick("intel") || pick(null);
+    }
+    return pick(null);
+  }
+
+  if (!hasIntlDbConfig()) return null;
+  const supabase = getSupabaseAdmin();
+  const q = supabase
+    .from("releases")
+    .select("platform,arch,file_name,storage_ref,active,created_at")
+    .eq("platform", params.platform)
+    .eq("active", true)
+    .order("created_at", { ascending: false })
+    .limit(50);
+  const { data, error } = await q;
+  if (error) return null;
+  const rows = (data || []).map(normalizeDbRow);
+
+  const pick = (candidateArch: string | null): DbReleaseRow | null => {
+    for (const r of rows) {
+      if (!r.storageRef) continue;
+      const a = (r.arch || "").trim();
+      if (candidateArch == null) {
+        if (!a) return r;
+      } else {
+        if (a === candidateArch) return r;
+      }
+    }
+    return null;
+  };
+
+  if (isMac) {
+    if (wantArch) return pick(wantArch);
+    return pick("apple-silicon") || pick("intel") || pick(null);
+  }
+  return pick(null);
 }
 
 /**
@@ -105,6 +227,24 @@ async function handleChinaDownload(
   arch?: MacOSArchType
 ): Promise<NextResponse> {
   try {
+    const active = await findActiveReleaseFromDb({ region: "CN", platform, arch });
+    if (active?.storageRef) {
+      const fileID = active.storageRef;
+      const fileContent = await downloadFileFromCloudBase(fileID);
+      const fileName = active.fileName || `download-${platform}`;
+      const mimeType = getMimeType(fileName);
+      return new NextResponse(fileContent, {
+        status: 200,
+        headers: {
+          "Content-Type": mimeType,
+          "Content-Disposition": `attachment; filename="${encodeURIComponent(fileName)}"`,
+          "Content-Length": fileContent.length.toString(),
+          "Cache-Control": "public, max-age=604800",
+          "X-Content-Type-Options": "nosniff",
+        },
+      });
+    }
+
     const config = getDownloadConfig("CN");
 
     // 查找对应的下载配置
@@ -192,6 +332,30 @@ async function handleIntlDownload(
   arch?: MacOSArchType
 ): Promise<NextResponse> {
   try {
+    const active = await findActiveReleaseFromDb({ region: "INTL", platform, arch });
+    if (active?.storageRef) {
+      const storageRef = active.storageRef;
+      const fileName = active.fileName || `download-${platform}`;
+      if (storageRef.startsWith("supabase://")) {
+        const urlParts = storageRef.replace("supabase://", "").split("/");
+        const bucketName = urlParts[0];
+        const filePath = urlParts.slice(1).join("/");
+        const fileContent = await downloadFileFromSupabase(bucketName, filePath);
+        const mimeType = getMimeType(fileName);
+        return new NextResponse(fileContent, {
+          status: 200,
+          headers: {
+            "Content-Type": mimeType,
+            "Content-Disposition": `attachment; filename="${encodeURIComponent(fileName)}"`,
+            "Content-Length": fileContent.length.toString(),
+            "Cache-Control": "public, max-age=604800",
+            "X-Content-Type-Options": "nosniff",
+          },
+        });
+      }
+      return NextResponse.redirect(storageRef, { status: 302 });
+    }
+
     const config = getDownloadConfig("INTL");
 
     // 查找对应的下载配置

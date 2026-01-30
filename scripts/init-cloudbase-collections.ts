@@ -134,6 +134,16 @@ const COLLECTIONS = {
     ],
   },
 
+  ANALYTICS_EVENTS: {
+    name: 'analytics_events',
+    indexes: [
+      { name: 'event_type_index', field: 'event_type' },
+      { name: 'created_at_index', field: 'created_at', order: 'desc' },
+      { name: 'session_id_index', field: 'session_id' },
+      { name: 'user_id_index', field: 'user_id' },
+    ],
+  },
+
   // 用户反馈相关
   USER_FEEDBACKS: {
     name: 'user_feedbacks',
@@ -141,6 +151,15 @@ const COLLECTIONS = {
       { name: 'user_id_index', field: 'user_id' },
       { name: 'recommendation_id_index', field: 'recommendation_id' },
       { name: 'feedback_type_index', field: 'feedback_type' },
+      { name: 'created_at_index', field: 'created_at', order: 'desc' },
+    ],
+  },
+  RELEASES: {
+    name: 'releases',
+    indexes: [
+      { name: 'platform_index', field: 'platform' },
+      { name: 'arch_index', field: 'arch' },
+      { name: 'active_index', field: 'active' },
       { name: 'created_at_index', field: 'created_at', order: 'desc' },
     ],
   },

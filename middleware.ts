@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { geoRouter } from "@/lib/architecture-modules/core/geo-router";
 import { RegionType } from "@/lib/architecture-modules/core/types";
 import { csrfProtection } from "@/lib/security/csrf";
+import {
+  getAdminSessionCookieName,
+  verifyAdminSessionToken,
+} from "@/lib/admin/session";
 
 /**
  * IP检测和访问控制中间件
@@ -61,6 +65,21 @@ export async function middleware(request: NextRequest) {
     (pathname.includes(".") && !pathname.startsWith("/api/"))
   ) {
     return NextResponse.next();
+  }
+
+  if (pathname === "/admin" || pathname.startsWith("/admin/")) {
+    if (pathname === "/admin/login") {
+      return NextResponse.next();
+    }
+
+    const token = request.cookies.get(getAdminSessionCookieName())?.value;
+    const session = await verifyAdminSessionToken(token);
+    if (!session) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/admin/login";
+      url.searchParams.set("next", pathname);
+      return NextResponse.redirect(url);
+    }
   }
 
   // 请求体大小限制 (10MB) - 仅API路由
@@ -221,8 +240,11 @@ export async function middleware(request: NextRequest) {
       );
     }
 
-    // 2. 为响应添加地理信息头（用于前端判断区域）
-    const response = NextResponse.next();
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.set("x-pathname", pathname);
+    const response = NextResponse.next({
+      request: { headers: requestHeaders },
+    });
     // 为 API 路由添加 CORS 响应头（基于白名单反射）
     if (pathname.startsWith("/api/")) {
       const origin = request.headers.get("origin") || "";

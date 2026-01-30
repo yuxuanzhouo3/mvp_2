@@ -36,8 +36,18 @@ const envPath = path.resolve(".env.local");
 const ENV_CONFIG = {
   // 通用必需变量
   common: {
-    required: ["JWT_SECRET"],
+    required: ["JWT_SECRET", "ADMIN_SESSION_SECRET", "ADMIN_USERNAME", "ADMIN_PASSWORD"],
     optional: ["NEXT_PUBLIC_APP_URL", "NEXT_PUBLIC_SITE_URL", "NEXTAUTH_URL"],
+  },
+  adminCrossSource: {
+    required: [
+      "NEXT_PUBLIC_WECHAT_CLOUDBASE_ID",
+      "CLOUDBASE_SECRET_ID",
+      "CLOUDBASE_SECRET_KEY",
+      "NEXT_PUBLIC_SUPABASE_URL",
+      "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+      "SUPABASE_SERVICE_ROLE_KEY",
+    ],
   },
   // CN 环境变量
   CN: {
@@ -242,6 +252,50 @@ function main() {
       log.warn("未配置任何支付方式（支付功能将不可用）");
       hasWarning = true;
     }
+  }
+
+  log.section("Admin 跨环境数据源（/admin 需要）");
+  const cnDbConfigured = ["NEXT_PUBLIC_WECHAT_CLOUDBASE_ID", "CLOUDBASE_SECRET_ID", "CLOUDBASE_SECRET_KEY"].every(
+    (k) => isValidKey(getEnvValue(k))
+  );
+  const intlUrlConfigured = ["SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL"].some((k) => isValidKey(getEnvValue(k)));
+  const intlDbConfigured = intlUrlConfigured && isValidKey(getEnvValue("SUPABASE_SERVICE_ROLE_KEY"));
+
+  const cnOrigin = getEnvValue("CN_APP_ORIGIN");
+  const intlOrigin = getEnvValue("INTL_APP_ORIGIN");
+  const proxySecret = getEnvValue("ADMIN_PROXY_SECRET");
+
+  const cnProxyReady = isValidKey(cnOrigin) && isValidKey(proxySecret);
+  const intlProxyReady = isValidKey(intlOrigin) && isValidKey(proxySecret);
+
+  if (cnDbConfigured || cnProxyReady) {
+    log.success(`CN 数据源可用（${cnDbConfigured ? "CloudBase 直连" : "CN_APP_ORIGIN + ADMIN_PROXY_SECRET 代理"}）`);
+  } else {
+    const detail = isValidKey(cnOrigin)
+      ? "已配置 CN_APP_ORIGIN，但缺少 ADMIN_PROXY_SECRET"
+      : "缺少 CloudBase 直连配置，且未配置 CN_APP_ORIGIN";
+    log.error(`CN 数据源不可用：${detail}`);
+    hasError = true;
+  }
+
+  if (intlDbConfigured || intlProxyReady) {
+    log.success(`INTL 数据源可用（${intlDbConfigured ? "Supabase 直连" : "INTL_APP_ORIGIN + ADMIN_PROXY_SECRET 代理"}）`);
+  } else {
+    const detail = isValidKey(intlOrigin)
+      ? "已配置 INTL_APP_ORIGIN，但缺少 ADMIN_PROXY_SECRET"
+      : "缺少 Supabase 直连配置，且未配置 INTL_APP_ORIGIN";
+    log.error(`INTL 数据源不可用：${detail}`);
+    hasError = true;
+  }
+
+  const needsProxy = (isValidKey(cnOrigin) && !cnDbConfigured) || (isValidKey(intlOrigin) && !intlDbConfigured);
+  if (isValidKey(proxySecret)) {
+    log.success(`ADMIN_PROXY_SECRET 已配置 (${proxySecret!.slice(0, 8)}...)`);
+  } else if (needsProxy) {
+    log.error("ADMIN_PROXY_SECRET 未配置（必需：跨环境 /admin/orders 代理查询需要）");
+    hasError = true;
+  } else {
+    log.info("ADMIN_PROXY_SECRET 未配置（当前配置不依赖跨环境代理）");
   }
 
   // 6. 总结
