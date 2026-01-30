@@ -9,7 +9,6 @@ import {
 } from "@/lib/wechat-mp"
 import { saveAuthState } from "@/lib/auth/auth-state-manager"
 import { AppHome } from "@/components/home/AppHome"
-import { PublicLanding } from "@/components/home/PublicLanding"
 
 export default function HomePage() {
   const { user, isAuthenticated, isLoading, signOut } = useAuth()
@@ -155,9 +154,6 @@ export default function HomePage() {
   }
 
   if (!isAuthenticated) {
-    if (isChinaRegion()) {
-      return <PublicLanding />
-    }
     return <AppHome user={null} isAuthenticated={false} signOut={signOut} />
   }
 
