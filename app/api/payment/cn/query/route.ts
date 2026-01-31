@@ -13,6 +13,8 @@ import type { PaymentMethodCN } from "@/lib/payment/payment-config-cn";
 
 const cloudbaseAdapter = new CloudBaseUserAdapter();
 
+export const dynamic = "force-dynamic";
+
 export async function GET(request: NextRequest) {
   try {
     // 验证用户认证

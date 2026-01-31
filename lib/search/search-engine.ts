@@ -424,6 +424,7 @@ export function generateSearchLink(
       '百度地图美食': (q) => `https://map.baidu.com/search/${encodeURIComponent(q + ' 餐厅')}`,  // 地图搜附近餐厅
       '高德地图美食': (q) => `https://ditu.amap.com/search?query=${encodeURIComponent(q + ' 餐厅')}`,  // 高德地图搜餐厅
       '饿了么': (q) => `https://www.ele.me/search/${encodeURIComponent(q)}`,  // 外卖平台
+      '美团': (q) => `https://www.meituan.com/s/${encodeURIComponent(q)}/`,  // 本地生活/外卖
       '百度美食': (q) => `https://www.baidu.com/s?wd=${encodeURIComponent(q)} 美食 附近`,
       '豆果美食': (q) => `https://www.douguo.com/caipu/${encodeURIComponent(q)}`,  // 菜谱平台 - 正确URL格式
       '小红书美食': (q) => `https://www.xiaohongshu.com/search_result?keyword=${encodeURIComponent(q + ' 美食')}&type=note`,  // 美食攻略
@@ -469,6 +470,8 @@ export function generateSearchLink(
       'IMDb': (q) => `https://www.imdb.com/find?q=${encodeURIComponent(q)}`,
       'YouTube': (q) => `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`,
       'Spotify': (q) => `https://open.spotify.com/search/${encodeURIComponent(q)}`,
+      'Rotten Tomatoes': (q) => `https://www.rottentomatoes.com/search?search=${encodeURIComponent(q)}`,
+      'Metacritic': (q) => `https://www.metacritic.com/search/all/${encodeURIComponent(q)}/results`,
       'Steam': (q) => `https://store.steampowered.com/search/?term=${encodeURIComponent(q)}`,
       'Epic Games': (q) => `https://store.epicgames.com/en-US/browse?q=${encodeURIComponent(q)}`,
       'PlayStation Store': (q) => `https://store.playstation.com/en-us/search/${encodeURIComponent(q)}`,
@@ -486,6 +489,9 @@ export function generateSearchLink(
       'TripAdvisor': (q) => `https://www.tripadvisor.com/search?q=${encodeURIComponent(q)} restaurants`,
       'OpenTable': (q) => `https://www.opentable.com/search?q=${encodeURIComponent(q)}`,
       'Google Maps': (q) => `https://www.google.com/maps/search/${encodeURIComponent(q)}+restaurants+near+me`,
+      'Uber Eats': (q) => `https://www.ubereats.com/search?diningMode=DELIVERY&q=${encodeURIComponent(q)}`,
+      'DoorDash': (q) => `https://www.doordash.com/search/store/${encodeURIComponent(q)}/`,
+      'Yelp': (q) => `https://www.yelp.com/search?find_desc=${encodeURIComponent(q)}`,
       'Zomato': (q) => `https://www.zomato.com/search?q=${encodeURIComponent(q)}`,
       'Allrecipes': (q) => `https://www.allrecipes.com/search?q=${encodeURIComponent(q)}`,
 

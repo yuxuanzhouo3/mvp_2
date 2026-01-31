@@ -19,7 +19,11 @@ export const TRUSTED_PLATFORMS = {
     video: ['IMDb', 'YouTube', 'Netflix', 'Rotten Tomatoes', 'Hulu', 'Disney+', 'Amazon Prime Video', 'HBO Max'],
     game: ['Steam', 'Epic Games', 'GOG', 'Nintendo eShop', 'PlayStation Store', 'Xbox Games Store', 'Twitch', 'IGN', 'Humble Bundle', 'itch.io', 'Game Pass', 'Green Man Gaming'],
     music: ['Spotify', 'YouTube Music', 'Apple Music', 'Amazon Music', 'SoundCloud', 'Bandcamp', 'Pandora'],
-    review: ['IMDb', 'Rotten Tomatoes', 'Metacritic', 'IGN', 'Gamespot', 'Polygon', 'Entertainment Weekly', 'Variety']
+    review: ['IMDb', 'Rotten Tomatoes', 'Metacritic', 'IGN', 'Gamespot', 'Polygon', 'Entertainment Weekly', 'Variety'],
+    shopping: ['Amazon', 'eBay', 'Walmart', 'Target'],
+    food: ['Uber Eats', 'DoorDash', 'Yelp', 'Google Maps'],
+    travel: ['Google Maps', 'TripAdvisor', 'Booking.com', 'Agoda', 'Airbnb'],
+    fitness: ['YouTube Fitness', 'MyFitnessPal', 'Peloton', 'Google']
   }
 };
 
@@ -64,6 +68,8 @@ export const PLATFORM_DOMAINS = {
   '小红书': 'xiaohongshu.com',
   '时光网': 'mtime.com',
   '百度': 'baidu.com',
+  'Google': 'google.com',
+  'Google Maps': 'google.com',
   // 美食平台
   '小红书美食': 'xiaohongshu.com',
   '百度地图美食': 'map.baidu.com',
@@ -124,12 +130,66 @@ export const PLATFORM_DOMAINS = {
   'Polygon': 'polygon.com',
   'Entertainment Weekly': 'ew.com',
   'Variety': 'variety.com',
+  'OpenTable': 'opentable.com',
   'Booking.com': 'booking.com',
   'Agoda': 'agoda.com',
   'Airbnb': 'airbnb.com',
+  'Uber Eats': 'ubereats.com',
+  'DoorDash': 'doordash.com',
+  'Yelp': 'yelp.com',
+  'Amazon': 'amazon.com',
+  'eBay': 'ebay.com',
+  'Walmart': 'walmart.com',
+  'Target': 'target.com',
   'FitnessVolt': 'fitnessvolt.com',
   'GarageGymReviews': 'garagegymreviews.com'
 };
+
+export const OUTBOUND_ALLOWED_SCHEMES = [
+  "https",
+  "http",
+  "intent",
+  "itms-apps",
+  "market",
+  "bilibili",
+  "iosamap",
+  "androidamap",
+  "baidumap",
+  "imeituan",
+  "eleme",
+  "keep"
+] as const;
+
+const OUTBOUND_ALLOWED_HOSTS = [
+  "apps.apple.com",
+  "play.google.com",
+  "sj.qq.com",
+  "uri.amap.com",
+  "ditu.amap.com",
+  "map.baidu.com"
+];
+
+export function isAllowedOutboundUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    const scheme = parsed.protocol.replace(":", "").toLowerCase();
+    if (!OUTBOUND_ALLOWED_SCHEMES.includes(scheme as any)) return false;
+
+    if (scheme === "http" || scheme === "https") {
+      const hostname = parsed.hostname.toLowerCase();
+      if (OUTBOUND_ALLOWED_HOSTS.some((host) => hostname === host || hostname.endsWith(`.${host}`))) {
+        return true;
+      }
+
+      const trustedDomains = Object.values(PLATFORM_DOMAINS).map((d) => d.toLowerCase());
+      return trustedDomains.some((domain) => hostname === domain || hostname.endsWith(`.${domain}`));
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * 验证平台是否可信

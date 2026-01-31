@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 type DataSource = "CN" | "INTL";
 
 function getProxySecret(): string | null {
-  return process.env.ADMIN_PROXY_SECRET || process.env.AI_STATS_PROXY_SECRET || null;
+  return process.env["ADMIN_PROXY_SECRET"] || process.env["AI_STATS_PROXY_SECRET"] || null;
 }
 
 function isInternalProxyRequest(request: NextRequest): boolean {
@@ -27,15 +27,15 @@ async function isAuthorized(request: NextRequest): Promise<boolean> {
 
 function hasCnConfig(): boolean {
   return !!(
-    process.env.NEXT_PUBLIC_WECHAT_CLOUDBASE_ID &&
-    process.env.CLOUDBASE_SECRET_ID &&
-    process.env.CLOUDBASE_SECRET_KEY
+    process.env["NEXT_PUBLIC_WECHAT_CLOUDBASE_ID"] &&
+    process.env["CLOUDBASE_SECRET_ID"] &&
+    process.env["CLOUDBASE_SECRET_KEY"]
   );
 }
 
 function hasIntlConfig(): boolean {
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+  const url = process.env["SUPABASE_URL"] || process.env["NEXT_PUBLIC_SUPABASE_URL"] || "";
+  const serviceRoleKey = process.env["SUPABASE_SERVICE_ROLE_KEY"] || "";
   return Boolean(url && serviceRoleKey);
 }
 
@@ -47,8 +47,8 @@ function normalizeBool(value: unknown): boolean {
 
 async function proxyJson(request: NextRequest, target: DataSource, body: any): Promise<NextResponse> {
   const secret = getProxySecret();
-  const cnOrigin = process.env.CN_APP_ORIGIN || "";
-  const intlOrigin = process.env.INTL_APP_ORIGIN || "";
+  const cnOrigin = process.env["CN_APP_ORIGIN"] || "";
+  const intlOrigin = process.env["INTL_APP_ORIGIN"] || "";
   const origin = target === "CN" ? cnOrigin : intlOrigin;
   if (!secret || !origin) {
     return NextResponse.json({ error: "Missing proxy config" }, { status: 400 });

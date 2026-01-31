@@ -11,6 +11,7 @@ import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import type { RecommendationHistory, RecommendationCategory } from "@/lib/types/recommendation"
+import { buildOutboundHref } from "@/lib/outbound/outbound-url"
 import { X, ExternalLink } from "lucide-react"
 
 interface HistoryCardProps {
@@ -124,6 +125,15 @@ const HistoryCardComponent = forwardRef<HTMLDivElement, HistoryCardProps>(
         const handleLinkClick = () => {
             onLink?.(item)
             if (item.link) {
+                const ua = typeof navigator !== "undefined" ? navigator.userAgent : ""
+                const isMobile =
+                    /iphone|ipad|ipod|android/i.test(ua) ||
+                    (typeof window !== "undefined" && window.innerWidth < 768)
+                const candidateLink = (item.metadata as any)?.candidateLink
+                if (isMobile && candidateLink) {
+                    window.location.href = buildOutboundHref(candidateLink)
+                    return
+                }
                 window.open(item.link, "_blank", "noopener,noreferrer")
             }
         }

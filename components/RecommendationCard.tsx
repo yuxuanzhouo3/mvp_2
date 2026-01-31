@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import type { AIRecommendation, RecommendationCategory } from "@/lib/types/recommendation";
 import { TravelRecommendationCard } from "./TravelRecommendationCard";
 import { getIconForLinkType } from "@/lib/utils/icon-mapping";
+import { buildOutboundHref } from "@/lib/outbound/outbound-url";
 
 // 图标组件
 const ExternalLinkIcon = () => (
@@ -101,7 +102,12 @@ export function RecommendationCard({
 
   const handleLinkClick = () => {
     onLinkClick?.(recommendation);
-    // 在新标签页打开链接
+    const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
+    const isMobile = /iphone|ipad|ipod|android/i.test(ua) || (typeof window !== "undefined" && window.innerWidth < 768);
+    if (isMobile && recommendation.candidateLink) {
+      window.location.href = buildOutboundHref(recommendation.candidateLink);
+      return;
+    }
     window.open(link, "_blank", "noopener,noreferrer");
   };
 

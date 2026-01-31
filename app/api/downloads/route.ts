@@ -43,15 +43,15 @@ function getMimeType(fileName: string): string {
 
 function hasCnDbConfig(): boolean {
   return !!(
-    process.env.NEXT_PUBLIC_WECHAT_CLOUDBASE_ID &&
-    process.env.CLOUDBASE_SECRET_ID &&
-    process.env.CLOUDBASE_SECRET_KEY
+    process.env["NEXT_PUBLIC_WECHAT_CLOUDBASE_ID"] &&
+    process.env["CLOUDBASE_SECRET_ID"] &&
+    process.env["CLOUDBASE_SECRET_KEY"]
   );
 }
 
 function hasIntlDbConfig(): boolean {
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+  const url = process.env["SUPABASE_URL"] || process.env["NEXT_PUBLIC_SUPABASE_URL"] || "";
+  const serviceRoleKey = process.env["SUPABASE_SERVICE_ROLE_KEY"] || "";
   return Boolean(url && serviceRoleKey);
 }
 

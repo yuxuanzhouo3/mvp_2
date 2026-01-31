@@ -42,6 +42,7 @@ export default function RootLayout({
   const userAgent = headers().get("user-agent") ?? ""
   const initialIsIPhone = /iphone/i.test(userAgent)
   const initialIsMac = !/iphone|ipad|ipod/i.test(userAgent) && /macintosh|mac os x/i.test(userAgent)
+  const initialIsAndroid = /android/i.test(userAgent)
 
   return (
     <html lang="en">
@@ -61,7 +62,11 @@ export default function RootLayout({
             <Toaster />
           </>
         ) : (
-          <DeviceProvider initialIsIPhone={initialIsIPhone} initialIsMac={initialIsMac}>
+          <DeviceProvider
+            initialIsIPhone={initialIsIPhone}
+            initialIsMac={initialIsMac}
+            initialIsAndroid={initialIsAndroid}
+          >
             <LanguageProvider>
               <AuthProvider>
                 {/* 微信小程序外部链接拦截器 - 仅 CN 环境启用 */}

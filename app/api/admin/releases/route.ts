@@ -53,20 +53,20 @@ function parsePositiveInt(value: string | null, fallback: number): number {
 
 function hasCnDbConfig(): boolean {
   return !!(
-    process.env.NEXT_PUBLIC_WECHAT_CLOUDBASE_ID &&
-    process.env.CLOUDBASE_SECRET_ID &&
-    process.env.CLOUDBASE_SECRET_KEY
+    process.env["NEXT_PUBLIC_WECHAT_CLOUDBASE_ID"] &&
+    process.env["CLOUDBASE_SECRET_ID"] &&
+    process.env["CLOUDBASE_SECRET_KEY"]
   );
 }
 
 function hasIntlDbConfig(): boolean {
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+  const url = process.env["SUPABASE_URL"] || process.env["NEXT_PUBLIC_SUPABASE_URL"] || "";
+  const serviceRoleKey = process.env["SUPABASE_SERVICE_ROLE_KEY"] || "";
   return Boolean(url && serviceRoleKey);
 }
 
 function getProxySecret(): string | null {
-  return process.env.ADMIN_PROXY_SECRET || process.env.AI_STATS_PROXY_SECRET || null;
+  return process.env["ADMIN_PROXY_SECRET"] || process.env["AI_STATS_PROXY_SECRET"] || null;
 }
 
 function isInternalProxyRequest(request: NextRequest): boolean {

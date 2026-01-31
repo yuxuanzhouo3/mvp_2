@@ -5,23 +5,23 @@ export type AdminDataSource = "CN" | "INTL";
 
 export function hasCnDbConfig(): boolean {
   return !!(
-    process.env.NEXT_PUBLIC_WECHAT_CLOUDBASE_ID &&
-    process.env.CLOUDBASE_SECRET_ID &&
-    process.env.CLOUDBASE_SECRET_KEY
+    process.env["NEXT_PUBLIC_WECHAT_CLOUDBASE_ID"] &&
+    process.env["CLOUDBASE_SECRET_ID"] &&
+    process.env["CLOUDBASE_SECRET_KEY"]
   );
 }
 
 export function hasIntlDbConfig(): boolean {
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+  const url = process.env["SUPABASE_URL"] || process.env["NEXT_PUBLIC_SUPABASE_URL"] || "";
   const key =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    process.env["SUPABASE_SERVICE_ROLE_KEY"] ||
+    process.env["NEXT_PUBLIC_SUPABASE_ANON_KEY"] ||
     "";
   return Boolean(url && key);
 }
 
 export function getAdminProxySecret(): string | null {
-  return process.env.ADMIN_PROXY_SECRET || process.env.AI_STATS_PROXY_SECRET || null;
+  return process.env["ADMIN_PROXY_SECRET"] || process.env["AI_STATS_PROXY_SECRET"] || null;
 }
 
 export function isInternalAdminProxyRequest(request: NextRequest): boolean {

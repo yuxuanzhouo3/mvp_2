@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 import { getSupabaseAdmin } from "@/lib/integrations/supabase-admin";
 import { isChinaRegion } from "@/lib/config/region";
 import cloudbase from "@cloudbase/node-sdk";
@@ -160,10 +159,9 @@ async function handleChinaProfile(request: NextRequest) {
  * INTL 环境：使用 Supabase 获取用户资料
  */
 async function handleIntlProfile(request: NextRequest) {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-  if (!supabaseUrl || !supabaseAnonKey) {
+  const supabaseUrl =
+    process.env["SUPABASE_URL"] || process.env["NEXT_PUBLIC_SUPABASE_URL"];
+  if (!supabaseUrl) {
     console.error("[/api/profile] Missing Supabase environment variables");
     return NextResponse.json(
       { error: "Server configuration error" },
@@ -196,16 +194,18 @@ async function handleIntlProfile(request: NextRequest) {
     }
   }
 
-  // Create Supabase client
-  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  });
+  if (!accessToken) {
+    console.log("[/api/profile] No authenticated user found");
+    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
+  const supabaseAdmin = getSupabaseAdmin();
 
   // Get the current user using the session
-  const { data: { user }, error: userError } = await supabase.auth.getUser(accessToken);
+  const {
+    data: { user },
+    error: userError,
+  } = await supabaseAdmin.auth.getUser(accessToken);
 
   if (userError || !user) {
     console.log("[/api/profile] No authenticated user found");
@@ -218,7 +218,7 @@ async function handleIntlProfile(request: NextRequest) {
   // Try to get additional profile data from user_profiles table
   let profileData: any = null;
   try {
-    const { data: profile } = await supabase
+    const { data: profile } = await supabaseAdmin
       .from("user_profiles")
       .select("*")
       .eq("id", user.id)
@@ -233,7 +233,6 @@ async function handleIntlProfile(request: NextRequest) {
   // 获取用户的实际订阅状态（从 user_subscriptions 表）
   let subscriptionData: any = null;
   try {
-    const supabaseAdmin = getSupabaseAdmin();
     const { data: subscription } = await supabaseAdmin
       .from("user_subscriptions")
       .select("*")
@@ -251,7 +250,6 @@ async function handleIntlProfile(request: NextRequest) {
   // 获取最近一次成功支付的信息作为兜底
   let latestPayment: any = null;
   try {
-    const supabaseAdmin = getSupabaseAdmin();
     const { data: payment } = await supabaseAdmin
       .from("payments")
       .select("metadata, status, created_at")
@@ -299,8 +297,6 @@ async function handleIntlProfile(request: NextRequest) {
 
   // Update or create user_profiles record
   try {
-    const supabaseAdmin = getSupabaseAdmin();
-
     const profileUpdate = {
       id: user.id,
       email: user.email,
@@ -335,7 +331,7 @@ async function handleIntlProfile(request: NextRequest) {
   // Get the latest profile data after update
   let latestProfileData = profileData;
   try {
-    const { data: updatedProfile } = await supabase
+    const { data: updatedProfile } = await supabaseAdmin
       .from("user_profiles")
       .select("*")
       .eq("id", user.id)

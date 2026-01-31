@@ -38,6 +38,8 @@ import { isValidUserId } from "@/lib/utils";
 import { getLocale } from "@/lib/utils/locale";
 import type { RecommendationCategory, AIRecommendResponse, LinkType } from "@/lib/types/recommendation";
 import { canUseRecommendation, recordRecommendationUsage, getUserUsageStats } from "@/lib/subscription/usage-tracker";
+import { resolveCandidateLink } from "@/lib/outbound/link-resolver";
+import { isChinaDeployment } from "@/lib/config/deployment.config";
 
 // 有效的分类列表
 const VALID_CATEGORIES: RecommendationCategory[] = [
@@ -47,6 +49,188 @@ const VALID_CATEGORIES: RecommendationCategory[] = [
   "travel",
   "fitness",
 ];
+
+function stableHashToUnitInterval(seed: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < seed.length; i++) {
+    hash ^= seed.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) / 4294967296;
+}
+
+type WeightedCandidate = {
+  platform: string;
+  weight: number;
+};
+
+function pickWeightedPlatform(candidates: WeightedCandidate[], seed: string): string {
+  const total = candidates.reduce((sum, item) => sum + item.weight, 0);
+  if (total <= 0) return candidates[0]?.platform || (seed ? "百度" : "Google");
+
+  const r = stableHashToUnitInterval(seed) * total;
+  let acc = 0;
+  for (const item of candidates) {
+    acc += item.weight;
+    if (r <= acc) return item.platform;
+  }
+  return candidates[candidates.length - 1]?.platform || candidates[0]?.platform || "百度";
+}
+
+function selectWeightedPlatformForCategory(
+  category: RecommendationCategory,
+  locale: "zh" | "en",
+  seed: string,
+  suggestedPlatform?: string,
+  entertainmentType?: "video" | "game" | "music" | "review"
+): string | null {
+  const isZh = locale === "zh";
+
+  if (category === "entertainment" && entertainmentType && entertainmentType !== "video") {
+    return null;
+  }
+
+  const candidates: WeightedCandidate[] | null = (() => {
+    if (isZh) {
+      switch (category) {
+        case "food":
+          return [
+            { platform: "美团", weight: 0.3 },
+            { platform: "饿了么", weight: 0.3 },
+            { platform: "大众点评", weight: 0.1 },
+            { platform: "高德地图美食", weight: 0.1 },
+            { platform: "百度地图美食", weight: 0.1 },
+            { platform: "下厨房", weight: 0.1 },
+          ];
+        case "shopping":
+          return [
+            { platform: "淘宝", weight: 0.2 },
+            { platform: "京东", weight: 0.2 },
+            { platform: "拼多多", weight: 0.2 },
+            { platform: "什么值得买", weight: 0.1 },
+            { platform: "苏宁易购", weight: 0.1 },
+            { platform: "唯品会", weight: 0.1 },
+            { platform: "1688", weight: 0.1 },
+          ];
+        case "entertainment":
+          return [
+            { platform: "B站", weight: 0.2 },
+            { platform: "腾讯视频", weight: 0.2 },
+            { platform: "爱奇艺", weight: 0.2 },
+            { platform: "优酷", weight: 0.1 },
+            { platform: "豆瓣", weight: 0.1 },
+            { platform: "百度", weight: 0.1 },
+            { platform: "QQ音乐", weight: 0.1 },
+          ];
+        case "travel":
+          return [
+            { platform: "携程", weight: 0.2 },
+            { platform: "高德地图旅游", weight: 0.2 },
+            { platform: "百度地图旅游", weight: 0.2 },
+            { platform: "马蜂窝", weight: 0.1 },
+            { platform: "Booking.com", weight: 0.1 },
+            { platform: "Agoda", weight: 0.1 },
+            { platform: "穷游", weight: 0.1 },
+          ];
+        case "fitness":
+          return [
+            { platform: "B站健身", weight: 0.2 },
+            { platform: "腾讯视频健身", weight: 0.2 },
+            { platform: "优酷健身", weight: 0.2 },
+            { platform: "百度地图健身", weight: 0.1 },
+            { platform: "高德地图健身", weight: 0.1 },
+            { platform: "百度健身", weight: 0.1 },
+            { platform: "FitnessVolt", weight: 0.1 },
+          ];
+        default:
+          return null;
+      }
+    }
+
+    switch (category) {
+      case "food":
+        return [
+          { platform: "Uber Eats", weight: 0.2 },
+          { platform: "DoorDash", weight: 0.2 },
+          { platform: "Yelp", weight: 0.2 },
+          { platform: "Google Maps", weight: 0.1 },
+          { platform: "OpenTable", weight: 0.1 },
+          { platform: "Google", weight: 0.1 },
+          { platform: "YouTube", weight: 0.1 },
+        ];
+      case "shopping":
+        return [
+          { platform: "Amazon", weight: 0.2 },
+          { platform: "eBay", weight: 0.2 },
+          { platform: "Walmart", weight: 0.2 },
+          { platform: "Target", weight: 0.1 },
+          { platform: "Google", weight: 0.1 },
+          { platform: "YouTube", weight: 0.1 },
+          { platform: "Google Maps", weight: 0.1 },
+        ];
+      case "entertainment":
+        return [
+          { platform: "YouTube", weight: 0.3 },
+          { platform: "Netflix", weight: 0.3 },
+          { platform: "IMDb", weight: 0.1 },
+          { platform: "Google", weight: 0.1 },
+          { platform: "Rotten Tomatoes", weight: 0.1 },
+          { platform: "Metacritic", weight: 0.1 },
+        ];
+      case "travel":
+        return [
+          { platform: "Google Maps", weight: 0.2 },
+          { platform: "Booking.com", weight: 0.2 },
+          { platform: "TripAdvisor", weight: 0.2 },
+          { platform: "Agoda", weight: 0.1 },
+          { platform: "Airbnb", weight: 0.1 },
+          { platform: "Google", weight: 0.1 },
+          { platform: "YouTube", weight: 0.1 },
+        ];
+      case "fitness":
+        return [
+          { platform: "YouTube Fitness", weight: 0.2 },
+          { platform: "MyFitnessPal", weight: 0.2 },
+          { platform: "Peloton", weight: 0.2 },
+          { platform: "Google", weight: 0.1 },
+          { platform: "YouTube", weight: 0.1 },
+          { platform: "Google Maps", weight: 0.1 },
+          { platform: "Muscle & Strength", weight: 0.1 },
+        ];
+      default:
+        return null;
+    }
+  })();
+
+  if (!candidates || candidates.length === 0) return null;
+  if (suggestedPlatform && candidates.some((c) => c.platform === suggestedPlatform)) {
+    return suggestedPlatform;
+  }
+  return pickWeightedPlatform(candidates, seed);
+}
+
+function mapSearchPlatformToProvider(platform: string, locale: "zh" | "en"): string {
+  const cnMap: Record<string, string> = {
+    高德地图美食: "高德地图",
+    百度地图美食: "百度地图",
+    高德地图旅游: "高德地图",
+    百度地图旅游: "百度地图",
+    高德地图健身: "高德地图",
+    百度地图健身: "百度地图",
+    百度美食: "百度",
+    百度健身: "百度",
+    B站健身: "B站",
+    腾讯视频健身: "腾讯视频",
+    优酷健身: "优酷",
+  };
+
+  const intlMap: Record<string, string> = {
+    "TripAdvisor Travel": "TripAdvisor",
+  };
+
+  if (locale === "zh") return cnMap[platform] || platform;
+  return intlMap[platform] || platform;
+}
 
 export async function GET(
   request: NextRequest,
@@ -260,14 +444,21 @@ export async function GET(
           enhancedRec = enhanceFitnessRecommendation(rec, locale);
         }
 
-        // 选择最佳平台（传递娱乐类型）
-        // 对于 food 分类，使用轮换函数确保平台多样性
-        // 对于 fitness 分类，使用专用的选择函数
+        const selectionSeed = `${userId || "anon"}:${category}:${index}:${enhancedRec.title}`;
+        const weightedPlatform = selectWeightedPlatformForCategory(
+          category,
+          locale,
+          selectionSeed,
+          enhancedRec.platform,
+          enhancedRec.entertainmentType
+        );
+
         let platform: string;
-        if (category === 'food') {
+        if (weightedPlatform) {
+          platform = weightedPlatform;
+        } else if (category === 'food') {
           platform = selectFoodPlatformWithRotation(index, enhancedRec.platform, locale);
         } else if (category === 'fitness') {
-          // 健身分类使用专用选择函数
           const fitnessType = (enhancedRec as any).fitnessType || 'video';
           platform = selectFitnessPlatform(fitnessType, enhancedRec.platform, locale);
         } else {
@@ -349,6 +540,17 @@ export async function GET(
           }
         }
 
+        const region = isChinaDeployment() ? "CN" : "INTL";
+        const providerForCandidateLink = mapSearchPlatformToProvider(platform, locale);
+        const candidateLink = resolveCandidateLink({
+          title: enhancedRec.title,
+          query: (enhancedRec.searchQuery || enhancedRec.title) as string,
+          category,
+          locale,
+          region,
+          provider: providerForCandidateLink,
+        });
+
         const baseRecommendation = {
           title: enhancedRec.title,
           description: enhancedRec.description,
@@ -358,6 +560,7 @@ export async function GET(
           platform: searchLink.displayName,
           linkType: linkType,              // 根据类别和平台设置合适的类型
           category: category,             // 添加缺失的 category 属性
+          candidateLink,
           metadata: {
             searchQuery: enhancedRec.searchQuery,
             originalPlatform: enhancedRec.platform,
@@ -708,18 +911,37 @@ async function generateFallbackRecommendations(
 
   // 为每个推荐生成搜索链接
   return limitedRecs.map((rec, index) => {
-    // 对于 food 分类，使用轮换函数确保平台多样性
+    const typedLocale = locale === "en" ? "en" : "zh";
+    const selectionSeed = `fallback:${category}:${index}:${rec.title}`;
+    const weightedPlatform = selectWeightedPlatformForCategory(
+      category as RecommendationCategory,
+      typedLocale,
+      selectionSeed,
+      rec.platform
+    );
+
     let platform: string;
-    if (category === 'food') {
+    if (weightedPlatform) {
+      platform = weightedPlatform;
+    } else if (category === 'food') {
       platform = selectFoodPlatformWithRotation(index, rec.platform, locale);
     } else if (category === 'fitness') {
-      // 健身分类使用专用选择函数
       const fitnessType = rec.fitnessType || 'video';
       platform = selectFitnessPlatform(fitnessType, rec.platform, locale);
     } else {
       platform = selectBestPlatform(category, rec.platform, locale);
     }
     const searchLink = generateSearchLink(rec.title, rec.searchQuery, platform, locale, category);
+    const region = isChinaDeployment() ? "CN" : "INTL";
+    const providerForCandidateLink = mapSearchPlatformToProvider(platform, typedLocale);
+    const candidateLink = resolveCandidateLink({
+      title: rec.title,
+      query: rec.searchQuery || rec.title,
+      category: category as RecommendationCategory,
+      locale: typedLocale,
+      region,
+      provider: providerForCandidateLink,
+    });
 
     // 根据类别和平台确定linkType
     let linkType: LinkType = 'search';
@@ -758,6 +980,7 @@ async function generateFallbackRecommendations(
       platform: searchLink.displayName,
       linkType: linkType,
       category: category as RecommendationCategory,
+      candidateLink,
       metadata: {
         searchQuery: rec.searchQuery,
         originalPlatform: rec.platform,

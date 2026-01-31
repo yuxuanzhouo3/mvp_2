@@ -16,3 +16,11 @@ export function useIsIPhone() {
 export function useIsMac() {
   return useDevice().isMac;
 }
+
+export function useIsAndroid() {
+  return useDevice().isAndroid;
+}
+
+export function useIsMobile() {
+  return useDevice().isMobile;
+}

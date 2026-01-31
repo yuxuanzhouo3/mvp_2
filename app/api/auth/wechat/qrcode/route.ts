@@ -7,6 +7,8 @@ import { isChinaRegion } from "@/lib/config/region";
  *
  * 仅在中国区域启用
  */
+export const dynamic = "force-dynamic";
+
 export async function GET(request: Request) {
   // 非中国区域返回 404
   if (!isChinaRegion()) {

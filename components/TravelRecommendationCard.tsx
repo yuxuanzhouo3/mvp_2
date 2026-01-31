@@ -11,6 +11,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { AIRecommendation } from "@/lib/types/recommendation";
+import { buildOutboundHref } from "@/lib/outbound/outbound-url";
 
 // 图标组件
 const ExternalLinkIcon = () => (
@@ -89,6 +90,14 @@ export function TravelRecommendationCard({
 
   const handleLinkClick = () => {
     onLinkClick?.(recommendation);
+    const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
+    const isMobile =
+      /iphone|ipad|ipod|android/i.test(ua) ||
+      (typeof window !== "undefined" && window.innerWidth < 768);
+    if (isMobile && recommendation.candidateLink) {
+      window.location.href = buildOutboundHref(recommendation.candidateLink);
+      return;
+    }
     window.open(link, "_blank", "noopener,noreferrer");
   };
 

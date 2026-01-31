@@ -106,7 +106,7 @@ export class SupabaseRecommendationAdapter implements RecommendationDatabaseAdap
           description: recommendation.description,
           link: recommendation.link,
           link_type: recommendation.linkType,
-          metadata: recommendation.metadata,
+          metadata: { ...recommendation.metadata, candidateLink: recommendation.candidateLink },
           reason: recommendation.reason,
         })
         .select('id')
@@ -137,7 +137,7 @@ export class SupabaseRecommendationAdapter implements RecommendationDatabaseAdap
         description: rec.description,
         link: rec.link,
         link_type: rec.linkType,
-        metadata: rec.metadata,
+        metadata: { ...rec.metadata, candidateLink: rec.candidateLink },
         reason: rec.reason,
       }));
 

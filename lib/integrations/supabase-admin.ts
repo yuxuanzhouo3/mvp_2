@@ -14,12 +14,12 @@ export function getSupabaseAdmin() {
   // 延迟到运行时才读取环境变量
   // 优先使用服务端专用 SUPABASE_URL，其次用公开 URL
   const supabaseUrl = (
-    process.env.SUPABASE_URL ||
-    process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    process.env["SUPABASE_URL"] ||
+    process.env["NEXT_PUBLIC_SUPABASE_URL"] ||
     ""
   ).trim();
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+  const serviceRoleKey = process.env["SUPABASE_SERVICE_ROLE_KEY"];
+  const anonKey = process.env["NEXT_PUBLIC_SUPABASE_ANON_KEY"] || "";
 
   const isProduction = process.env.NODE_ENV === "production";
   const isPlaceholderUrl =

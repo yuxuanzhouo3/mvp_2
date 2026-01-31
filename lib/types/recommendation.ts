@@ -36,6 +36,30 @@ export type LinkType =
   | "course"
   | "search"; // 搜索引擎链接
 
+export type CandidateLinkType =
+  | "app"
+  | "universal_link"
+  | "intent"
+  | "web"
+  | "store"
+  | "map"
+  | "search"
+  | "video";
+
+export interface OutboundLink {
+  type: CandidateLinkType;
+  url: string;
+  label?: string;
+}
+
+export interface CandidateLink {
+  provider: string;
+  title: string;
+  primary: OutboundLink;
+  fallbacks: OutboundLink[];
+  metadata?: Record<string, unknown>;
+}
+
 /**
  * 用户行为类型
  */
@@ -75,6 +99,7 @@ export interface AIRecommendation {
   reason: string;
   platform?: string;
   tags?: string[];
+  candidateLink?: CandidateLink;
 }
 
 /**

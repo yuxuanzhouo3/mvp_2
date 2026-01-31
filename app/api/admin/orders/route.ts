@@ -105,9 +105,9 @@ function parsePositiveInt(value: string | null, fallback: number): number {
  */
 function hasCnDbConfig(): boolean {
   return !!(
-    process.env.NEXT_PUBLIC_WECHAT_CLOUDBASE_ID &&
-    process.env.CLOUDBASE_SECRET_ID &&
-    process.env.CLOUDBASE_SECRET_KEY
+    process.env["NEXT_PUBLIC_WECHAT_CLOUDBASE_ID"] &&
+    process.env["CLOUDBASE_SECRET_ID"] &&
+    process.env["CLOUDBASE_SECRET_KEY"]
   );
 }
 
@@ -115,8 +115,8 @@ function hasCnDbConfig(): boolean {
  * 判断是否具备 Supabase 直连配置。
  */
 function hasIntlDbConfig(): boolean {
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+  const url = process.env["SUPABASE_URL"] || process.env["NEXT_PUBLIC_SUPABASE_URL"] || "";
+  const serviceRoleKey = process.env["SUPABASE_SERVICE_ROLE_KEY"] || "";
   return Boolean(url && serviceRoleKey);
 }
 
@@ -124,7 +124,7 @@ function hasIntlDbConfig(): boolean {
  * 获取 admin 跨环境代理 secret（若配置）。
  */
 function getProxySecret(): string | null {
-  return process.env.ADMIN_PROXY_SECRET || process.env.AI_STATS_PROXY_SECRET || null;
+  return process.env["ADMIN_PROXY_SECRET"] || process.env["AI_STATS_PROXY_SECRET"] || null;
 }
 
 /**
