@@ -12,3 +12,7 @@ export function useDevice() {
 export function useIsIPhone() {
   return useDevice().isIPhone;
 }
+
+export function useIsMac() {
+  return useDevice().isMac;
+}

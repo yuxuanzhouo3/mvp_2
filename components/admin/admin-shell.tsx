@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import * as React from "react";
 import {
   Activity,
@@ -44,7 +44,27 @@ export function AdminShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [mobileOpen, setMobileOpen] = React.useState(false);
+  const [logoutPending, setLogoutPending] = React.useState(false);
+  const logoutFormRef = React.useRef<HTMLFormElement>(null);
+
+  const handleLogout = async () => {
+    if (logoutPending) return;
+    setLogoutPending(true);
+    try {
+      const res = await fetch("/api/admin/logout", { method: "POST" });
+      if (res.ok) {
+        router.replace("/admin/login");
+        router.refresh();
+        return;
+      }
+    } catch {
+    } finally {
+      setLogoutPending(false);
+    }
+    logoutFormRef.current?.requestSubmit();
+  };
 
   React.useEffect(() => {
     setMobileOpen(false);
@@ -94,12 +114,14 @@ export function AdminShell({
               </div>
               <span className="font-medium">{username}</span>
             </div>
-            <form action={logoutAction}>
+            <form ref={logoutFormRef} action={logoutAction}>
               <Button
-                type="submit"
+                type="button"
                 variant="ghost"
                 size="sm"
                 className="text-slate-600 dark:text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+                onClick={handleLogout}
+                disabled={logoutPending}
               >
                 退出登录
               </Button>

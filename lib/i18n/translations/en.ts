@@ -45,6 +45,41 @@ export const en = {
     online: "Online",
   },
 
+  support: {
+    title: "Support",
+    intro: "If you run into any issues while using the app, please contact us via:",
+    contact: {
+      title: "Contact",
+      emailLabel: "Support Email",
+      responseTime: "We typically reply within 1–3 business days.",
+    },
+    faq: {
+      title: "FAQ",
+      items: [
+        {
+          q: "How do I reset my password?",
+          a: "Use “Forgot password” on the sign-in screen and follow the steps, or find the password reset entry in Settings.",
+        },
+        {
+          q: "What if I can’t sign in?",
+          a: "Check your network connection and verify your credentials. If the issue persists, email us for help.",
+        },
+        {
+          q: "What if the app can’t connect to the internet?",
+          a: "Check system network settings and whether a proxy/VPN is enabled. Try switching networks (Wi‑Fi/cellular) and retry.",
+        },
+        {
+          q: "What if I have subscription or payment issues?",
+          a: "Email us with your order ID/payment screenshot and the time it occurred, and we’ll assist as soon as possible.",
+        },
+        {
+          q: "How do I delete my account or data?",
+          a: "Contact us using the email you registered with and describe your request. We’ll assist after verification.",
+        },
+      ],
+    },
+  },
+
   // ==================== Debug ====================
   debug: {
     mode: "Debug Mode",

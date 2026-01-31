@@ -1,6 +1,9 @@
 # 使用多阶段构建减小镜像大小
 FROM node:20-alpine AS base
 
+# 安装 CA 证书，避免 HTTPS 请求在某些环境下失败
+RUN apk add --no-cache ca-certificates
+
 # 安装pnpm
 RUN npm install -g pnpm
 
@@ -42,6 +45,9 @@ RUN pnpm build
 
 # 生产阶段
 FROM node:20-alpine AS production
+
+# 安装 CA 证书，避免 HTTPS 请求在某些环境下失败
+RUN apk add --no-cache ca-certificates
 
 # 安装pnpm
 RUN npm install -g pnpm

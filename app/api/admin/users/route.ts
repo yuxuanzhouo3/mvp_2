@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminSessionCookieName, verifyAdminSessionToken } from "@/lib/admin/session";
+import { proxyAdminJsonFetch } from "@/lib/admin/proxy";
 import { CloudBaseCollections, getCloudBaseDatabase } from "@/lib/database/cloudbase-client";
 import { getSupabaseAdmin } from "@/lib/integrations/supabase-admin";
 
@@ -204,20 +205,17 @@ async function proxyFetch(
 ): Promise<UsersResponse> {
   const secret = getProxySecret();
   if (!secret) throw new Error("未配置 ADMIN_PROXY_SECRET，无法跨环境代理查询");
-  const headers: Record<string, string> = {
-    "x-admin-proxy-hop": "1",
-    "x-admin-proxy-secret": secret,
-  };
-  if (token) headers["cookie"] = `${getAdminSessionCookieName()}=${token}`;
-  const url = new URL(`${origin.replace(/\/$/, "")}/api/admin/users`);
-  url.searchParams.set("source", source);
-  if (query.q) url.searchParams.set("q", query.q);
-  if (query.id) url.searchParams.set("id", query.id);
-  url.searchParams.set("page", String(query.page));
-  url.searchParams.set("pageSize", String(query.pageSize));
-  const res = await fetch(url.toString(), { headers, cache: "no-store" });
-  if (!res.ok) throw new Error(`Proxy ${source} failed: HTTP ${res.status}`);
-  return (await res.json()) as UsersResponse;
+  const search = new URLSearchParams();
+  search.set("source", source);
+  if (query.q) search.set("q", query.q);
+  if (query.id) search.set("id", query.id);
+  search.set("page", String(query.page));
+  search.set("pageSize", String(query.pageSize));
+  return await proxyAdminJsonFetch<UsersResponse>({
+    origin,
+    pathWithQuery: `/api/admin/users?${search.toString()}`,
+    token,
+  });
 }
 
 export async function GET(request: NextRequest) {

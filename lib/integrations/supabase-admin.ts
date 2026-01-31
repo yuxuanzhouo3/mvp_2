@@ -13,24 +13,28 @@ export function getSupabaseAdmin() {
 
   // 延迟到运行时才读取环境变量
   // 优先使用服务端专用 SUPABASE_URL，其次用公开 URL
-  const supabaseUrl =
+  const supabaseUrl = (
     process.env.SUPABASE_URL ||
     process.env.NEXT_PUBLIC_SUPABASE_URL ||
-    "";
+    ""
+  ).trim();
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 
-  // 在运行时检查环境变量（不在构建时抛出错误）
-  if (process.env.NODE_ENV === 'production' && !supabaseUrl) {
-    console.error(
-      "❌ Missing NEXT_PUBLIC_SUPABASE_URL environment variable. " +
-      "Please set it in your deployment platform (e.g., Vercel, Netlify)"
+  const isProduction = process.env.NODE_ENV === "production";
+  const isPlaceholderUrl =
+    supabaseUrl.includes("placeholder.supabase.co") || supabaseUrl.includes("build-placeholder");
+
+  if (isProduction && (!supabaseUrl || isPlaceholderUrl)) {
+    throw new Error(
+      "❌ Missing SUPABASE_URL / NEXT_PUBLIC_SUPABASE_URL in production (or still using placeholder). " +
+        "Please set real Supabase URL in runtime environment variables."
     );
   }
 
   // 在生产环境中，强制要求服务角色密钥
   if (!serviceRoleKey) {
-    if (process.env.NODE_ENV === 'production') {
+    if (isProduction) {
       throw new Error(
         "❌ SUPABASE_SERVICE_ROLE_KEY is required in production. " +
         "Please set it in your environment variables."
@@ -44,8 +48,8 @@ export function getSupabaseAdmin() {
   }
 
   supabaseAdminInstance = createClient(
-    supabaseUrl || 'https://placeholder.supabase.co',
-    serviceRoleKey || anonKey || 'placeholder-key',
+    supabaseUrl || "https://placeholder.supabase.co",
+    serviceRoleKey || anonKey || "placeholder-key",
     {
       auth: { persistSession: false },
     }

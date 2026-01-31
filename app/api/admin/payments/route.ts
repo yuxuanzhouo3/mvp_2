@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminSessionCookieName, verifyAdminSessionToken } from "@/lib/admin/session";
+import { proxyAdminJsonFetch } from "@/lib/admin/proxy";
 import { getCloudBaseDatabase, getDbCommand } from "@/lib/database/cloudbase-client";
 import { getSupabaseAdmin } from "@/lib/integrations/supabase-admin";
 
@@ -634,23 +635,18 @@ async function proxyFetch(
 ): Promise<PaymentsResponse> {
   const secret = getProxySecret();
   if (!secret) throw new Error("未配置 ADMIN_PROXY_SECRET，无法跨环境代理查询");
-
-  const headers: Record<string, string> = {};
-  headers["x-admin-proxy-hop"] = "1";
-  headers["x-admin-proxy-secret"] = secret;
-  if (token) headers["cookie"] = `${getAdminSessionCookieName()}=${token}`;
-
-  const url = new URL(`${origin.replace(/\/$/, "")}/api/admin/payments`);
-  url.searchParams.set("source", source);
-  url.searchParams.set("status", query.status);
-  url.searchParams.set("page", String(query.page));
-  url.searchParams.set("pageSize", String(query.pageSize));
-  if (query.method) url.searchParams.set("method", query.method);
-  if (query.q) url.searchParams.set("q", query.q);
-
-  const res = await fetch(url.toString(), { headers, cache: "no-store" });
-  if (!res.ok) throw new Error(`Proxy ${source} failed: HTTP ${res.status}`);
-  return (await res.json()) as PaymentsResponse;
+  const search = new URLSearchParams();
+  search.set("source", source);
+  search.set("status", query.status);
+  search.set("page", String(query.page));
+  search.set("pageSize", String(query.pageSize));
+  if (query.method) search.set("method", query.method);
+  if (query.q) search.set("q", query.q);
+  return await proxyAdminJsonFetch<PaymentsResponse>({
+    origin,
+    pathWithQuery: `/api/admin/payments?${search.toString()}`,
+    token,
+  });
 }
 
 function mergeStats(a: PaymentStats | null, b: PaymentStats | null): PaymentStats {

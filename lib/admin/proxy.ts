@@ -58,7 +58,22 @@ export async function proxyAdminJsonFetch<T>(params: {
   }
 
   const url = `${params.origin.replace(/\/$/, "")}${params.pathWithQuery}`;
-  const res = await fetch(url, { headers, cache: "no-store" });
+  const controller = new AbortController();
+  const timeoutMs = 15_000;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let res: Response;
+  try {
+    res = await fetch(url, { headers, cache: "no-store", signal: controller.signal });
+  } catch (e: any) {
+    const causeCode = e?.cause?.code ? String(e.cause.code) : "";
+    const causeMessage = e?.cause?.message ? String(e.cause.message) : "";
+    const detail = [causeCode, causeMessage].filter(Boolean).join(": ");
+    throw new Error(
+      `Proxy fetch failed${detail ? ` (${detail})` : ""}: ${params.origin}${params.pathWithQuery}`
+    );
+  } finally {
+    clearTimeout(timer);
+  }
   if (!res.ok) throw new Error(`Proxy failed: HTTP ${res.status}`);
   return (await res.json()) as T;
 }

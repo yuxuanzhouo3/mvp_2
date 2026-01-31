@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/table";
 import { DashboardModuleTile } from "@/components/admin/dashboard-module-tile";
 import { SourceBadge, type AdminDataSource } from "@/components/admin/source-badge";
+import { isInternationalDeployment } from "@/lib/config/deployment.config";
 
 type DataSource = AdminDataSource;
 
@@ -188,6 +189,7 @@ async function fetchJson<T>(url: string): Promise<T> {
 }
 
 export function AdminDashboard() {
+  const isIntlDeployment = isInternationalDeployment();
   const [days, setDays] = React.useState<number>(7);
   const [refreshKey, setRefreshKey] = React.useState<number>(0);
   const [loading, setLoading] = React.useState<boolean>(true);
@@ -694,29 +696,56 @@ export function AdminDashboard() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card
+          className={
+            isIntlDeployment
+              ? "border-slate-200/80 bg-slate-50/80 dark:border-slate-700/80 dark:bg-slate-800/40"
+              : undefined
+          }
+        >
           <CardHeader>
             <CardTitle>支付状态汇总（ALL）</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
             <div className="flex items-center justify-between">
-              <div>Pending</div>
+              <div className="flex items-center gap-2">
+                {isIntlDeployment ? (
+                  <span className="h-2 w-2 rounded-full bg-amber-400/80" />
+                ) : null}
+                <div>Pending</div>
+              </div>
               <div>{loading ? "-" : payments?.stats.byStatus.pending || 0}</div>
             </div>
             <div className="flex items-center justify-between">
-              <div>Completed</div>
+              <div className="flex items-center gap-2">
+                {isIntlDeployment ? (
+                  <span className="h-2 w-2 rounded-full bg-emerald-500/80" />
+                ) : null}
+                <div>Completed</div>
+              </div>
               <div>{loading ? "-" : payments?.stats.byStatus.completed || 0}</div>
             </div>
             <div className="flex items-center justify-between">
-              <div>Failed</div>
+              <div className="flex items-center gap-2">
+                {isIntlDeployment ? <span className="h-2 w-2 rounded-full bg-rose-500/80" /> : null}
+                <div>Failed</div>
+              </div>
               <div>{loading ? "-" : payments?.stats.byStatus.failed || 0}</div>
             </div>
             <div className="flex items-center justify-between">
-              <div>Refunded</div>
+              <div className="flex items-center gap-2">
+                {isIntlDeployment ? <span className="h-2 w-2 rounded-full bg-sky-500/80" /> : null}
+                <div>Refunded</div>
+              </div>
               <div>{loading ? "-" : payments?.stats.byStatus.refunded || 0}</div>
             </div>
             <div className="flex items-center justify-between">
-              <div>Other</div>
+              <div className="flex items-center gap-2">
+                {isIntlDeployment ? (
+                  <span className="h-2 w-2 rounded-full bg-slate-400/80" />
+                ) : null}
+                <div>Other</div>
+              </div>
               <div>{loading ? "-" : payments?.stats.byStatus.other || 0}</div>
             </div>
           </CardContent>

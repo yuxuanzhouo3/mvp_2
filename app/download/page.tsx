@@ -115,7 +115,7 @@ export default function DownloadPage() {
           <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">
             {isChina ? "下载客户端" : "Download Client"}
           </h1>
-          <p className="text-lg text-gray-600 max-w-2xl mx-auto">
+          <p className="text-base text-gray-600 max-w-2xl mx-auto">
             {isChina
               ? "下载辰汇个性推荐客户端，享受更流畅的AI推荐体验"
               : "Download RandomLife client for a better AI recommendation experience"}

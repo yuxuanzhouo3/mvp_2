@@ -3,7 +3,7 @@
 import { motion, AnimatePresence } from "framer-motion"
 import Link from "next/link"
 import { Card } from "@/components/ui/card"
-import { useIsIPhone } from "@/hooks/use-device"
+import { useIsIPhone, useIsMac } from "@/hooks/use-device"
 import { Button } from "@/components/ui/button"
 import { Settings, Globe, Crown, History, Sparkles, Download } from "lucide-react"
 import { useLanguage } from "@/components/language-provider"
@@ -11,6 +11,7 @@ import { useTranslations } from "@/lib/i18n"
 import { OnboardingPrompt, ProfileCompletenessIndicator } from "@/components/OnboardingPrompt"
 import { useOnboarding } from "@/hooks/use-onboarding"
 import type { AuthUser } from "@/hooks/use-auth"
+import { isChinaDeployment } from "@/lib/config/deployment.config"
 
 const categoryIds = ["entertainment", "shopping", "food", "travel", "fitness"] as const
 
@@ -39,7 +40,9 @@ export function AppHome({
   isAuthenticated: boolean
   signOut: () => Promise<void>
 }) {
+  const isCN = isChinaDeployment()
   const isIPhone = useIsIPhone()
+  const isMac = useIsMac()
   const { language, toggleLanguage } = useLanguage()
   const t = useTranslations(language)
   const subscriptionTierLabel =
@@ -74,16 +77,18 @@ export function AppHome({
                   <Globe className="h-4 w-4 text-gray-600" />
                 </Button>
 
-                <Link href="/download">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 flex-shrink-0 hover:bg-white/30 transition-colors"
-                    title={t.header.download || "Download"}
-                  >
-                    <Download className="h-4 w-4 text-gray-600" />
-                  </Button>
-                </Link>
+                {!isMac && (
+                  <Link href="/download">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 flex-shrink-0 hover:bg-white/30 transition-colors"
+                      title={t.header.download || "Download"}
+                    >
+                      <Download className="h-4 w-4 text-gray-600" />
+                    </Button>
+                  </Link>
+                )}
 
                 {isAuthenticated ? (
                   <>
@@ -160,7 +165,9 @@ export function AppHome({
                     <Sparkles className="h-4 w-4 text-gray-600" />
                   </span>
                   <div className="min-w-0">
-                    <h1 className="text-2xl font-bold text-gray-800">{t.randomLife.title}</h1>
+                    <h1 className={`${isCN ? "text-lg" : "text-xl"} font-bold text-gray-800`}>
+                      {t.randomLife.title}
+                    </h1>
                     <p className="text-gray-600 text-sm">{t.randomLife.subtitle}</p>
                   </div>
                   <span className="flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white/90 shadow-sm flex-shrink-0">
