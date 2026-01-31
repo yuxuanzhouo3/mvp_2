@@ -1,6 +1,5 @@
 import type React from "react"
 import type { Metadata, Viewport } from "next"
-import { Inter } from "next/font/google"
 import Script from "next/script"
 import { headers } from "next/headers"
 import "./globals.css"
@@ -10,8 +9,6 @@ import { LanguageProvider } from "@/components/language-provider"
 import { Toaster } from "@/components/ui/toaster"
 import { MpLinkInterceptor } from "@/components/mp-link-interceptor"
 import AnalyticsBootstrap from "@/components/analytics-bootstrap"
-
-const inter = Inter({ subsets: ["latin"] })
 
 // 根据部署环境动态设置网站名称和图标
 const isCN = process.env.NEXT_PUBLIC_DEPLOYMENT_REGION === "CN"
@@ -57,7 +54,7 @@ export default function RootLayout({
           />
         )}
       </head>
-      <body className={inter.className}>
+      <body className="font-sans">
         {isAdminRoute ? (
           <>
             <div className="min-h-screen bg-background">{children}</div>
