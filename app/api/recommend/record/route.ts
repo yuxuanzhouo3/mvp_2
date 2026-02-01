@@ -118,7 +118,10 @@ export async function POST(request: NextRequest) {
         );
 
         // 从推荐的元数据中提取标签更新偏好
-        const tags = recommendation.metadata?.tags as string[] | undefined;
+        const tagCandidate = (recommendation as any)?.metadata?.tags ?? (recommendation as any)?.tags;
+        const tags = Array.isArray(tagCandidate)
+          ? tagCandidate.filter((tag) => typeof tag === "string")
+          : undefined;
         if (tags && tags.length > 0) {
           const preferences: Record<string, number> = {};
           tags.forEach((tag) => {

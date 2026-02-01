@@ -20,23 +20,48 @@ export type ResolveCandidateLinkInput = {
   provider?: string;
 };
 
-function buildStoreLinks(providerTitle: string, region: DeploymentRegion): OutboundLink[] {
-  const encoded = encodeURIComponent(providerTitle);
-  const iosUrl = `https://apps.apple.com/search?term=${encoded}`;
-  const androidIntlUrl = `https://play.google.com/store/search?q=${encoded}&c=apps`;
-  const androidCnUrl = `https://sj.qq.com/myapp/search.htm?kw=${encoded}`;
+function buildStoreLinks(
+  provider: ProviderDefinition,
+  locale: "zh" | "en",
+  region: DeploymentRegion
+): OutboundLink[] {
+  const encoded = encodeURIComponent(provider.displayName[locale]);
+  const iosStoreUrl = `itms-apps://apps.apple.com/search?term=${encoded}`;
+  const iosWebUrl = `https://apps.apple.com/search?term=${encoded}`;
 
-  const links: OutboundLink[] = [
-    { type: "store", label: "App Store", url: iosUrl },
-  ];
+  const links: OutboundLink[] = [{ type: "store", label: "App Store", url: iosStoreUrl }];
+  links.push({ type: "store", label: "App Store（网页）", url: iosWebUrl });
 
-  if (region === "CN") {
-    links.push({ type: "store", label: "应用宝", url: androidCnUrl });
+  if (provider.androidPackageId) {
+    links.push({
+      type: "store",
+      label: region === "CN" ? "系统应用商店" : "App Store / Play",
+      url: `market://details?id=${provider.androidPackageId}`,
+    });
+
+    if (region === "CN") {
+      links.push({
+        type: "store",
+        label: "应用宝",
+        url: `tmast://appdetails?pname=${encodeURIComponent(provider.androidPackageId)}`,
+      });
+      links.push({
+        type: "store",
+        label: "应用宝（网页）",
+        url: `https://sj.qq.com/myapp/detail.htm?apkName=${encodeURIComponent(provider.androidPackageId)}`,
+      });
+    }
+  } else if (region === "CN") {
+    links.push({ type: "store", label: "应用宝（网页）", url: `https://sj.qq.com/myapp/search.htm?kw=${encoded}` });
   } else {
-    links.push({ type: "store", label: "Google Play", url: androidIntlUrl });
+    links.push({
+      type: "store",
+      label: "Google Play（网页）",
+      url: `https://play.google.com/store/search?q=${encoded}&c=apps`,
+    });
   }
 
-  return links;
+  return uniqueOutboundLinks(links);
 }
 
 function uniqueOutboundLinks(links: OutboundLink[]): OutboundLink[] {
@@ -75,7 +100,17 @@ function getFallbackProviders(
   if (region === "CN") {
     switch (category) {
       case "food":
-        return ["大众点评", "高德地图", "百度地图", "腾讯地图", "百度"];
+        return [
+          "京东秒送",
+          "淘宝闪购",
+          "美团外卖",
+          "大众点评",
+          "小红书",
+          "高德地图",
+          "百度地图",
+          "腾讯地图",
+          "百度",
+        ];
       case "shopping":
         return ["京东", "淘宝", "拼多多", "唯品会", "百度"];
       case "entertainment":
@@ -141,7 +176,7 @@ export function resolveCandidateLink(input: ResolveCandidateLinkInput): Candidat
   const primary = resolvePrimary(provider, ctx);
   const appSchemes = resolveAppSchemes(provider, ctx);
   const webLink: OutboundLink = { type: "web", url: provider.webLink(ctx), label: "Web" };
-  const storeLinks = provider.hasApp ? buildStoreLinks(provider.displayName[input.locale], input.region) : [];
+  const storeLinks = provider.hasApp ? buildStoreLinks(provider, input.locale, input.region) : [];
 
   const fallbackProviderIds = getFallbackProviders(input.category, input.region);
   const fallbackLinks: OutboundLink[] = [];

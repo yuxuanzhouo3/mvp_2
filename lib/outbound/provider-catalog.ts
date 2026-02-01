@@ -4,8 +4,10 @@ export type DeploymentRegion = "CN" | "INTL";
 
 export type ProviderId =
   | "美团"
+  | "美团外卖"
   | "饿了么"
   | "京东到家"
+  | "京东秒送"
   | "淘宝闪购"
   | "淘宝"
   | "京东"
@@ -83,6 +85,7 @@ export type ProviderDefinition = {
   };
   domains: string[];
   hasApp: boolean;
+  androidPackageId?: string;
   universalLink?: ProviderLinkBuilder;
   webLink: ProviderLinkBuilder;
   iosScheme?: ProviderLinkBuilder;
@@ -220,6 +223,7 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       displayName: { zh: "小红书", en: "Xiaohongshu" },
       domains: ["xiaohongshu.com"],
       hasApp: true,
+      androidPackageId: "com.xingin.xhs",
       webLink: ({ query }) =>
         `https://www.xiaohongshu.com/search_result?keyword=${encodeURIComponent(query)}&type=note`,
     },
@@ -236,6 +240,7 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       displayName: { zh: "哔哩哔哩", en: "Bilibili" },
       domains: ["bilibili.com"],
       hasApp: true,
+      androidPackageId: "tv.danmaku.bili",
       universalLink: ({ query }) => bilibiliSearchUrl(query),
       webLink: ({ query }) => bilibiliSearchUrl(query),
       iosScheme: ({ query }) =>
@@ -248,6 +253,7 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       displayName: { zh: "大众点评", en: "Dianping" },
       domains: ["dianping.com"],
       hasApp: true,
+      androidPackageId: "com.dianping.v1",
       webLink: ({ query }) =>
         `https://www.dianping.com/search/keyword/2/0_${encodeURIComponent(query)}`,
     },
@@ -271,20 +277,47 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       displayName: { zh: "淘宝", en: "Taobao" },
       domains: ["taobao.com"],
       hasApp: true,
+      androidPackageId: "com.taobao.taobao",
       webLink: ({ query }) => `https://s.taobao.com/search?q=${encodeURIComponent(query)}`,
+      iosScheme: ({ query }) => `taobao://s.taobao.com?q=${encodeURIComponent(query)}`,
+      androidScheme: ({ query }) => {
+        const web = `https://s.taobao.com/search?q=${encodeURIComponent(query)}`;
+        return `intent://s.taobao.com?q=${encodeURIComponent(query)}#Intent;scheme=taobao;package=com.taobao.taobao;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      },
     },
     "京东": {
       id: "京东",
       displayName: { zh: "京东", en: "JD" },
       domains: ["jd.com"],
       hasApp: true,
+      androidPackageId: "com.jingdong.app.mall",
       webLink: ({ query }) => `https://search.jd.com/Search?keyword=${encodeURIComponent(query)}`,
+      iosScheme: ({ query }) => {
+        const params = {
+          category: "jump",
+          des: "productList",
+          keyWord: query,
+          from: "search",
+        };
+        return `openapp.jdmobile://virtual?params=${encodeURIComponent(JSON.stringify(params))}`;
+      },
+      androidScheme: ({ query }) => {
+        const params = {
+          category: "jump",
+          des: "productList",
+          keyWord: query,
+          from: "search",
+        };
+        const web = `https://search.jd.com/Search?keyword=${encodeURIComponent(query)}`;
+        return `intent://virtual?params=${encodeURIComponent(JSON.stringify(params))}#Intent;scheme=openapp.jdmobile;package=com.jingdong.app.mall;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      },
     },
     "拼多多": {
       id: "拼多多",
       displayName: { zh: "拼多多", en: "Pinduoduo" },
       domains: ["yangkeduo.com"],
       hasApp: true,
+      androidPackageId: "com.xunmeng.pinduoduo",
       webLink: ({ query }) =>
         `https://mobile.yangkeduo.com/search_result.html?search_key=${encodeURIComponent(query)}`,
     },
@@ -354,10 +387,28 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       displayName: { zh: "美团", en: "Meituan" },
       domains: ["meituan.com"],
       hasApp: true,
+      androidPackageId: "com.sankuai.meituan",
       webLink: ({ query }) =>
         `https://www.meituan.com/s/${encodeURIComponent(query)}/`,
-      iosScheme: () => `imeituan://www.meituan.com`,
-      androidScheme: () => `imeituan://www.meituan.com`,
+      iosScheme: ({ query }) =>
+        `imeituan://www.meituan.com/search?q=${encodeURIComponent(query)}`,
+      androidScheme: ({ query }) =>
+        `imeituan://www.meituan.com/search?q=${encodeURIComponent(query)}`,
+    },
+    "美团外卖": {
+      id: "美团外卖",
+      displayName: { zh: "美团外卖", en: "Meituan Waimai" },
+      domains: ["meituan.com"],
+      hasApp: true,
+      androidPackageId: "com.sankuai.meituan.takeoutnew",
+      webLink: ({ query }) =>
+        `https://waimai.meituan.com/search?query=${encodeURIComponent(query)}`,
+      iosScheme: ({ query }) =>
+        `meituanwaimai://waimai.meituan.com/search?query=${encodeURIComponent(query)}`,
+      androidScheme: ({ query }) => {
+        const web = `https://waimai.meituan.com/search?query=${encodeURIComponent(query)}`;
+        return `intent://waimai.meituan.com/search?query=${encodeURIComponent(query)}#Intent;scheme=meituanwaimai;package=com.sankuai.meituan.takeoutnew;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      },
     },
     饿了么: {
       id: "饿了么",
@@ -377,13 +428,47 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       webLink: ({ query }) =>
         `https://daojia.jd.com/html/index.html?keyword=${encodeURIComponent(query)}`,
     },
+    "京东秒送": {
+      id: "京东秒送",
+      displayName: { zh: "京东秒送", en: "JD Instant Delivery" },
+      domains: ["jd.com", "daojia.jd.com"],
+      hasApp: true,
+      androidPackageId: "com.jingdong.app.mall",
+      webLink: ({ query }) =>
+        `https://daojia.jd.com/html/index.html?keyword=${encodeURIComponent(query)}`,
+      iosScheme: ({ query }) => {
+        const params = {
+          category: "jump",
+          des: "productList",
+          keyWord: query,
+          from: "search",
+        };
+        return `openapp.jdmobile://virtual?params=${encodeURIComponent(JSON.stringify(params))}`;
+      },
+      androidScheme: ({ query }) => {
+        const params = {
+          category: "jump",
+          des: "productList",
+          keyWord: query,
+          from: "search",
+        };
+        const web = `https://daojia.jd.com/html/index.html?keyword=${encodeURIComponent(query)}`;
+        return `intent://virtual?params=${encodeURIComponent(JSON.stringify(params))}#Intent;scheme=openapp.jdmobile;package=com.jingdong.app.mall;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      },
+    },
     淘宝闪购: {
       id: "淘宝闪购",
       displayName: { zh: "淘宝闪购", en: "Taobao Now" },
       domains: ["taobao.com"],
       hasApp: true,
+      androidPackageId: "com.taobao.taobao",
       webLink: ({ query }) =>
         `https://s.taobao.com/search?q=${encodeURIComponent(query)}`,
+      iosScheme: ({ query }) => `taobao://s.taobao.com?q=${encodeURIComponent(query)}`,
+      androidScheme: ({ query }) => {
+        const web = `https://s.taobao.com/search?q=${encodeURIComponent(query)}`;
+        return `intent://s.taobao.com?q=${encodeURIComponent(query)}#Intent;scheme=taobao;package=com.taobao.taobao;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      },
     },
     "Uber Eats": {
       id: "Uber Eats",
@@ -506,6 +591,7 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       displayName: { zh: "Keep", en: "Keep" },
       domains: ["gotokeep.com"],
       hasApp: true,
+      androidPackageId: "com.gotokeep.keep",
       webLink: ({ query }) => `https://www.gotokeep.com/search?q=${encodeURIComponent(query)}`,
       iosScheme: () => `keep://`,
       androidScheme: () => `keep://`,

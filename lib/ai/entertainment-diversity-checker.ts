@@ -195,7 +195,7 @@ export async function supplementEntertainmentTypes(
     }
   }
 
-  return [...recommendations, ...supplements];
+  return supplements;
 }
 
 /**

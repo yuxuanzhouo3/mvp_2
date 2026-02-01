@@ -97,6 +97,12 @@ export class SupabaseRecommendationAdapter implements RecommendationDatabaseAdap
     recommendation: AIRecommendation
   ): Promise<MutationResult> {
     try {
+      const metadata = { ...(recommendation.metadata || {}) } as any;
+      if (recommendation.tags && !Array.isArray(metadata.tags)) {
+        metadata.tags = recommendation.tags;
+      }
+      metadata.candidateLink = recommendation.candidateLink;
+
       const { data, error } = await this.supabase
         .from('recommendation_history')
         .insert({
@@ -106,7 +112,7 @@ export class SupabaseRecommendationAdapter implements RecommendationDatabaseAdap
           description: recommendation.description,
           link: recommendation.link,
           link_type: recommendation.linkType,
-          metadata: { ...recommendation.metadata, candidateLink: recommendation.candidateLink },
+          metadata,
           reason: recommendation.reason,
         })
         .select('id')
@@ -131,13 +137,20 @@ export class SupabaseRecommendationAdapter implements RecommendationDatabaseAdap
   ): Promise<MutationResult & { ids?: string[] }> {
     try {
       const records = recommendations.map((rec) => ({
+        metadata: (() => {
+          const metadata = { ...(rec.metadata || {}) } as any;
+          if (rec.tags && !Array.isArray(metadata.tags)) {
+            metadata.tags = rec.tags;
+          }
+          metadata.candidateLink = rec.candidateLink;
+          return metadata;
+        })(),
         user_id: userId,
         category: rec.category,
         title: rec.title,
         description: rec.description,
         link: rec.link,
         link_type: rec.linkType,
-        metadata: { ...rec.metadata, candidateLink: rec.candidateLink },
         reason: rec.reason,
       }));
 

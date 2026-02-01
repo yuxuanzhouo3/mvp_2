@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
     if (action === 'click') {
       // 获取推荐的分类
       const historyResult = await adapter.getRecommendationHistory(user.id, undefined, {
-        limit: 1,
+        limit: 200,
       });
 
       // 从历史中找到对应的推荐记录获取分类

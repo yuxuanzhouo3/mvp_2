@@ -20,6 +20,7 @@ import {
   clearWxMpLoginParams,
   requestWxMpLoginAsync,
 } from '@/lib/wechat-mp'
+import { isAppContainer } from '@/lib/app/app-container'
 import { saveAuthState } from '@/lib/auth/auth-state-manager'
 
 export default function LoginPage() {
@@ -253,15 +254,8 @@ export default function LoginPage() {
 
       const nextPath = '/'
 
-      const appFlag = new URLSearchParams(window.location.search).get("app") === "1"
       const w = window as any
-      const hasNativeBridge =
-        !!w.ReactNativeWebView?.postMessage ||
-        !!w.webkit?.messageHandlers?.wechatLogin?.postMessage ||
-        !!w.webkit?.messageHandlers?.native?.postMessage ||
-        typeof w.Android?.wechatLogin === "function"
-
-      if (appFlag || hasNativeBridge) {
+      if (isAppContainer()) {
         const baseUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin
         const callbackUrl = new URL('/auth/callback', baseUrl)
         callbackUrl.searchParams.set('provider', 'wechat_mobile')

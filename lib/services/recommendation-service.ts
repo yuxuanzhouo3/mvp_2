@@ -285,16 +285,39 @@ export async function cacheRecommendations(
 /**
  * 生成偏好哈希值
  */
-export function generatePreferenceHash(preferences: UserPreference | null): string {
-  if (!preferences) return "default";
+function normalizeHashToken(input: string): string {
+  return input.trim().toLowerCase().replace(/\s+/g, " ");
+}
 
-  const topTags = Object.entries(preferences.preferences || {})
+function fnv1a32Hex(input: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+export function generatePreferenceHash(
+  preferences: UserPreference | null,
+  userHistory: Array<{ title?: string; clicked?: boolean }> | null = null
+): string {
+  if (!preferences && (!userHistory || userHistory.length === 0)) return "default";
+
+  const topTags = Object.entries(preferences?.preferences || {})
     .sort(([, a], [, b]) => (b as number) - (a as number))
     .slice(0, 5)
     .map(([tag]) => tag)
     .join(",");
 
-  return topTags || "default";
+  const recentClickedTitles = (userHistory || [])
+    .filter((h) => !!h?.clicked && typeof h?.title === "string" && h.title.trim().length > 0)
+    .slice(0, 8)
+    .map((h) => normalizeHashToken(h.title as string))
+    .join("|");
+
+  const recentSig = recentClickedTitles ? fnv1a32Hex(recentClickedTitles) : "00000000";
+  return `${topTags || "default"}:${recentSig}`;
 }
 
 /**

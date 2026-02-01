@@ -1,6 +1,8 @@
 import OpenAI from "openai";
 import { ZhipuAI } from "zhipuai";
 import { isChinaDeployment } from "@/lib/config/deployment.config";
+import { generateFallbackCandidates } from "@/lib/recommendation/fallback-generator";
+import type { RecommendationCategory } from "@/lib/types/recommendation";
 
 type AIProvider = "openai" | "mistral" | "zhipu" | "qwen-max" | "qwen-plus" | "qwen-turbo";
 
@@ -21,7 +23,7 @@ const DEFAULT_MODELS = {
 // 通义千问 API 端点
 const QWEN_API_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
 
-function hasValidKey(value?: string | null) {
+function hasValidKey(value?: string | null): value is string {
   return Boolean(value && value.trim() && !value.includes("your_"));
 }
 
@@ -239,6 +241,7 @@ interface UserHistory {
   category: string;
   title: string;
   clicked?: boolean;
+  saved?: boolean;
   metadata?: any;
 }
 
@@ -258,6 +261,47 @@ export interface RecommendationItem {
   searchQuery: string;  // 用于搜索引擎的查询词
   platform: string;      // 推荐的平台
   entertainmentType?: 'video' | 'game' | 'music' | 'review';  // 娱乐类型（仅娱乐分类）
+  fitnessType?: 'nearby_place' | 'tutorial' | 'equipment';
+}
+
+export type GenerateRecommendationsOptions = {
+  client?: "app" | "web";
+  geo?: { lat: number; lng: number } | null;
+  avoidTitles?: string[] | null;
+  signals?:
+    | {
+        topTags?: string[] | null;
+        positiveSamples?: Array<{
+          title: string;
+          tags?: string[] | null;
+          searchQuery?: string | null;
+        }> | null;
+        negativeSamples?: Array<{
+          title: string;
+          tags?: string[] | null;
+          searchQuery?: string | null;
+          feedbackType: string;
+          rating?: number | null;
+        }> | null;
+      }
+    | null;
+};
+
+export function buildExpansionSignalPrompt(params: {
+  locale: "zh" | "en";
+  topTags: string[];
+  positiveSamples: Array<{ title: string; tags?: string[]; searchQuery?: string }>;
+  negativeSamples: Array<{ title: string; tags?: string[]; searchQuery?: string; feedbackType: string; rating?: number }>;
+  avoidTitles: string[];
+  requestNonce: string;
+}): string {
+  const { locale, topTags, positiveSamples, negativeSamples, avoidTitles, requestNonce } = params;
+
+  if (locale === "zh") {
+    return `\n\n【拓展信号（三段式）】\n- Top Tags（按重要性排序）：${topTags.length > 0 ? topTags.join("、") : "无"}\n- 最近正反馈样本（点击/收藏）：${positiveSamples.length > 0 ? JSON.stringify(positiveSamples, null, 2) : "无"}\n- 负反馈样本（不感兴趣/跳过/低评分，必须避开同主题）：${negativeSamples.length > 0 ? JSON.stringify(negativeSamples, null, 2) : "无"}\n- 需要避开的标题（强制避重复）：${avoidTitles.length > 0 ? avoidTitles.join("、") : "无"}\n- 本次生成种子（用于提升随机性）：${requestNonce}\n\n【拓展策略（可控）】\n- 60% 围绕 Top Tags + 正反馈样本做长尾细分：同题材不同作品/同菜系不同招牌/同目的地不同玩法。\n- 25% 做相邻探索：基于 Top Tags 的相邻概念做拓展，但仍要具体、可搜索。\n- 15% 做新鲜补充：在不触发负反馈的前提下，提供更小众/更具体的条目。\n\n【避坑规则】\n- 不得输出与负反馈样本高度相关的条目（同主题/同关键词/同意图都算）。\n- 输出内不得重复；不得与“需要避开的标题”重复或高度相似（同义/换序也算重复）。\n`;
+  }
+
+  return `\n\n[Expansion Signals (3-part)]\n- Top tags (ranked): ${topTags.length > 0 ? topTags.join(", ") : "none"}\n- Recent positive examples (clicked/saved): ${positiveSamples.length > 0 ? JSON.stringify(positiveSamples, null, 2) : "none"}\n- Negative examples (not interested/skip/low rating; must avoid): ${negativeSamples.length > 0 ? JSON.stringify(negativeSamples, null, 2) : "none"}\n- Titles to avoid (must avoid): ${avoidTitles.length > 0 ? avoidTitles.join(", ") : "none"}\n- Generation nonce (for randomness): ${requestNonce}\n\n[Expansion Strategy (controllable)]\n- 60% exploit: expand from top tags + positive examples into long-tail subtopics.\n- 25% explore: adjacent concepts, still specific and searchable.\n- 15% fresh: add novel but still relevant items, without triggering negative examples.\n\n[Anti-Patterns]\n- Do NOT output items strongly related to negative examples.\n- No duplicates; must not repeat or paraphrase avoided titles.\n`;
 }
 
 /**
@@ -269,8 +313,15 @@ export async function generateRecommendations(
   category: string,
   locale: string = 'zh',
   count: number = 5,
-  userPreference?: UserPreferenceData | null
+  userPreference?: UserPreferenceData | null,
+  options?: GenerateRecommendationsOptions
 ): Promise<RecommendationItem[]> {
+  const client = options?.client ?? "web";
+  const geo = options?.geo ?? null;
+  const avoidTitles = Array.isArray(options?.avoidTitles)
+    ? options!.avoidTitles!.filter((t) => typeof t === "string" && t.trim().length > 0)
+    : [];
+  const signals = options?.signals ?? null;
 
   // 构建用户画像提示
   let userProfilePrompt = '';
@@ -342,7 +393,9 @@ export async function generateRecommendations(
     },
     food: {
       platforms: locale === 'zh'
-        ? ['大众点评', '高德地图美食', '百度地图美食', '腾讯地图美食']
+        ? client === "app"
+          ? ['京东秒送', '淘宝闪购', '美团外卖', '大众点评', '小红书']
+          : ['大众点评', '高德地图美食', '百度地图美食', '腾讯地图美食']
         : ['Allrecipes', 'Google Maps', 'OpenTable'],
       examples: locale === 'zh'
         ? '餐厅、菜谱、美食'
@@ -368,14 +421,93 @@ export async function generateRecommendations(
 
   const config = categoryConfig[category as keyof typeof categoryConfig] || categoryConfig.entertainment;
 
-  const desiredCount = Math.max(5, Math.min(10, count));
+  const desiredCount = Math.max(5, Math.min(20, count));
+
+  const positiveSamples =
+    Array.isArray(signals?.positiveSamples) && signals!.positiveSamples!.length > 0
+      ? signals!.positiveSamples!
+          .filter((s) => typeof (s as any)?.title === "string" && String((s as any).title).trim().length > 0)
+          .slice(0, 10)
+          .map((s) => ({
+            title: String((s as any).title),
+            tags: Array.isArray((s as any)?.tags)
+              ? ((s as any).tags as unknown[]).filter((t) => typeof t === "string" && t.trim().length > 0)
+              : undefined,
+            searchQuery:
+              typeof (s as any)?.searchQuery === "string" && String((s as any).searchQuery).trim().length > 0
+                ? String((s as any).searchQuery)
+                : undefined,
+          }))
+      : userHistory
+          .filter((h) => !!(h as any)?.clicked || !!(h as any)?.saved)
+          .slice(0, 10)
+          .map((h) => ({
+            title: h.title,
+            tags: (h as any)?.metadata?.tags,
+          }))
+          .filter((h) => typeof h.title === "string" && h.title.trim().length > 0);
+
+  const negativeSamples =
+    Array.isArray(signals?.negativeSamples) && signals!.negativeSamples!.length > 0
+      ? signals!.negativeSamples!
+          .filter((s) => typeof (s as any)?.title === "string" && String((s as any).title).trim().length > 0)
+          .slice(0, 10)
+          .map((s) => ({
+            title: String((s as any).title),
+            tags: Array.isArray((s as any)?.tags)
+              ? ((s as any).tags as unknown[]).filter(
+                  (t): t is string => typeof t === "string" && t.trim().length > 0
+                )
+              : undefined,
+            searchQuery:
+              typeof (s as any)?.searchQuery === "string" && String((s as any).searchQuery).trim().length > 0
+                ? String((s as any).searchQuery)
+                : undefined,
+            feedbackType: String((s as any)?.feedbackType || ""),
+            rating: typeof (s as any)?.rating === "number" ? Number((s as any).rating) : undefined,
+          }))
+      : [];
+
+  const topTags =
+    Array.isArray(signals?.topTags) && signals!.topTags!.length > 0
+      ? signals!.topTags!
+          .filter((t) => typeof t === "string" && t.trim().length > 0)
+          .slice(0, 12)
+      : [];
+
+  const recentShownTitles = userHistory
+    .slice(0, 30)
+    .map((h) => h.title)
+    .filter((t): t is string => typeof t === "string" && t.trim().length > 0);
+
+  const requestNonce = `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+
+  const avoidTitlesForPrompt = [
+    ...avoidTitles,
+    ...recentShownTitles,
+    ...negativeSamples.map((s) => s.title),
+  ]
+    .filter((t): t is string => typeof t === "string" && t.trim().length > 0)
+    .slice(0, 60);
+
+  const behaviorPrompt = buildExpansionSignalPrompt({
+    locale: locale === "en" ? "en" : "zh",
+    topTags,
+    positiveSamples,
+    negativeSamples,
+    avoidTitles: avoidTitlesForPrompt,
+    requestNonce,
+  });
 
   const prompt = locale === 'zh' ? `
 生成 ${desiredCount} 个多样化推荐，严格遵守类型分布要求。
 
 用户历史：${JSON.stringify(userHistory.slice(0, 15), null, 2)}
 ${userProfilePrompt}
+${behaviorPrompt}
 分类：${category}
+客户端：${client}${geo ? `\n位置：${geo.lat},${geo.lng}` : ''}
+【去重要求】避免推荐与用户历史中的 title 重复或高度相似（同义/换序也算重复）。
 
 输出JSON数组，每项必须包含：title, description, reason, tags(3-5个), searchQuery, platform${category === 'entertainment' ? ', entertainmentType' : ''}
 
@@ -387,7 +519,12 @@ ${category === 'entertainment' ? `【强制要求】必须包含4种不同类型
 每种类型至少1个，entertainmentType字段必填(video/game/music/review)` : ''}${category === 'food' ? `【强制要求】必须包含3种类型：
 - 食谱类: 纯菜名(如"宫保鸡丁")
 - 菜系类: "XX菜系餐厅"(如"川菜餐厅")
-- 场合类: "场合+菜系"(如"商务午餐")` : ''}${category === 'travel' ? `【格式要求】标题必须是"国家·城市"(如"中国·西安")，使用真实地名；CN版优先推荐中国境内目的地，至少前3条为中国境内。` : ''}${category === 'fitness' ? `【强制要求】必须包含3种类型，各至少1个，并且每项必须包含 fitnessType 字段：
+- 场合类: "场合+菜系"(如"商务午餐")` : ''}${category === 'travel' ? `【强制要求】必须覆盖三类内容，并且名称要具体、可搜索：
+1) 附近风景名胜：如果提供了位置(geo)，至少输出2个“附近可去”的景点/公园/地标（必须是真实名称）。
+2) 国内旅游胜地：至少输出2个中国境内的具体目的地（建议包含具体景点/区域名，不要只写城市）。
+3) 国外旅游胜地：至少输出1个海外的具体目的地（同样要具体到景点/区域/街区）。
+
+【标题格式】优先使用“国家·城市·景点/区域”(如"中国·西安·大雁塔")；若确实无法精确到景点，也至少写到“国家·城市”。` : ''}${category === 'fitness' ? `【强制要求】必须包含3种类型，各至少1个，并且每项必须包含 fitnessType 字段：
 - 附近场所(nearby_place): 真实可去的健身房/运动场地/场馆（不是教程/不是装备评测）
 - 教程(tutorial): 健身动作/课程/跟练视频
 - 器材(equipment): "XX使用教程/入门要点"(不是购买链接/不是纯评测导购)
@@ -407,7 +544,10 @@ Generate ${desiredCount} personalized recommendations.
 
 User history: ${JSON.stringify(userHistory.slice(0, 15), null, 2)}
 ${userProfilePrompt}
+${behaviorPrompt}
 Category: ${category}
+Client: ${client}${geo ? `\nGeo: ${geo.lat},${geo.lng}` : ''}
+De-dup rule: avoid titles that repeat or closely paraphrase the user history titles.
 
 Output JSON array with: title, description, reason, tags(3-5), searchQuery, platform${category === 'entertainment' ? ', entertainmentType' : ''}
 
@@ -455,92 +595,17 @@ No URLs`;
  * 降级方案
  */
 function getFallbackRecommendations(category: string, locale: string): RecommendationItem[] {
-  const fallbacks: Record<string, Record<string, RecommendationItem[]>> = {
-    zh: {
-      entertainment: [{
-        title: '热门电影推荐',
-        description: '最近上映的高分电影',
-        reason: '根据大众喜好为你推荐',
-        tags: ['电影', '热门', '高分'],
-        searchQuery: '2024 热门电影 高分',
-        platform: '豆瓣'
-      }],
-      shopping: [{
-        title: '热销数码产品',
-        description: '最受欢迎的数码好物',
-        reason: '根据销量和评价为你推荐',
-        tags: ['数码', '热销', '好评'],
-        searchQuery: '热销数码产品 好评',
-        platform: '京东'
-      }],
-      food: [{
-        title: '特色美食餐厅',
-        description: '附近高评分餐厅',
-        reason: '根据评价为你推荐',
-        tags: ['美食', '餐厅', '高评分'],
-        searchQuery: '特色餐厅 高评分',
-        platform: '大众点评'
-      }],
-      travel: [{
-        title: '热门旅游景点',
-        description: '值得一去的景点',
-        reason: '根据热度为你推荐',
-        tags: ['旅游', '景点', '热门'],
-        searchQuery: '热门旅游景点',
-        platform: '携程'
-      }],
-      fitness: [{
-        title: '健身训练课程',
-        description: '适合初学者的课程',
-        reason: '根据难度为你推荐',
-        tags: ['健身', '课程', '初学者'],
-        searchQuery: '健身训练课程 初学者',
-        platform: 'B站健身'  // 改用B站健身
-      }]
-    },
-    en: {
-      entertainment: [{
-        title: 'Popular Movies',
-        description: 'Latest high-rated movies',
-        reason: 'Recommended based on popular preferences',
-        tags: ['movies', 'popular', 'high-rated'],
-        searchQuery: '2024 popular movies high rated',
-        platform: 'IMDb'
-      }],
-      shopping: [{
-        title: 'Trending Electronics',
-        description: 'Most popular electronic gadgets',
-        reason: 'Recommended based on sales and reviews',
-        tags: ['electronics', 'trending', 'top-rated'],
-        searchQuery: 'trending electronics best seller',
-        platform: 'Amazon'
-      }],
-      food: [{
-        title: 'Top-Rated Restaurants',
-        description: 'Highly-rated restaurants nearby',
-        reason: 'Recommended based on reviews',
-        tags: ['food', 'restaurant', 'high-rated'],
-        searchQuery: 'top-rated restaurants',
-        platform: 'Yelp'
-      }],
-      travel: [{
-        title: 'Popular Attractions',
-        description: 'Must-visit destinations',
-        reason: 'Recommended based on popularity',
-        tags: ['travel', 'attractions', 'popular'],
-        searchQuery: 'popular tourist attractions',
-        platform: 'TripAdvisor'
-      }],
-      fitness: [{
-        title: 'Fitness Workout Classes',
-        description: 'Beginner-friendly workout routines',
-        reason: 'Recommended based on difficulty',
-        tags: ['fitness', 'workout', 'beginner'],
-        searchQuery: 'fitness workout for beginners',
-        platform: 'YouTube'
-      }]
-    }
-  };
+  const typedLocale = locale === "en" ? "en" : "zh";
+  const typedCategory = (
+    ["entertainment", "shopping", "food", "travel", "fitness"].includes(category)
+      ? category
+      : "entertainment"
+  ) as RecommendationCategory;
 
-  return fallbacks[locale]?.[category] || fallbacks.zh.entertainment;
+  return generateFallbackCandidates({
+    category: typedCategory,
+    locale: typedLocale,
+    count: 8,
+    client: "web",
+  }) as RecommendationItem[];
 }

@@ -106,6 +106,12 @@ export class CloudBaseRecommendationAdapter implements RecommendationDatabaseAda
       const collection = this.db.collection(CloudBaseCollections.RECOMMENDATION_HISTORY);
       const now = nowISO();
 
+      const metadata = { ...(recommendation.metadata || {}) } as any;
+      if (recommendation.tags && !Array.isArray(metadata.tags)) {
+        metadata.tags = recommendation.tags;
+      }
+      metadata.candidateLink = recommendation.candidateLink;
+
       const doc = {
         user_id: userId,
         category: recommendation.category,
@@ -113,7 +119,7 @@ export class CloudBaseRecommendationAdapter implements RecommendationDatabaseAda
         description: recommendation.description || null,
         link: recommendation.link,
         link_type: recommendation.linkType || null,
-        metadata: { ...(recommendation.metadata || {}), candidateLink: recommendation.candidateLink },
+        metadata,
         reason: recommendation.reason || null,
         clicked: false,
         saved: false,
@@ -146,6 +152,12 @@ export class CloudBaseRecommendationAdapter implements RecommendationDatabaseAda
 
       // CloudBase 不支持批量插入，需要逐个插入
       for (const rec of recommendations) {
+        const metadata = { ...(rec.metadata || {}) } as any;
+        if (rec.tags && !Array.isArray(metadata.tags)) {
+          metadata.tags = rec.tags;
+        }
+        metadata.candidateLink = rec.candidateLink;
+
         const doc = {
           user_id: userId,
           category: rec.category,
@@ -153,7 +165,7 @@ export class CloudBaseRecommendationAdapter implements RecommendationDatabaseAda
           description: rec.description || null,
           link: rec.link,
           link_type: rec.linkType || null,
-          metadata: { ...(rec.metadata || {}), candidateLink: rec.candidateLink },
+          metadata,
           reason: rec.reason || null,
           clicked: false,
           saved: false,

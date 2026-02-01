@@ -32,7 +32,7 @@ export function enhanceTravelRecommendation(
   const destination = extractDestinationInfo(recommendation.title, recommendation.description);
 
   // 生成高度相关的搜索查询 - 使用目的地名称而不是通用关键词
-  const enhancedSearchQuery = generateDestinationSearchQuery(recommendation, destination, locale);
+  const enhancedSearchQuery = generateDestinationSearchQuery(recommendation, locale);
 
   // 智能选择最佳平台 - 根据推荐类型选择
   const bestPlatform = selectPlatformByRecommendationType(recommendation);
@@ -76,7 +76,6 @@ function isInternationalDestination(title: string): boolean {
  */
 function generateDestinationSearchQuery(
   recommendation: any,
-  destination: TravelRecommendation['destination'],
   locale: string
 ): string {
   // 提取核心地点名称
@@ -181,7 +180,9 @@ function extractCoreLocationName(
  */
 function getTypeSpecificKeywords(recommendation: any, locale: string): string {
   const title = recommendation.title?.toLowerCase() || '';
-  const tags = recommendation.tags || [];
+  const tags: string[] = (recommendation.tags || []).filter(
+    (t: unknown): t is string => typeof t === 'string' && t.trim().length > 0
+  );
 
   // 英文关键词
   const enKeywords = {

@@ -62,18 +62,20 @@ async function testTypeSupplementation() {
   if (analysis.missingTypes.length > 0) {
     console.log('尝试补充缺失的类型...');
 
-    const supplemented = await supplementEntertainmentTypes(
+    const supplements = await supplementEntertainmentTypes(
       testRecommendations,
       analysis.missingTypes.slice(0, 2), // 最多补充2种类型
       [], // 空的历史记录
       'zh'
     );
 
+    const supplemented = [...testRecommendations, ...supplements];
+
     console.log('\n原始推荐数量:', testRecommendations.length);
     console.log('补充后推荐数量:', supplemented.length);
 
     // 显示补充的推荐
-    supplemented.slice(testRecommendations.length).forEach((rec, index) => {
+    supplements.forEach((rec, index) => {
       console.log(`\n补充推荐 ${index + 1}:`);
       console.log(`标题: ${rec.title}`);
       console.log(`类型: ${rec.entertainmentType}`);
@@ -121,12 +123,14 @@ async function testFullWorkflow() {
 
   // 补充类型
   if (diverseResult.needsMore && diverseResult.suggestedTypes.length > 0) {
-    const finalRecs = await supplementEntertainmentTypes(
+    const supplements = await supplementEntertainmentTypes(
       singleTypeRecs,
       diverseResult.suggestedTypes,
       [],
       'zh'
     );
+
+    const finalRecs = [...singleTypeRecs, ...supplements];
 
     console.log('\n4. 最终推荐列表:');
     finalRecs.forEach((rec, index) => {

@@ -40,6 +40,9 @@ import type { RecommendationCategory, AIRecommendResponse, LinkType } from "@/li
 import { canUseRecommendation, recordRecommendationUsage, getUserUsageStats } from "@/lib/subscription/usage-tracker";
 import { resolveCandidateLink } from "@/lib/outbound/link-resolver";
 import { isChinaDeployment } from "@/lib/config/deployment.config";
+import { dedupeRecommendations } from "@/lib/recommendation/dedupe";
+import { generateFallbackCandidates } from "@/lib/recommendation/fallback-generator";
+import { getUserFeedbackHistory, extractNegativeFeedbackSamples } from "@/lib/services/feedback-service";
 
 // 有效的分类列表
 const VALID_CATEGORIES: RecommendationCategory[] = [
@@ -183,7 +186,12 @@ function selectWeightedPlatformForCategory(
 
   if (!candidates || candidates.length === 0) return null;
   if (suggestedPlatform && candidates.some((c) => c.platform === suggestedPlatform)) {
-    return suggestedPlatform;
+    const boosted = candidates.map((candidate) =>
+      candidate.platform === suggestedPlatform
+        ? { ...candidate, weight: candidate.weight + 0.15 }
+        : candidate
+    );
+    return pickWeightedPlatform(boosted, seed);
   }
   return pickWeightedPlatform(candidates, seed);
 }
@@ -193,6 +201,9 @@ function mapSearchPlatformToProvider(platform: string, locale: "zh" | "en"): str
     高德地图美食: "高德地图",
     百度地图美食: "百度地图",
     腾讯地图美食: "腾讯地图",
+    京东秒送: "京东秒送",
+    淘宝闪购: "淘宝闪购",
+    美团外卖: "美团外卖",
     高德地图旅游: "高德地图",
     百度地图旅游: "百度地图",
     高德地图健身: "高德地图",
@@ -241,12 +252,28 @@ export async function GET(
     const locale = (searchParams.get("locale") as "zh" | "en") || getLocale();
     const skipCache = searchParams.get("skipCache") === "true";
     const enableStreaming = searchParams.get("stream") === "true"; // 新增：是否启用流式响应
+    const client = (searchParams.get("client") as "app" | "web" | null) || "web";
     const latRaw = searchParams.get("lat");
     const lngRaw = searchParams.get("lng");
     const geo =
       latRaw && lngRaw && Number.isFinite(Number(latRaw)) && Number.isFinite(Number(lngRaw))
         ? { lat: Number(latRaw), lng: Number(lngRaw) }
         : null;
+    const excludeTitlesRaw = searchParams.get("excludeTitles");
+    let excludeTitles: string[] = [];
+    if (excludeTitlesRaw) {
+      try {
+        const parsed = JSON.parse(excludeTitlesRaw);
+        if (Array.isArray(parsed)) {
+          excludeTitles = parsed.filter((t) => typeof t === "string");
+        }
+      } catch {
+        excludeTitles = excludeTitlesRaw
+          .split(/[|,]/g)
+          .map((t) => t.trim())
+          .filter((t) => t.length > 0);
+      }
+    }
 
     // ==========================================
     // 使用量限制检查
@@ -319,6 +346,23 @@ export async function GET(
     const historyLimit = Math.min(Math.max(parseInt(searchParams.get("historyLimit") || "50"), 1), 100);
     let userHistory: Awaited<ReturnType<typeof getUserRecommendationHistory>> = [];
     let userPreference: Awaited<ReturnType<typeof getUserCategoryPreference>> = null;
+    let recommendationSignals:
+      | {
+          topTags: string[];
+          positiveSamples: Array<{
+            title: string;
+            tags?: string[];
+            searchQuery?: string;
+          }>;
+          negativeSamples: Array<{
+            title: string;
+            tags?: string[];
+            searchQuery?: string;
+            feedbackType: string;
+            rating?: number | null;
+          }>;
+        }
+      | null = null;
 
     if (isValidUserId(userId)) {
       try {
@@ -331,9 +375,85 @@ export async function GET(
       }
     }
 
+    if (isValidUserId(userId)) {
+      try {
+        const historyById = new Map(
+          (userHistory || [])
+            .filter((h) => typeof h?.id === "string" && typeof h?.title === "string")
+            .map((h) => [h.id, { title: h.title, metadata: h.metadata || null }] as const)
+        );
+
+        const feedbacks = await getUserFeedbackHistory(userId, 20);
+        const negativeSamples = extractNegativeFeedbackSamples({
+          feedbacks,
+          historyById,
+          maxSamples: 10,
+        }).map((s) => ({
+          title: s.title,
+          ...(s.tags && s.tags.length > 0 ? { tags: s.tags } : {}),
+          ...(s.searchQuery ? { searchQuery: s.searchQuery } : {}),
+          feedbackType: s.feedbackType,
+          ...(typeof s.rating === "number" ? { rating: s.rating } : {}),
+        }));
+
+        const topTags = (() => {
+          const weighted = Object.entries((userPreference as any)?.preferences || {})
+            .filter(([k, v]) => typeof k === "string" && k.trim().length > 0 && typeof v === "number")
+            .sort((a, b) => Number(b[1]) - Number(a[1]))
+            .map(([k]) => k.trim())
+            .slice(0, 12);
+          const direct = Array.isArray((userPreference as any)?.tags)
+            ? ((userPreference as any).tags as unknown[]).filter(
+                (t): t is string => typeof t === "string" && t.trim().length > 0
+              )
+            : [];
+          const merged = [...weighted, ...direct];
+          const seen = new Set<string>();
+          const uniq: string[] = [];
+          for (const tag of merged) {
+            const key = tag.trim().toLowerCase();
+            if (!key || seen.has(key)) continue;
+            seen.add(key);
+            uniq.push(tag.trim());
+          }
+          return uniq.slice(0, 12);
+        })();
+
+        const positiveSamples = (userHistory || [])
+          .filter((h: any) => !!h?.clicked || !!h?.saved)
+          .slice(0, 10)
+          .map((h: any) => {
+            const tagCandidate = h?.metadata?.tags;
+            const tags = Array.isArray(tagCandidate)
+              ? tagCandidate.filter((t: any) => typeof t === "string" && t.trim().length > 0)
+              : undefined;
+            const searchQueryCandidate = h?.metadata?.searchQuery;
+            const searchQuery =
+              typeof searchQueryCandidate === "string" && searchQueryCandidate.trim().length > 0
+                ? searchQueryCandidate
+                : undefined;
+            return {
+              title: h.title,
+              ...(tags && tags.length > 0 ? { tags } : {}),
+              ...(searchQuery ? { searchQuery } : {}),
+            };
+          })
+          .filter((s) => typeof s.title === "string" && s.title.trim().length > 0);
+
+        recommendationSignals = {
+          topTags,
+          positiveSamples,
+          negativeSamples,
+        };
+      } catch (signalError) {
+        console.warn("[Signals] Failed to load feedback signals:", signalError);
+        recommendationSignals = null;
+      }
+    }
+
     // 生成偏好哈希用于缓存
     // 对于匿名用户，禁用缓存以确保获得多样化的推荐
-    const preferenceHash = generatePreferenceHash(userPreference);
+    const preferenceHash = generatePreferenceHash(userPreference, userHistory || []);
     const isAnonymous = userId === "anonymous";
 
     // 尝试从缓存获取（仅用于登录用户）
@@ -344,9 +464,16 @@ export async function GET(
           // 从缓存中随机选择
           const shuffled = [...cachedRecommendations].sort(() => Math.random() - 0.5);
           console.log(`[Cache Hit] Using cached recommendations for ${category} with hash ${preferenceHash}`);
+          const normalizedRecommendations = shuffled.slice(0, count).map((rec) => ({
+            ...rec,
+            description: rec.description ?? "",
+            linkType: rec.linkType ?? "search",
+            metadata: (rec.metadata ?? {}) as any,
+            reason: rec.reason ?? "",
+          }));
           return NextResponse.json({
             success: true,
-            recommendations: shuffled.slice(0, count),
+            recommendations: normalizedRecommendations as any,
             source: "cache",
           } satisfies AIRecommendResponse);
         }
@@ -360,7 +487,16 @@ export async function GET(
     // 检查 AI 是否配置
     if (!isAIProviderConfigured()) {
       console.log("[AI] No provider configured for current region, using fallback data");
-      const fallbackRecs = await generateFallbackRecommendations(category, locale, count);
+      const fallbackRecs = await generateFallbackRecommendations({
+        category,
+        locale,
+        count,
+        client,
+        geo,
+        userHistory,
+        userPreference,
+        excludeTitles,
+      });
 
       return NextResponse.json({
         success: true,
@@ -373,12 +509,14 @@ export async function GET(
     try {
       // 1. 使用智谱 AI 生成推荐内容（不含链接）
       // 将用户偏好数据传递给 AI，用于生成更精准的个性化推荐
+      const candidateCount = Math.min(20, Math.max(count * 3, 12));
       const aiRecommendations = await generateRecommendations(
         userHistory || [],
         category,
         locale,
-        count,
-        userPreference // 传递用户偏好数据（包含问卷画像）
+        candidateCount,
+        userPreference, // 传递用户偏好数据（包含问卷画像）
+        { client, geo, avoidTitles: excludeTitles, signals: recommendationSignals }
       );
 
       // 2. 处理推荐的多样性
@@ -416,6 +554,44 @@ export async function GET(
           );
           processedRecommendations = [...aiRecommendations, ...supplements];
         }
+      }
+
+      processedRecommendations = dedupeRecommendations(processedRecommendations as any, {
+        count,
+        userHistory: userHistory as any,
+        excludeTitles,
+        mode: "strict",
+      });
+
+      if (processedRecommendations.length < count) {
+        const missing = count - processedRecommendations.length;
+        const topUpCandidateCount = Math.min(20, Math.max(missing * 4, 8));
+        const avoidTitlesForTopUp = [
+          ...excludeTitles,
+          ...(processedRecommendations as any[]).map((r) => r?.title),
+          ...(userHistory || []).map((h) => h?.title),
+        ]
+          .filter((t): t is string => typeof t === "string" && t.trim().length > 0)
+          .slice(0, 120);
+
+        const topUps = await generateRecommendations(
+          userHistory || [],
+          category,
+          locale,
+          topUpCandidateCount,
+          userPreference,
+          { client, geo, avoidTitles: avoidTitlesForTopUp, signals: recommendationSignals }
+        );
+
+        processedRecommendations = dedupeRecommendations(
+          [...(processedRecommendations as any[]), ...(topUps as any[])],
+          {
+            count,
+            userHistory: userHistory as any,
+            excludeTitles: avoidTitlesForTopUp,
+            mode: "strict",
+          }
+        );
       }
 
       // 3. 为每个推荐生成搜索引擎链接
@@ -593,6 +769,7 @@ export async function GET(
             searchQuery: enhancedRec.searchQuery,
             originalPlatform: enhancedRec.platform,
             isSearchLink: true,          // 标记这是搜索链接
+            tags: enhancedRec.tags,
           }
         };
 
@@ -607,14 +784,20 @@ export async function GET(
           metadata.fitnessType = (enhancedRec as any).fitnessType;
           // 添加易于理解的健身类型标签
           switch ((enhancedRec as any).fitnessType) {
+            case 'tutorial':
+              metadata.fitnessTypeLabel = locale === 'zh' ? '健身教程跟练' : 'Workout Tutorial';
+              break;
+            case 'nearby_place':
+              metadata.fitnessTypeLabel = locale === 'zh' ? '附近健身场所' : 'Nearby Fitness Place';
+              break;
+            case 'equipment':
+              metadata.fitnessTypeLabel = locale === 'zh' ? '器材评测推荐' : 'Equipment Review';
+              break;
             case 'video':
               metadata.fitnessTypeLabel = locale === 'zh' ? '健身视频课程' : 'Fitness Video Course';
               break;
             case 'plan':
               metadata.fitnessTypeLabel = locale === 'zh' ? '健身训练计划' : 'Fitness Training Plan';
-              break;
-            case 'equipment':
-              metadata.fitnessTypeLabel = locale === 'zh' ? '器材评测推荐' : 'Equipment Review';
               break;
           }
         }
@@ -773,7 +956,16 @@ export async function GET(
       console.error("AI recommendation failed:", aiError);
 
       // AI 失败，使用降级数据
-      const fallbackRecs = await generateFallbackRecommendations(category, locale, count);
+      const fallbackRecs = await generateFallbackRecommendations({
+        category,
+        locale,
+        count,
+        client,
+        geo,
+        userHistory,
+        userPreference,
+        excludeTitles,
+      });
 
       return NextResponse.json({
         success: true,
@@ -801,151 +993,37 @@ export async function GET(
  * 生成降级推荐（使用预定义的搜索链接）
  */
 async function generateFallbackRecommendations(
-  category: string,
-  locale: string,
-  count: number
+  params: {
+    category: RecommendationCategory;
+    locale: "zh" | "en";
+    count: number;
+    client: "app" | "web";
+    geo: { lat: number; lng: number } | null;
+    userHistory: Awaited<ReturnType<typeof getUserRecommendationHistory>>;
+    userPreference: Awaited<ReturnType<typeof getUserCategoryPreference>> | null;
+    excludeTitles: string[];
+  }
 ) {
-  const fallbacks: Record<string, Record<string, any[]>> = {
-    zh: {
-      entertainment: [{
-        title: '热门电影推荐',
-        description: '最近上映的高分电影',
-        reason: '根据大众喜好为你推荐',
-        tags: ['电影', '热门', '高分'],
-        searchQuery: '2024 热门电影 高分',
-        platform: '豆瓣'
-      }],
-      shopping: [{
-        title: '热销数码产品',
-        description: '最受欢迎的数码好物',
-        reason: '根据销量和评价为你推荐',
-        tags: ['数码', '热销', '好评'],
-        searchQuery: '热销数码产品 好评',
-        platform: '京东'
-      }],
-      food: [{
-        title: '特色美食餐厅',
-        description: '附近高评分餐厅',
-        reason: '根据评价为你推荐',
-        tags: ['美食', '餐厅', '高评分'],
-        searchQuery: '特色餐厅 高评分',
-        platform: '大众点评'
-      }],
-      travel: [{
-        title: '热门旅游景点',
-        description: '值得一去的景点',
-        reason: '根据热度为你推荐',
-        tags: ['旅游', '景点', '热门'],
-        searchQuery: '热门旅游景点',
-        platform: '携程'
-      }],
-      fitness: [
-        {
-          title: '附近健身房推荐（先看评论）',
-          description: '优先选择通风好、异味少的场馆；留意深蹲架数量是否够用、是否需要排队；尽量选步行15分钟内更容易坚持',
-          reason: '根据“附近场所”需求生成的本地健身地点推荐',
-          tags: ['附近', '健身房', '通风', '深蹲架'],
-          searchQuery: '附近 健身房 步行 地铁 商圈 深蹲架 通风',
-          platform: '大众点评',
-          fitnessType: 'nearby_place'
-        },
-        {
-          title: '45分钟全身力量跟练教程',
-          description: '新手友好的全身力量训练跟练视频，包含动作要点与常见错误提示',
-          reason: '根据“教程”需求生成的可直接跟练内容',
-          tags: ['力量训练', '跟练', '教程', '新手'],
-          searchQuery: '全身力量 跟练 教程 视频课',
-          platform: 'B站健身',
-          fitnessType: 'tutorial'
-        },
-        {
-          title: '哑铃使用教程：动作要点与常见错误',
-          description: '哑铃训练动作要点与发力细节，避免肩肘受伤，适合家庭训练入门',
-          reason: '根据“器材”需求生成的使用教程推荐',
-          tags: ['哑铃', '使用教程', '动作要点', '入门'],
-          searchQuery: '哑铃 使用教程 怎么用 动作要点 入门',
-          platform: 'B站健身',
-          fitnessType: 'equipment'
-        }
-      ]
-    },
-    en: {
-      entertainment: [{
-        title: 'Popular Movies',
-        description: 'Latest high-rated movies',
-        reason: 'Recommended based on popular preferences',
-        tags: ['movies', 'popular', 'high-rated'],
-        searchQuery: '2024 popular movies high rated',
-        platform: 'IMDb'
-      }],
-      shopping: [{
-        title: 'Trending Electronics',
-        description: 'Most popular electronic gadgets',
-        reason: 'Recommended based on sales and reviews',
-        tags: ['electronics', 'trending', 'top-rated'],
-        searchQuery: 'trending electronics best seller',
-        platform: 'Amazon'
-      }],
-      food: [{
-        title: 'Top-Rated Restaurants',
-        description: 'Highly-rated restaurants nearby',
-        reason: 'Recommended based on reviews',
-        tags: ['food', 'restaurant', 'high-rated'],
-        searchQuery: 'top-rated restaurants',
-        platform: 'Google Maps'
-      }],
-      travel: [{
-        title: 'Popular Attractions',
-        description: 'Must-visit destinations',
-        reason: 'Recommended based on popularity',
-        tags: ['travel', 'attractions', 'popular'],
-        searchQuery: 'popular tourist attractions',
-        platform: 'TripAdvisor'
-      }],
-      fitness: [
-        {
-          title: 'Nearby Gym Options',
-          description: 'Prioritize good ventilation, enough squat racks, and walkable distance to stay consistent',
-          reason: 'A nearby place recommendation to help you pick a real location',
-          tags: ['nearby', 'gym', 'squat racks', 'walkable'],
-          searchQuery: 'gym near me squat racks ventilation',
-          platform: 'Google Maps',
-          fitnessType: 'nearby_place'
-        },
-        {
-          title: '30-Minute Yoga Tutorial (Follow Along)',
-          description: 'Beginner-friendly follow-along yoga tutorial with clear cues and pacing',
-          reason: 'A tutorial recommendation you can start right away',
-          tags: ['yoga', 'beginner', 'tutorial', 'follow along'],
-          searchQuery: 'yoga tutorial follow along beginners',
-          platform: 'YouTube Fitness',
-          fitnessType: 'tutorial'
-        },
-        {
-          title: 'How to Use Dumbbells Safely (Form Tips)',
-          description: 'Beginner dumbbell how-to guidance with key form cues and common mistakes',
-          reason: 'An equipment how-to recommendation focused on practical usage',
-          tags: ['dumbbell', 'how to', 'form tips', 'beginner'],
-          searchQuery: 'how to use dumbbells form tips',
-          platform: 'YouTube Fitness',
-          fitnessType: 'equipment'
-        }
-      ]
-    }
-  };
-
-  const recs = fallbacks[locale]?.[category] || fallbacks.zh.entertainment;
-  const limitedRecs = recs.slice(0, Math.max(1, count));
+  const { category, client, count, excludeTitles, geo, locale, userHistory, userPreference } = params;
+  const limitedRecs = generateFallbackCandidates({
+    category,
+    locale,
+    count,
+    client,
+    userPreference: userPreference as any,
+    userHistory: userHistory as any,
+    excludeTitles,
+  });
 
   // 为每个推荐生成搜索链接
   return limitedRecs.map((rec, index) => {
-    const typedLocale = locale === "en" ? "en" : "zh";
     const selectionSeed = `fallback:${category}:${index}:${rec.title}`;
     const weightedPlatform = selectWeightedPlatformForCategory(
       category as RecommendationCategory,
-      typedLocale,
+      locale,
       selectionSeed,
-      rec.platform
+      rec.platform,
+      rec.entertainmentType
     );
 
     let platform: string;
@@ -957,9 +1035,16 @@ async function generateFallbackRecommendations(
       const fitnessType = rec.fitnessType || 'tutorial';
       platform = selectFitnessPlatform(fitnessType as any, rec.platform, locale);
     } else {
-      platform = selectBestPlatform(category, rec.platform, locale);
+      platform = selectBestPlatform(category, rec.platform, locale, rec.entertainmentType);
     }
-    let searchLink = generateSearchLink(rec.title, rec.searchQuery, platform, locale, category);
+    let searchLink = generateSearchLink(
+      rec.title,
+      rec.searchQuery,
+      platform,
+      locale,
+      category,
+      rec.entertainmentType
+    );
     if (geo && locale === "zh") {
       const baseQuery = (rec.searchQuery || rec.title) as string;
       const mapQuery =
@@ -988,12 +1073,12 @@ async function generateFallbackRecommendations(
       }
     }
     const region = isChinaDeployment() ? "CN" : "INTL";
-    const providerForCandidateLink = mapSearchPlatformToProvider(platform, typedLocale);
+    const providerForCandidateLink = mapSearchPlatformToProvider(platform, locale);
     const candidateLink = resolveCandidateLink({
       title: rec.title,
       query: rec.searchQuery || rec.title,
       category: category as RecommendationCategory,
-      locale: typedLocale,
+      locale,
       region,
       provider: providerForCandidateLink,
     });

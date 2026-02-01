@@ -38,7 +38,7 @@ function getAutoTryLinks(candidateLink: CandidateLink, os: "ios" | "android" | "
     (l) => l.type === "app" || l.type === "intent" || l.type === "universal_link"
   );
 
-  const ordered = [...fallbackTry, ...primaryTry];
+  const ordered = [...primaryTry, ...fallbackTry];
   const seen = new Set<string>();
   const unique: OutboundLink[] = [];
   for (const l of ordered) {
@@ -71,9 +71,15 @@ function filterStoreLinksByOs(storeLinks: OutboundLink[], os: "ios" | "android" 
     return [...appStore, ...rest];
   }
   if (os === "android") {
+    const systemStore = storeLinks.filter(
+      (l) =>
+        l.url.toLowerCase().startsWith("market://") ||
+        (l.label || "").includes("系统应用商店") ||
+        (l.label || "").toLowerCase().includes("google play")
+    );
     const yingyongbao = storeLinks.filter((l) => (l.label || "").includes("应用宝"));
-    const rest = storeLinks.filter((l) => !yingyongbao.includes(l));
-    return [...yingyongbao, ...rest];
+    const rest = storeLinks.filter((l) => !systemStore.includes(l) && !yingyongbao.includes(l));
+    return [...systemStore, ...yingyongbao, ...rest];
   }
   return storeLinks;
 }
@@ -126,6 +132,7 @@ export default function OutboundPage() {
   const searchParams = useSearchParams();
   const { language } = useLanguage();
   const [openState, setOpenState] = useState<OpenState>("idle");
+  const [autoRedirectSeconds, setAutoRedirectSeconds] = useState<number | null>(null);
   const returnTo = searchParams.get("returnTo");
 
   const handleBack = () => {
@@ -140,6 +147,8 @@ export default function OutboundPage() {
     }
     router.replace("/");
   };
+
+  const cancelAutoRedirect = () => setAutoRedirectSeconds(null);
 
   const decoded = useMemo((): { candidateLink: CandidateLink | null; error: string | null } => {
     const raw = searchParams.get("data");
@@ -195,6 +204,31 @@ export default function OutboundPage() {
     });
   }, [decoded.candidateLink]);
 
+  useEffect(() => {
+    if (!decoded.candidateLink) return;
+    if (openState !== "failed") {
+      setAutoRedirectSeconds(null);
+      return;
+    }
+    const web = getWebLink(decoded.candidateLink);
+    if (!web) return;
+
+    setAutoRedirectSeconds(3);
+    const timer = window.setInterval(() => {
+      setAutoRedirectSeconds((prev) => {
+        if (prev === null) return null;
+        if (prev <= 1) {
+          window.clearInterval(timer);
+          window.location.href = web.url;
+          return null;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [openState, decoded.candidateLink]);
+
   if (decoded.error) {
     return (
       <div className="min-h-screen bg-[#F7F9FC] p-4 flex items-center justify-center">
@@ -219,6 +253,7 @@ export default function OutboundPage() {
   const storeLinks = filterStoreLinksByOs(getStoreLinks(candidateLink), os);
   const otherLinks = getOtherFallbackLinks(candidateLink);
   const autoTryLinks = getAutoTryLinks(candidateLink, os);
+  const hasAutoTry = autoTryLinks.length > 0;
 
   return (
     <div className="min-h-screen bg-[#F7F9FC] p-4 flex items-center justify-center">
@@ -240,25 +275,39 @@ export default function OutboundPage() {
 
         {openState === "failed" && (
           <div className="text-sm text-gray-700 mb-4">
-            {language === "zh"
-              ? "未检测到 App 拉起，建议下载 App 或继续使用网页版。"
-              : "App launch not detected. Download the app or continue on web."}
+            {language === "zh" ? (
+              <>
+                未检测到 App 拉起，建议下载 App 或继续使用网页版。
+                {webLink && autoRedirectSeconds !== null ? `（${autoRedirectSeconds} 秒后自动打开网页版）` : ""}
+              </>
+            ) : (
+              <>
+                App launch not detected. Download the app or continue on web.
+                {webLink && autoRedirectSeconds !== null ? ` (Auto-opening web in ${autoRedirectSeconds}s)` : ""}
+              </>
+            )}
           </div>
         )}
 
         <div className="space-y-3">
-          <Button
-            className="w-full bg-black text-white hover:bg-black/90"
-            onClick={() => attemptOpenLinksSequential(autoTryLinks, 1100)}
-          >
-            {language === "zh" ? "打开 App（或继续）" : "Open app (or continue)"}
-          </Button>
+          {hasAutoTry && (
+            <Button
+              className="w-full bg-black text-white hover:bg-black/90"
+              onClick={() => {
+                cancelAutoRedirect();
+                attemptOpenLinksSequential(autoTryLinks, 1100);
+              }}
+            >
+              {language === "zh" ? "打开 App" : "Open app"}
+            </Button>
+          )}
 
           {webLink && (
             <Button
               className="w-full"
               variant="secondary"
               onClick={() => {
+                cancelAutoRedirect();
                 window.location.href = webLink.url;
               }}
             >
@@ -277,7 +326,10 @@ export default function OutboundPage() {
                     key={`${l.type}:${l.url}`}
                     className="w-full"
                     variant="outline"
-                    onClick={() => window.open(l.url, "_blank", "noopener,noreferrer")}
+                    onClick={() => {
+                      cancelAutoRedirect();
+                      window.open(l.url, "_blank", "noopener,noreferrer");
+                    }}
                   >
                     {l.label || (language === "zh" ? "应用商店" : "Store")}
                   </Button>
@@ -297,7 +349,10 @@ export default function OutboundPage() {
                     key={`${l.type}:${l.url}`}
                     className="w-full"
                     variant="ghost"
-                    onClick={() => window.open(l.url, "_blank", "noopener,noreferrer")}
+                    onClick={() => {
+                      cancelAutoRedirect();
+                      window.open(l.url, "_blank", "noopener,noreferrer");
+                    }}
                   >
                     {l.label || l.type}
                   </Button>

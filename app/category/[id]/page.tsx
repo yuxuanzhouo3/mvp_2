@@ -23,6 +23,7 @@ import { getClientLocale } from "@/lib/utils/locale"
 import { isValidUserId } from "@/lib/utils"
 import { fetchWithAuth } from "@/lib/auth/fetch-with-auth"
 import { trackClientEvent } from "@/lib/analytics/client"
+import { getClientHint } from "@/lib/app/app-container"
 
 // 使用量信息类型
 interface UsageInfo {
@@ -244,6 +245,7 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
 
   // 会话 ID
   const sessionIdRef = useRef<string>(`session_${Date.now()}`)
+  const viewedBatchKeyRef = useRef<string | null>(null)
 
   const categoryId = params.id as RecommendationCategory
   const category = categoryConfig[categoryId]
@@ -484,6 +486,22 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
     [categoryId, userId]
   )
 
+  useEffect(() => {
+    if (!userId || userId === "anonymous") return
+    if (currentRecommendations.length === 0) return
+
+    const key = `${categoryId}:${currentRecommendations
+      .map((r) => r.title)
+      .filter((t): t is string => typeof t === "string" && t.trim().length > 0)
+      .join("|")}`
+
+    if (viewedBatchKeyRef.current === key) return
+    viewedBatchKeyRef.current = key
+
+    const recsToRecord = currentRecommendations.slice(0, 10)
+    void Promise.allSettled(recsToRecord.map((rec) => recordAction(rec, "view")))
+  }, [categoryId, currentRecommendations, recordAction, userId])
+
   const requestRecommendations = useCallback(
     async (coordsOverride: { lat: number; lng: number } | null) => {
       if (!userId || userId === "anonymous") {
@@ -520,6 +538,25 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
         url.searchParams.set("count", "5")
         url.searchParams.set("locale", locale)
         url.searchParams.set("skipCache", "true")
+        url.searchParams.set("client", getClientHint())
+        const excludeTitles = (() => {
+          const mergedTitles = [
+            ...currentRecommendations.map((r) => r.title),
+            ...history.map((h) => h.title),
+          ].filter((t): t is string => typeof t === "string" && t.trim().length > 0)
+
+          const seen = new Set<string>()
+          const unique: string[] = []
+          for (const title of mergedTitles) {
+            if (seen.has(title)) continue
+            seen.add(title)
+            unique.push(title)
+          }
+          return unique.slice(0, 25)
+        })()
+        if (excludeTitles.length > 0) {
+          url.searchParams.set("excludeTitles", JSON.stringify(excludeTitles))
+        }
         if (coordsOverride) {
           url.searchParams.set("lat", String(coordsOverride.lat))
           url.searchParams.set("lng", String(coordsOverride.lng))
@@ -621,7 +658,7 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
         setIsLoading(false)
       }
     },
-    [categoryId, fetchRemoteHistory, history, locale, params.id, router, userId]
+    [categoryId, currentRecommendations, fetchRemoteHistory, history, locale, params.id, router, userId]
   )
 
   const fetchRecommendations = useCallback(async () => {
@@ -753,14 +790,27 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
 
   // 处理不感兴趣
   const handleDismiss = useCallback(
-    (recommendation: AIRecommendation) => {
-      recordAction(recommendation, "dismiss")
+    async (recommendation: AIRecommendation) => {
+      const historyId = await recordAction(recommendation, "dismiss")
+      if (userId && historyId && isValidUserId(userId)) {
+        void fetch("/api/recommend/submit-feedback", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId,
+            recommendationId: historyId,
+            feedbackType: "interest",
+            isInterested: false,
+            triggeredBy: "dismiss",
+          }),
+        })
+      }
       // 从当前推荐中移除
       setCurrentRecommendations((prev) =>
         prev.filter((r) => r.title !== recommendation.title)
       )
     },
-    [recordAction]
+    [recordAction, userId]
   )
 
   // 如果分类不存在
