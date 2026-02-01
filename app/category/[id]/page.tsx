@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { RecommendationCard, RecommendationList } from "@/components/RecommendationCard"
 import { FeedbackDialog } from "@/components/FeedbackDialog"
 import { OnboardingPrompt } from "@/components/OnboardingPrompt"
+import { LocationPermissionDialog } from "@/components/LocationPermissionDialog"
 import { useOnboarding, useFeedbackTrigger, usePageVisibility } from "@/hooks/use-onboarding"
 import { useIsIPhone } from "@/hooks/use-device"
 import type {
@@ -86,6 +87,7 @@ function mapHistoryRecordToRecommendation(record: RecommendationHistory): Histor
     category: record.category,
     link: record.link,
     linkType: record.link_type || "search",
+    candidateLink: (record.metadata as any)?.candidateLink,
     metadata: record.metadata || {},
     reason: record.reason || "",
     tags: (record.metadata?.tags as string[] | undefined) || undefined,
@@ -211,6 +213,10 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
   const [upgradeMessage, setUpgradeMessage] = useState<string | null>(null)
   // 使用环境变量中的地区设置
   const [locale] = useState<"zh" | "en">(() => getClientLocale())
+  const [locationDialogOpen, setLocationDialogOpen] = useState(false)
+  const [locationRequestPending, setLocationRequestPending] = useState(false)
+  const [locationConsent, setLocationConsent] = useState<"unknown" | "granted" | "denied">("unknown")
+  const [locationCoords, setLocationCoords] = useState<{ lat: number; lng: number } | null>(null)
 
   // 用户画像状态
   const {
@@ -241,12 +247,49 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
 
   const categoryId = params.id as RecommendationCategory
   const category = categoryConfig[categoryId]
+
+  useEffect(() => {
+    if (currentRecommendations.length > 0) return
+    try {
+      const raw = sessionStorage.getItem(`ai_last_results:${categoryId}`)
+      if (!raw) return
+      const parsed = JSON.parse(raw) as unknown
+      if (!Array.isArray(parsed)) return
+      setCurrentRecommendations(parsed as AIRecommendation[])
+    } catch {}
+  }, [categoryId, currentRecommendations.length])
+
+  useEffect(() => {
+    if (currentRecommendations.length === 0) return
+    try {
+      sessionStorage.setItem(`ai_last_results:${categoryId}`, JSON.stringify(currentRecommendations))
+    } catch {}
+  }, [categoryId, currentRecommendations])
   const historyProvider = RegionConfig.database.provider
 
   useEffect(() => {
     const resolvedId = getUserId()
     if (resolvedId !== "anonymous") {
       setUserId(resolvedId)
+    }
+  }, [])
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("geo-consent")
+      if (raw === "granted" || raw === "denied") {
+        setLocationConsent(raw)
+      }
+      const coordsRaw = localStorage.getItem("geo-coords")
+      if (coordsRaw) {
+        const parsed = JSON.parse(coordsRaw) as { lat: number; lng: number } | null
+        if (parsed && typeof parsed.lat === "number" && typeof parsed.lng === "number") {
+          setLocationCoords(parsed)
+        }
+      }
+    } catch {
+      setLocationConsent("unknown")
+      setLocationCoords(null)
     }
   }, [])
 
@@ -441,144 +484,228 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
     [categoryId, userId]
   )
 
-  // 获取 AI 推荐
-  const fetchRecommendations = useCallback(async () => {
-    // 检查用户是否登录，未登录则不获取推荐
-    if (!userId || userId === "anonymous") {
-      router.push("/login");
-      return;
-    }
-
-    setIsShaking(true)
-    setIsLoading(true)
-    setError(null)
-    setLimitExceeded(false)
-    setUpgradeMessage(null)
-
-    try {
-      const resolvedUserId = userId || getUserId()
-      const queryUserId = isValidUserId(resolvedUserId) ? resolvedUserId : "anonymous"
-
-      trackClientEvent({
-        eventType: "recommend_request",
-        userId: resolvedUserId,
-        path: `/category/${categoryId}`,
-        step: null,
-        properties: {
-          categoryId,
-          locale,
-          count: 5,
-          skipCache: true,
-        },
-      })
-      const response = await fetch(
-        `/api/recommend/ai/${categoryId}?userId=${queryUserId}&count=5&locale=${locale}&skipCache=true`,
-        { method: "GET" }
-      )
-
-      const data = await response.json()
-
-      // 处理使用量限制错误 (HTTP 429)
-      if (response.status === 429 || data.limitExceeded) {
-        trackClientEvent({
-          eventType: "recommend_error",
-          userId: resolvedUserId,
-          path: `/category/${categoryId}`,
-          step: null,
-          properties: {
-            categoryId,
-            locale,
-            reason: "limit",
-            status: response.status,
-          },
-        })
-        setLimitExceeded(true)
-        setError(data.error || (locale === "zh" ? "已达到使用限制" : "Usage limit reached"))
-        setUpgradeMessage(data.upgradeMessage || null)
-        if (data.usage) {
-          setUsageInfo(data.usage as UsageInfo)
-        }
-        setIsShaking(false)
-        setIsLoading(false)
+  const requestRecommendations = useCallback(
+    async (coordsOverride: { lat: number; lng: number } | null) => {
+      if (!userId || userId === "anonymous") {
+        router.push("/login")
         return
       }
 
-      if (!data.success || data.recommendations.length === 0) {
-        throw new Error(data.error || "No recommendations received")
-      }
+      setIsShaking(true)
+      setIsLoading(true)
+      setError(null)
+      setLimitExceeded(false)
+      setUpgradeMessage(null)
 
-      trackClientEvent({
-        eventType: "recommend_success",
-        userId: resolvedUserId,
-        path: `/category/${categoryId}`,
-        step: null,
-        properties: {
-          categoryId,
-          locale,
-          returned: Array.isArray(data.recommendations) ? data.recommendations.length : 0,
-          source: data.source || null,
-        },
-      })
-
-      // 更新使用量信息（如果返回了）
-      if (data.usage) {
-        setUsageInfo(data.usage as UsageInfo)
-      }
-
-      // 延迟显示结果以保持动画效果
-      setTimeout(() => {
-        const uniqueRecs = dedupeHistory(data.recommendations)
-        setCurrentRecommendations(uniqueRecs)
-        setSource(data.source)
+      try {
+        const resolvedUserId = userId || getUserId()
+        const queryUserId = isValidUserId(resolvedUserId) ? resolvedUserId : "anonymous"
 
         trackClientEvent({
-          eventType: "recommend_result_view",
+          eventType: "recommend_request",
           userId: resolvedUserId,
           path: `/category/${categoryId}`,
           step: null,
           properties: {
             categoryId,
             locale,
-            shown: uniqueRecs.length,
+            count: 5,
+            skipCache: true,
+            hasGeo: !!coordsOverride,
+          },
+        })
+
+        const url = new URL(`/api/recommend/ai/${categoryId}`, window.location.origin)
+        url.searchParams.set("userId", queryUserId)
+        url.searchParams.set("count", "5")
+        url.searchParams.set("locale", locale)
+        url.searchParams.set("skipCache", "true")
+        if (coordsOverride) {
+          url.searchParams.set("lat", String(coordsOverride.lat))
+          url.searchParams.set("lng", String(coordsOverride.lng))
+        }
+
+        const response = await fetch(`${url.pathname}?${url.searchParams.toString()}`, { method: "GET" })
+        const data = await response.json()
+
+        if (response.status === 429 || data.limitExceeded) {
+          trackClientEvent({
+            eventType: "recommend_error",
+            userId: resolvedUserId,
+            path: `/category/${categoryId}`,
+            step: null,
+            properties: {
+              categoryId,
+              locale,
+              reason: "limit",
+              status: response.status,
+            },
+          })
+          setLimitExceeded(true)
+          setError(data.error || (locale === "zh" ? "已达到使用限制" : "Usage limit reached"))
+          setUpgradeMessage(data.upgradeMessage || null)
+          if (data.usage) {
+            setUsageInfo(data.usage as UsageInfo)
+          }
+          setIsShaking(false)
+          setIsLoading(false)
+          return
+        }
+
+        if (!data.success || data.recommendations.length === 0) {
+          throw new Error(data.error || "No recommendations received")
+        }
+
+        trackClientEvent({
+          eventType: "recommend_success",
+          userId: resolvedUserId,
+          path: `/category/${categoryId}`,
+          step: null,
+          properties: {
+            categoryId,
+            locale,
+            returned: Array.isArray(data.recommendations) ? data.recommendations.length : 0,
             source: data.source || null,
           },
         })
 
-        // 更新历史（保留最近 10 条）
-        const newHistory: HistoryItem[] = dedupeHistory([
-          ...uniqueRecs,
-          ...history,
-        ]).slice(0, 10)
-        setHistory(newHistory)
-        localStorage.setItem(`ai_history_${params.id}`, JSON.stringify(newHistory))
-
-        // 同步远端历史记录（根据地区使用 Supabase 或 CloudBase）
-        if (isValidUserId(resolvedUserId)) {
-          fetchRemoteHistory(resolvedUserId)
+        if (data.usage) {
+          setUsageInfo(data.usage as UsageInfo)
         }
 
+        setTimeout(() => {
+          const uniqueRecs = dedupeHistory(data.recommendations)
+          setCurrentRecommendations(uniqueRecs)
+          setSource(data.source)
+
+          trackClientEvent({
+            eventType: "recommend_result_view",
+            userId: resolvedUserId,
+            path: `/category/${categoryId}`,
+            step: null,
+            properties: {
+              categoryId,
+              locale,
+              shown: uniqueRecs.length,
+              source: data.source || null,
+            },
+          })
+
+          const newHistory: HistoryItem[] = dedupeHistory([...uniqueRecs, ...history]).slice(0, 10)
+          setHistory(newHistory)
+          localStorage.setItem(`ai_history_${params.id}`, JSON.stringify(newHistory))
+
+          if (isValidUserId(resolvedUserId)) {
+            fetchRemoteHistory(resolvedUserId)
+          }
+
+          setIsShaking(false)
+          setIsLoading(false)
+        }, 1500)
+      } catch (err) {
+        console.error("Error fetching recommendations:", err)
+        trackClientEvent({
+          eventType: "recommend_error",
+          userId,
+          path: `/category/${categoryId}`,
+          step: null,
+          properties: {
+            categoryId,
+            locale,
+            reason: "exception",
+            message: err instanceof Error ? err.message : String(err || ""),
+          },
+        })
+        setError(err instanceof Error ? err.message : "Failed to get recommendations")
         setIsShaking(false)
         setIsLoading(false)
-      }, 1500)
-    } catch (err) {
-      console.error("Error fetching recommendations:", err)
-      trackClientEvent({
-        eventType: "recommend_error",
-        userId,
-        path: `/category/${categoryId}`,
-        step: null,
-        properties: {
-          categoryId,
-          locale,
-          reason: "exception",
-          message: err instanceof Error ? err.message : String(err || ""),
-        },
-      })
-      setError(err instanceof Error ? err.message : "Failed to get recommendations")
-      setIsShaking(false)
-      setIsLoading(false)
+      }
+    },
+    [categoryId, fetchRemoteHistory, history, locale, params.id, router, userId]
+  )
+
+  const fetchRecommendations = useCallback(async () => {
+    const ua = typeof navigator !== "undefined" ? navigator.userAgent : ""
+    const isMobile = isIPhone || /android/i.test(ua) || (typeof window !== "undefined" && window.innerWidth < 768)
+    const needsLocation = categoryId === "food" || categoryId === "fitness"
+
+    if (needsLocation && isMobile) {
+      if (locationConsent === "unknown") {
+        setLocationRequestPending(true)
+        setLocationDialogOpen(true)
+        return
+      }
+      if (locationConsent === "granted" && !locationCoords) {
+        setLocationRequestPending(true)
+        setLocationDialogOpen(true)
+        return
+      }
     }
-  }, [categoryId, locale, history, params.id, recordAction, fetchRemoteHistory, userId, router])
+
+    const coordsToUse = needsLocation && isMobile && locationConsent === "granted" ? locationCoords : null
+    await requestRecommendations(coordsToUse)
+  }, [categoryId, isIPhone, locationConsent, locationCoords, requestRecommendations])
+
+  const handleLocationAllow = useCallback(() => {
+    setLocationDialogOpen(false)
+    setLocationConsent("granted")
+    try {
+      localStorage.setItem("geo-consent", "granted")
+    } catch {}
+
+    if (!navigator.geolocation) {
+      setLocationConsent("denied")
+      try {
+        localStorage.setItem("geo-consent", "denied")
+      } catch {}
+      const shouldContinue = locationRequestPending
+      setLocationRequestPending(false)
+      if (shouldContinue) {
+        requestRecommendations(null)
+      }
+      return
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude }
+        setLocationCoords(coords)
+        try {
+          localStorage.setItem("geo-coords", JSON.stringify(coords))
+        } catch {}
+        const shouldContinue = locationRequestPending
+        setLocationRequestPending(false)
+        if (shouldContinue) {
+          requestRecommendations(coords)
+        }
+      },
+      () => {
+        setLocationConsent("denied")
+        try {
+          localStorage.setItem("geo-consent", "denied")
+        } catch {}
+        const shouldContinue = locationRequestPending
+        setLocationRequestPending(false)
+        if (shouldContinue) {
+          requestRecommendations(null)
+        }
+      },
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 5 * 60 * 1000 }
+    )
+  }, [locationRequestPending, requestRecommendations])
+
+  const handleLocationDeny = useCallback(() => {
+    setLocationDialogOpen(false)
+    setLocationConsent("denied")
+    try {
+      localStorage.setItem("geo-consent", "denied")
+    } catch {}
+    const shouldContinue = locationRequestPending
+    setLocationRequestPending(false)
+    if (shouldContinue) {
+      requestRecommendations(null)
+    }
+  }, [locationRequestPending, requestRecommendations])
 
   // 处理链接点击 - 增强版，包含追踪功能
   const handleLinkClick = useCallback(
@@ -997,6 +1124,13 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
           </p>
         </div>
       </div>
+
+      <LocationPermissionDialog
+        open={locationDialogOpen}
+        locale={locale}
+        onAllow={handleLocationAllow}
+        onDeny={handleLocationDeny}
+      />
 
       {/* 反馈弹窗 */}
       <FeedbackDialog

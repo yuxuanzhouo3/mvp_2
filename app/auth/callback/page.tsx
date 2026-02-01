@@ -17,6 +17,7 @@ function AuthCallbackContent() {
   const errorParam = searchParams.get("error")
   const errorDescription = searchParams.get("error_description")
   const redirectPath = searchParams.get("redirect") || searchParams.get("next") || "/"
+  const provider = searchParams.get("provider")
 
   const [status, setStatus] = useState<AuthStatus>("loading")
   const [message, setMessage] = useState("正在完成登录，请稍候...")
@@ -40,7 +41,7 @@ function AuthCallbackContent() {
           // 如果没有授权码
           if (!code) {
             setStatus("error")
-            setMessage("缺少微信授权码")
+            setMessage(provider === "wechat_mobile" ? "缺少微信授权码（移动应用）" : "缺少微信授权码")
             setTimeout(() => router.replace("/login"), 1500)
             return
           }
@@ -58,8 +59,8 @@ function AuthCallbackContent() {
             }
           }
 
-          // 调用后端 API 完成微信登录
-          const response = await fetch("/api/auth/wechat", {
+          const endpoint = provider === "wechat_mobile" ? "/api/auth/wechat/mobile" : "/api/auth/wechat"
+          const response = await fetch(endpoint, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ code, state: stateParam }),
@@ -210,7 +211,7 @@ function AuthCallbackContent() {
     return () => {
       cancelled = true
     }
-  }, [code, stateParam, redirectPath, router, errorParam, errorDescription, searchParams])
+  }, [code, stateParam, redirectPath, router, errorParam, errorDescription, searchParams, provider])
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-4 py-12">

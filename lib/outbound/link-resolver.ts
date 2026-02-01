@@ -75,15 +75,15 @@ function getFallbackProviders(
   if (region === "CN") {
     switch (category) {
       case "food":
-        return ["高德地图", "百度地图", "百度", "B站"];
+        return ["大众点评", "高德地图", "百度地图", "腾讯地图", "百度"];
       case "shopping":
-        return ["百度", "高德地图", "百度地图", "B站"];
+        return ["京东", "淘宝", "拼多多", "唯品会", "百度"];
       case "entertainment":
-        return ["B站", "百度"];
+        return ["腾讯视频", "优酷", "QQ音乐", "酷狗音乐", "网易云音乐", "TapTap", "豆瓣", "百度"];
       case "travel":
-        return ["高德地图", "百度地图", "百度", "B站"];
+        return ["携程", "去哪儿", "小红书", "马蜂窝", "百度"];
       case "fitness":
-        return ["Keep", "B站", "百度", "高德地图"];
+        return ["Keep", "B站", "优酷", "大众点评", "美团", "高德地图", "百度地图", "腾讯地图", "百度"];
       default:
         return ["百度"];
     }
@@ -151,24 +151,25 @@ export function resolveCandidateLink(input: ResolveCandidateLinkInput): Candidat
     if (!fallbackProvider) continue;
 
     const fallbackPrimary = resolvePrimary(fallbackProvider, ctx);
+    const label = fallbackProvider.displayName[input.locale];
     if (fallbackPrimary.type === "universal_link") {
       if (fallbackId === "Google Maps" || fallbackId === "高德地图" || fallbackId === "百度地图") {
-        fallbackLinks.push({ ...fallbackPrimary, type: "map" });
+        fallbackLinks.push({ ...fallbackPrimary, type: "map", label });
       } else if (fallbackId === "YouTube" || fallbackId === "B站" || fallbackId === "YouTube Fitness") {
-        fallbackLinks.push({ ...fallbackPrimary, type: "video" });
+        fallbackLinks.push({ ...fallbackPrimary, type: "video", label });
       } else {
-        fallbackLinks.push({ ...fallbackPrimary, type: "search" });
+        fallbackLinks.push({ ...fallbackPrimary, type: "search", label });
       }
     } else if (fallbackPrimary.type === "web") {
       if (fallbackId === "Google Maps" || fallbackId === "高德地图" || fallbackId === "百度地图") {
-        fallbackLinks.push({ ...fallbackPrimary, type: "map" });
+        fallbackLinks.push({ ...fallbackPrimary, type: "map", label });
       } else if (fallbackId === "YouTube" || fallbackId === "B站" || fallbackId === "YouTube Fitness") {
-        fallbackLinks.push({ ...fallbackPrimary, type: "video" });
+        fallbackLinks.push({ ...fallbackPrimary, type: "video", label });
       } else {
-        fallbackLinks.push({ ...fallbackPrimary, type: "search" });
+        fallbackLinks.push({ ...fallbackPrimary, type: "search", label });
       }
     } else {
-      fallbackLinks.push(fallbackPrimary);
+      fallbackLinks.push({ ...fallbackPrimary, label });
     }
   }
 
@@ -192,4 +193,3 @@ export function resolveCandidateLink(input: ResolveCandidateLinkInput): Candidat
     },
   };
 }
-

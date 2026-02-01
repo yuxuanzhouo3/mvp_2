@@ -196,7 +196,7 @@ export default function HistoryPage() {
         } finally {
             setIsLoading(false)
         }
-    }, [isAuthenticated, user?.id])
+    }, [historyProvider, isAuthenticated, user?.id])
 
     // 初始化时获取数据
     useEffect(() => {

@@ -251,8 +251,48 @@ export default function LoginPage() {
         return
       }
 
-      // PC/手机浏览器：获取微信登录二维码 URL
       const nextPath = '/'
+
+      const appFlag = new URLSearchParams(window.location.search).get("app") === "1"
+      const w = window as any
+      const hasNativeBridge =
+        !!w.ReactNativeWebView?.postMessage ||
+        !!w.webkit?.messageHandlers?.wechatLogin?.postMessage ||
+        !!w.webkit?.messageHandlers?.native?.postMessage ||
+        typeof w.Android?.wechatLogin === "function"
+
+      if (appFlag || hasNativeBridge) {
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin
+        const callbackUrl = new URL('/auth/callback', baseUrl)
+        callbackUrl.searchParams.set('provider', 'wechat_mobile')
+        callbackUrl.searchParams.set('redirect', nextPath)
+
+        const payload = JSON.stringify({
+          type: "wechat_mobile_login",
+          callbackUrl: callbackUrl.toString(),
+        })
+
+        if (w.ReactNativeWebView?.postMessage) {
+          w.ReactNativeWebView.postMessage(payload)
+          return
+        }
+        if (w.webkit?.messageHandlers?.wechatLogin?.postMessage) {
+          w.webkit.messageHandlers.wechatLogin.postMessage(payload)
+          return
+        }
+        if (w.webkit?.messageHandlers?.native?.postMessage) {
+          w.webkit.messageHandlers.native.postMessage(payload)
+          return
+        }
+        if (typeof w.Android?.wechatLogin === "function") {
+          w.Android.wechatLogin(callbackUrl.toString())
+          return
+        }
+
+        throw new Error('检测到 App 环境，但未发现可用的原生登录桥接')
+      }
+
+      // PC/手机浏览器：获取微信登录二维码 URL
       const response = await fetch(`/api/auth/wechat/qrcode?next=${encodeURIComponent(nextPath)}`)
       const data = await response.json()
 

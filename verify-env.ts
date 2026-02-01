@@ -58,6 +58,9 @@ const ENV_CONFIG = {
       "ZHIPU_API_KEY",
     ],
     optional: [
+      "WECHAT_MOBILE_APP",
+      "WECHAT_MOBILE_APP_ID",
+      "WECHAT_MOBILE_APP_SECRET",
       // 微信支付（稍后实现）
       "WECHAT_PAY_APPID",
       "WECHAT_PAY_MCHID",

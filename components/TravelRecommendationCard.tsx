@@ -95,7 +95,8 @@ export function TravelRecommendationCard({
       /iphone|ipad|ipod|android/i.test(ua) ||
       (typeof window !== "undefined" && window.innerWidth < 768);
     if (isMobile && recommendation.candidateLink) {
-      window.location.href = buildOutboundHref(recommendation.candidateLink);
+      const returnTo = typeof window !== "undefined" ? `${window.location.pathname}${window.location.search}` : "/";
+      window.location.href = buildOutboundHref(recommendation.candidateLink, returnTo);
       return;
     }
     window.open(link, "_blank", "noopener,noreferrer");

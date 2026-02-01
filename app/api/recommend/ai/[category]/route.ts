@@ -95,53 +95,32 @@ function selectWeightedPlatformForCategory(
       switch (category) {
         case "food":
           return [
-            { platform: "美团", weight: 0.3 },
-            { platform: "饿了么", weight: 0.3 },
-            { platform: "大众点评", weight: 0.1 },
-            { platform: "高德地图美食", weight: 0.1 },
-            { platform: "百度地图美食", weight: 0.1 },
-            { platform: "下厨房", weight: 0.1 },
+            { platform: "大众点评", weight: 0.35 },
+            { platform: "高德地图美食", weight: 0.25 },
+            { platform: "百度地图美食", weight: 0.2 },
+            { platform: "腾讯地图美食", weight: 0.2 },
           ];
         case "shopping":
           return [
-            { platform: "淘宝", weight: 0.2 },
-            { platform: "京东", weight: 0.2 },
+            { platform: "京东", weight: 0.3 },
+            { platform: "淘宝", weight: 0.3 },
             { platform: "拼多多", weight: 0.2 },
-            { platform: "什么值得买", weight: 0.1 },
-            { platform: "苏宁易购", weight: 0.1 },
-            { platform: "唯品会", weight: 0.1 },
-            { platform: "1688", weight: 0.1 },
+            { platform: "唯品会", weight: 0.2 },
           ];
         case "entertainment":
           return [
-            { platform: "B站", weight: 0.2 },
-            { platform: "腾讯视频", weight: 0.2 },
-            { platform: "爱奇艺", weight: 0.2 },
-            { platform: "优酷", weight: 0.1 },
-            { platform: "豆瓣", weight: 0.1 },
-            { platform: "百度", weight: 0.1 },
-            { platform: "QQ音乐", weight: 0.1 },
+            { platform: "腾讯视频", weight: 0.5 },
+            { platform: "优酷", weight: 0.5 },
           ];
         case "travel":
           return [
-            { platform: "携程", weight: 0.2 },
-            { platform: "高德地图旅游", weight: 0.2 },
-            { platform: "百度地图旅游", weight: 0.2 },
-            { platform: "马蜂窝", weight: 0.1 },
-            { platform: "Booking.com", weight: 0.1 },
-            { platform: "Agoda", weight: 0.1 },
-            { platform: "穷游", weight: 0.1 },
+            { platform: "携程", weight: 0.3 },
+            { platform: "去哪儿", weight: 0.25 },
+            { platform: "小红书", weight: 0.2 },
+            { platform: "马蜂窝", weight: 0.25 },
           ];
         case "fitness":
-          return [
-            { platform: "B站健身", weight: 0.2 },
-            { platform: "腾讯视频健身", weight: 0.2 },
-            { platform: "优酷健身", weight: 0.2 },
-            { platform: "百度地图健身", weight: 0.1 },
-            { platform: "高德地图健身", weight: 0.1 },
-            { platform: "百度健身", weight: 0.1 },
-            { platform: "FitnessVolt", weight: 0.1 },
-          ];
+          return null;
         default:
           return null;
       }
@@ -213,10 +192,12 @@ function mapSearchPlatformToProvider(platform: string, locale: "zh" | "en"): str
   const cnMap: Record<string, string> = {
     高德地图美食: "高德地图",
     百度地图美食: "百度地图",
+    腾讯地图美食: "腾讯地图",
     高德地图旅游: "高德地图",
     百度地图旅游: "百度地图",
     高德地图健身: "高德地图",
     百度地图健身: "百度地图",
+    腾讯地图健身: "腾讯地图",
     百度美食: "百度",
     百度健身: "百度",
     B站健身: "B站",
@@ -260,6 +241,12 @@ export async function GET(
     const locale = (searchParams.get("locale") as "zh" | "en") || getLocale();
     const skipCache = searchParams.get("skipCache") === "true";
     const enableStreaming = searchParams.get("stream") === "true"; // 新增：是否启用流式响应
+    const latRaw = searchParams.get("lat");
+    const lngRaw = searchParams.get("lng");
+    const geo =
+      latRaw && lngRaw && Number.isFinite(Number(latRaw)) && Number.isFinite(Number(lngRaw))
+        ? { lat: Number(latRaw), lng: Number(lngRaw) }
+        : null;
 
     // ==========================================
     // 使用量限制检查
@@ -459,14 +446,14 @@ export async function GET(
         } else if (category === 'food') {
           platform = selectFoodPlatformWithRotation(index, enhancedRec.platform, locale);
         } else if (category === 'fitness') {
-          const fitnessType = (enhancedRec as any).fitnessType || 'video';
+          const fitnessType = (enhancedRec as any).fitnessType || 'tutorial';
           platform = selectFitnessPlatform(fitnessType, enhancedRec.platform, locale);
         } else {
           platform = selectBestPlatform(category, enhancedRec.platform, locale, enhancedRec.entertainmentType);
         }
 
         // 生成搜索链接（传递娱乐类型）
-        const searchLink = generateSearchLink(
+        let searchLink = generateSearchLink(
           enhancedRec.title,
           enhancedRec.searchQuery,
           platform,
@@ -475,6 +462,34 @@ export async function GET(
           enhancedRec.entertainmentType
         );
 
+        if (geo && locale === "zh") {
+          const baseQuery = (enhancedRec.searchQuery || enhancedRec.title) as string;
+          const mapQuery =
+            platform === "百度地图美食" || platform === "高德地图美食" || platform === "腾讯地图美食"
+              ? `${baseQuery} 餐厅`
+              : platform === "百度地图健身" || platform === "高德地图健身" || platform === "腾讯地图健身"
+                ? `${baseQuery} 健身房`
+                : baseQuery;
+
+          if (platform === "百度地图美食" || platform === "百度地图健身" || platform === "百度地图") {
+            searchLink = {
+              ...searchLink,
+              url: `https://api.map.baidu.com/place/search?query=${encodeURIComponent(mapQuery)}&location=${encodeURIComponent(
+                `${geo.lat},${geo.lng}`
+              )}&radius=2000&output=html&src=mvp_2-demo`,
+            };
+          }
+
+          if (platform === "高德地图美食" || platform === "高德地图健身" || platform === "高德地图") {
+            searchLink = {
+              ...searchLink,
+              url: `https://uri.amap.com/search?keyword=${encodeURIComponent(mapQuery)}&center=${encodeURIComponent(
+                `${geo.lng},${geo.lat}`
+              )}&radius=2000`,
+            };
+          }
+        }
+
         // 根据类别和平台确定 linkType
         let linkType: LinkType = 'search'; // 默认值
 
@@ -482,31 +497,34 @@ export async function GET(
           linkType = 'location';
         } else if (category === 'fitness') {
           // 健身分类根据推荐的具体类型设置 linkType
-          const fitnessType = (enhancedRec as any).fitnessType || 'video';
+          const fitnessType = (enhancedRec as any).fitnessType || 'tutorial';
 
           switch (fitnessType) {
-            case 'video':
-              // 健身视频课程
+            case 'tutorial':
               linkType = 'video';
               break;
-            case 'plan':
-              // 健身训练计划文章
-              linkType = 'search';
+            case 'nearby_place':
+              linkType = 'location';
               break;
             case 'equipment':
-              // 器材评测文章
-              linkType = 'search';
+              if (platform === 'B站健身' || platform === '优酷健身' || platform === 'YouTube' || platform === 'YouTube Fitness') {
+                linkType = 'video';
+              } else {
+                linkType = 'search';
+              }
               break;
             default:
               // 后备方案：根据平台
               if (platform === 'YouTube' || platform === 'YouTube Fitness') {
                 linkType = 'video';
-              } else if (platform === 'FitnessVolt' || platform === 'GarageGymReviews' || platform === 'Muscle & Strength') {
-                linkType = 'search';
               } else if (platform === 'Keep' || platform === 'Peloton') {
                 linkType = 'app';
               } else if (platform === '小红书') {
                 linkType = 'article';
+              } else if (platform === '百度地图健身' || platform === '高德地图健身' || platform === '腾讯地图健身' || platform === '大众点评' || platform === '美团') {
+                linkType = 'location';
+              } else {
+                linkType = 'search';
               }
           }
         } else if (category === 'entertainment') {
@@ -517,11 +535,11 @@ export async function GET(
             'PlayStation Store', 'Xbox Store', 'Nintendo eShop', 'GOG', 'Humble Bundle', 'itch.io', 'Game Pass', 'Green Man Gaming'
           ];
           
-          if (platform === 'B站' || platform === 'YouTube' || platform === '爱奇艺' || platform === '腾讯视频' || platform === 'Netflix') {
+          if (platform === 'B站' || platform === 'YouTube' || platform === '爱奇艺' || platform === '腾讯视频' || platform === '优酷' || platform === 'Netflix') {
             linkType = 'video';
           } else if (gamePlatforms.includes(platform) || enhancedRec.entertainmentType === 'game') {
             linkType = 'game';
-          } else if (platform === '网易云音乐' || platform === 'Spotify') {
+          } else if (platform === '酷狗音乐' || platform === 'QQ音乐' || platform === '网易云音乐' || platform === 'Spotify') {
             linkType = 'music';
           } else if (platform === '豆瓣' || platform === 'IMDb') {
             linkType = 'article';
@@ -531,7 +549,17 @@ export async function GET(
           linkType = 'product';
         } else if (category === 'food') {
           // 美食分类根据平台设置
-          if (platform === '大众点评' || platform === '美团' || platform === 'TripAdvisor' || platform === 'OpenTable' || platform === '百度地图' || platform === 'Google Maps') {
+          if (
+            platform === '大众点评' ||
+            platform === '美团' ||
+            platform === 'TripAdvisor' ||
+            platform === 'OpenTable' ||
+            platform === '百度地图' ||
+            platform === '百度地图美食' ||
+            platform === '高德地图美食' ||
+            platform === '腾讯地图美食' ||
+            platform === 'Google Maps'
+          ) {
             linkType = 'restaurant';
           } else if (platform === '下厨房' || platform === 'Allrecipes') {
             linkType = 'recipe';
@@ -813,31 +841,31 @@ async function generateFallbackRecommendations(
       }],
       fitness: [
         {
-          title: '30分钟瑜伽视频课程',
-          description: '专业教练的瑜伽视频教程，适合初学者',
-          reason: '帮助你通过视频课程开始健身之旅',
-          tags: ['瑜伽', '视频课程', '初学者'],
-          searchQuery: '瑜伽入门视频课程',
-          platform: 'B站健身',  // 改用B站健身
-          fitnessType: 'video'
+          title: '附近健身房推荐（先看评论）',
+          description: '优先选择通风好、异味少的场馆；留意深蹲架数量是否够用、是否需要排队；尽量选步行15分钟内更容易坚持',
+          reason: '根据“附近场所”需求生成的本地健身地点推荐',
+          tags: ['附近', '健身房', '通风', '深蹲架'],
+          searchQuery: '附近 健身房 步行 地铁 商圈 深蹲架 通风',
+          platform: '大众点评',
+          fitnessType: 'nearby_place'
         },
         {
-          title: '哑铃评测与购买指南',
-          description: '全面的哑铃评测和选购推荐',
-          reason: '帮你选择合适的健身器材',
-          tags: ['哑铃评测', '购买指南', '器材推荐'],
-          searchQuery: '哑铃评测推荐',
-          platform: 'GarageGymReviews',
+          title: '45分钟全身力量跟练教程',
+          description: '新手友好的全身力量训练跟练视频，包含动作要点与常见错误提示',
+          reason: '根据“教程”需求生成的可直接跟练内容',
+          tags: ['力量训练', '跟练', '教程', '新手'],
+          searchQuery: '全身力量 跟练 教程 视频课',
+          platform: 'B站健身',
+          fitnessType: 'tutorial'
+        },
+        {
+          title: '哑铃使用教程：动作要点与常见错误',
+          description: '哑铃训练动作要点与发力细节，避免肩肘受伤，适合家庭训练入门',
+          reason: '根据“器材”需求生成的使用教程推荐',
+          tags: ['哑铃', '使用教程', '动作要点', '入门'],
+          searchQuery: '哑铃 使用教程 怎么用 动作要点 入门',
+          platform: 'B站健身',
           fitnessType: 'equipment'
-        },
-        {
-          title: '12周肌肉增长训练计划',
-          description: '科学的增肌训练计划和健身方案',
-          reason: '让你拥有完整的健身计划达成目标',
-          tags: ['健身计划', '增肌', '训练方案'],
-          searchQuery: '肌肉训练计划增肌',
-          platform: 'FitnessVolt',
-          fitnessType: 'plan'
         }
       ]
     },
@@ -876,31 +904,31 @@ async function generateFallbackRecommendations(
       }],
       fitness: [
         {
-          title: '30-Minute Yoga Video Course',
-          description: 'Professional yoga video tutorial perfect for beginners',
-          reason: 'Help you start your fitness journey with video courses',
-          tags: ['yoga', 'beginner', 'video course'],
-          searchQuery: 'yoga for beginners video tutorial',
-          platform: 'YouTube',
-          fitnessType: 'video'
+          title: 'Nearby Gym Options',
+          description: 'Prioritize good ventilation, enough squat racks, and walkable distance to stay consistent',
+          reason: 'A nearby place recommendation to help you pick a real location',
+          tags: ['nearby', 'gym', 'squat racks', 'walkable'],
+          searchQuery: 'gym near me squat racks ventilation',
+          platform: 'Google Maps',
+          fitnessType: 'nearby_place'
         },
         {
-          title: 'Dumbbell Reviews and Buying Guide',
-          description: 'Comprehensive dumbbell reviews and purchasing recommendations',
-          reason: 'Help you choose the right equipment for training',
-          tags: ['dumbbell', 'equipment review', 'buying guide'],
-          searchQuery: 'dumbbell reviews recommendation',
-          platform: 'GarageGymReviews',
+          title: '30-Minute Yoga Tutorial (Follow Along)',
+          description: 'Beginner-friendly follow-along yoga tutorial with clear cues and pacing',
+          reason: 'A tutorial recommendation you can start right away',
+          tags: ['yoga', 'beginner', 'tutorial', 'follow along'],
+          searchQuery: 'yoga tutorial follow along beginners',
+          platform: 'YouTube Fitness',
+          fitnessType: 'tutorial'
+        },
+        {
+          title: 'How to Use Dumbbells Safely (Form Tips)',
+          description: 'Beginner dumbbell how-to guidance with key form cues and common mistakes',
+          reason: 'An equipment how-to recommendation focused on practical usage',
+          tags: ['dumbbell', 'how to', 'form tips', 'beginner'],
+          searchQuery: 'how to use dumbbells form tips',
+          platform: 'YouTube Fitness',
           fitnessType: 'equipment'
-        },
-        {
-          title: '12-Week Muscle Building Program',
-          description: 'Scientific muscle building training plan and workout routine',
-          reason: 'A complete fitness plan to help you achieve your goals',
-          tags: ['muscle building', 'training plan', 'workout program'],
-          searchQuery: 'muscle building training program',
-          platform: 'FitnessVolt',
-          fitnessType: 'plan'
         }
       ]
     }
@@ -926,12 +954,39 @@ async function generateFallbackRecommendations(
     } else if (category === 'food') {
       platform = selectFoodPlatformWithRotation(index, rec.platform, locale);
     } else if (category === 'fitness') {
-      const fitnessType = rec.fitnessType || 'video';
-      platform = selectFitnessPlatform(fitnessType, rec.platform, locale);
+      const fitnessType = rec.fitnessType || 'tutorial';
+      platform = selectFitnessPlatform(fitnessType as any, rec.platform, locale);
     } else {
       platform = selectBestPlatform(category, rec.platform, locale);
     }
-    const searchLink = generateSearchLink(rec.title, rec.searchQuery, platform, locale, category);
+    let searchLink = generateSearchLink(rec.title, rec.searchQuery, platform, locale, category);
+    if (geo && locale === "zh") {
+      const baseQuery = (rec.searchQuery || rec.title) as string;
+      const mapQuery =
+        platform === "百度地图美食" || platform === "高德地图美食" || platform === "腾讯地图美食"
+          ? `${baseQuery} 餐厅`
+          : platform === "百度地图健身" || platform === "高德地图健身" || platform === "腾讯地图健身"
+            ? `${baseQuery} 健身房`
+            : baseQuery;
+
+      if (platform === "百度地图美食" || platform === "百度地图健身" || platform === "百度地图") {
+        searchLink = {
+          ...searchLink,
+          url: `https://api.map.baidu.com/place/search?query=${encodeURIComponent(mapQuery)}&location=${encodeURIComponent(
+            `${geo.lat},${geo.lng}`
+          )}&radius=2000&output=html&src=mvp_2-demo`,
+        };
+      }
+
+      if (platform === "高德地图美食" || platform === "高德地图健身" || platform === "高德地图") {
+        searchLink = {
+          ...searchLink,
+          url: `https://uri.amap.com/search?keyword=${encodeURIComponent(mapQuery)}&center=${encodeURIComponent(
+            `${geo.lng},${geo.lat}`
+          )}&radius=2000`,
+        };
+      }
+    }
     const region = isChinaDeployment() ? "CN" : "INTL";
     const providerForCandidateLink = mapSearchPlatformToProvider(platform, typedLocale);
     const candidateLink = resolveCandidateLink({
@@ -947,29 +1002,32 @@ async function generateFallbackRecommendations(
     let linkType: LinkType = 'search';
     if (category === 'fitness') {
       // 健身分类根据推荐的具体类型设置 linkType
-      const fitnessType = rec.fitnessType || 'video';
+      const fitnessType = rec.fitnessType || 'tutorial';
 
       switch (fitnessType) {
-        case 'video':
-          // 健身视频课程
+        case 'tutorial':
           linkType = 'video';
           break;
-        case 'plan':
-          // 健身计划文章
-          linkType = 'search';
+        case 'nearby_place':
+          linkType = 'location';
           break;
         case 'equipment':
-          // 器材评测（指向评测文章）
-          linkType = 'search';
+          if (platform === 'YouTube' || platform === 'YouTube Fitness' || platform === 'B站健身' || platform === '优酷健身') {
+            linkType = 'video';
+          } else {
+            linkType = 'search';
+          }
           break;
         default:
           // 后备方案：根据平台
           if (platform === 'YouTube' || platform === 'YouTube Fitness') {
             linkType = 'video';
-          } else if (platform === 'FitnessVolt' || platform === 'GarageGymReviews') {
-            linkType = 'search';
           } else if (platform === 'Keep' || platform === 'MyFitnessPal') {
             linkType = 'app';
+          } else if (platform === '百度地图健身' || platform === '高德地图健身' || platform === '腾讯地图健身' || platform === '大众点评' || platform === '美团') {
+            linkType = 'location';
+          } else {
+            linkType = 'search';
           }
       }
     }
@@ -993,14 +1051,14 @@ async function generateFallbackRecommendations(
       (result.metadata as any).fitnessType = rec.fitnessType;
       // 添加易于理解的健身类型标签
       switch (rec.fitnessType) {
-        case 'video':
-          (result.metadata as any).fitnessTypeLabel = locale === 'zh' ? '健身视频课程' : 'Fitness Video Course';
+        case 'tutorial':
+          (result.metadata as any).fitnessTypeLabel = locale === 'zh' ? '健身教程' : 'Fitness Tutorial';
           break;
-        case 'plan':
-          (result.metadata as any).fitnessTypeLabel = locale === 'zh' ? '健身训练计划' : 'Fitness Training Plan';
+        case 'nearby_place':
+          (result.metadata as any).fitnessTypeLabel = locale === 'zh' ? '附近场所' : 'Nearby Place';
           break;
         case 'equipment':
-          (result.metadata as any).fitnessTypeLabel = locale === 'zh' ? '器材评测推荐' : 'Equipment Review';
+          (result.metadata as any).fitnessTypeLabel = locale === 'zh' ? '器材使用教程' : 'Equipment How-to';
           break;
       }
     }

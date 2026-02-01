@@ -315,7 +315,7 @@ export async function generateRecommendations(
   const categoryConfig = {
     entertainment: {
       platforms: locale === 'zh'
-        ? ['豆瓣', 'B站', 'QQ音乐', '酷狗音乐', '汽水音乐', '爱奇艺', '腾讯视频', '优酷', 'Steam', 'TapTap', 'Epic Games', 'WeGame', '小黑盒', '3DM', '游民星空', '百度']
+        ? ['腾讯视频', '优酷', 'QQ音乐', '酷狗音乐', '网易云音乐', 'TapTap', '豆瓣', '百度']
         : ['IMDb', 'YouTube', 'Spotify', 'Netflix', 'Rotten Tomatoes', 'Steam', 'Epic Games', 'GOG', 'PlayStation Store', 'Xbox Store', 'Nintendo eShop', 'Humble Bundle', 'itch.io'],
       examples: locale === 'zh'
         ? '电影、电视剧、游戏、音乐、综艺、动漫'
@@ -325,16 +325,16 @@ export async function generateRecommendations(
         : ['video', 'game', 'music', 'review/news'],
       // 游戏平台专用列表，供 AI 在推荐游戏时选择
       gamePlatforms: locale === 'zh'
-        ? ['Steam', 'TapTap', 'Epic Games', 'WeGame', '小黑盒', '3DM', '游民星空', 'B站游戏', '4399小游戏']
+        ? ['TapTap']
         : ['Steam', 'Epic Games', 'GOG', 'PlayStation Store', 'Xbox Store', 'Nintendo eShop', 'Humble Bundle', 'itch.io', 'Game Pass'],
       // 音乐平台专用列表
       musicPlatforms: locale === 'zh'
-        ? ['QQ音乐', '酷狗音乐', '汽水音乐', '酷我音乐', 'B站']  // 去掉网易云音乐（需登录）
+        ? ['酷狗音乐', 'QQ音乐', '网易云音乐']
         : ['Spotify', 'YouTube Music', 'Apple Music', 'SoundCloud']
     },
     shopping: {
       platforms: locale === 'zh'
-        ? ['什么值得买', '苏宁易购', '拼多多', '唯品会', '当当网', '小红书购物', '1688', '淘宝', '京东', '天猫']  // 优先无需登录的平台
+        ? ['京东', '淘宝', '拼多多', '唯品会']
         : ['Amazon', 'eBay', 'Walmart', 'Target'],
       examples: locale === 'zh'
         ? '数码产品、服装、家居用品'
@@ -342,7 +342,7 @@ export async function generateRecommendations(
     },
     food: {
       platforms: locale === 'zh'
-        ? ['百度地图美食', '高德地图美食', '饿了么', '下厨房', '豆果美食']  // 去掉需登录的美团、小红书、大众点评
+        ? ['大众点评', '高德地图美食', '百度地图美食', '腾讯地图美食']
         : ['Allrecipes', 'Google Maps', 'OpenTable'],
       examples: locale === 'zh'
         ? '餐厅、菜谱、美食'
@@ -350,7 +350,7 @@ export async function generateRecommendations(
     },
     travel: {
       platforms: locale === 'zh'
-        ? ['携程', '马蜂窝', '穷游', '去哪儿', '飞猪', '途牛', '同程旅行', '驴妈妈', '高德地图旅游', '百度地图旅游', '大麦网', 'Booking.com', 'Agoda', 'Airbnb']  // 去掉小红书
+        ? ['携程', '去哪儿', '小红书', '马蜂窝']
         : ['Booking.com', 'Agoda', 'TripAdvisor', 'Expedia', 'Klook', 'Airbnb'],
       examples: locale === 'zh'
         ? '景点、酒店、旅游攻略、目的地体验'
@@ -358,7 +358,7 @@ export async function generateRecommendations(
     },
     fitness: {
       platforms: locale === 'zh'
-        ? ['B站健身', '腾讯视频健身', '优酷健身', '百度地图健身', '高德地图健身', '百度健身']  // 去掉需登录的小红书、抖音
+        ? ['B站健身', '优酷健身', 'Keep', '大众点评', '美团', '百度地图健身', '高德地图健身', '腾讯地图健身']
         : ['YouTube Fitness', 'MyFitnessPal', 'Peloton', 'Google Maps', 'Amazon', 'Yelp'],
       examples: locale === 'zh'
         ? '健身课程、健身房、健身器材、运动装备'
@@ -380,17 +380,27 @@ ${userProfilePrompt}
 输出JSON数组，每项必须包含：title, description, reason, tags(3-5个), searchQuery, platform${category === 'entertainment' ? ', entertainmentType' : ''}
 
 ${category === 'entertainment' ? `【强制要求】必须包含4种不同类型，平均分配：
-- 视频类(豆瓣/B站/爱奇艺): 影视作品
-- 游戏类(${(config as any).gamePlatforms?.slice(0, 4).join('/')}): 游戏名称(不含平台名)
+- 视频类(腾讯视频/优酷): 影视作品
+- 游戏类(${(config as any).gamePlatforms?.slice(0, 4).join('/')}): 手机游戏名称(不含平台名，可在应用商店下载)
 - 音乐类(${(config as any).musicPlatforms?.slice(0, 3).join('/')}): 歌曲/专辑
 - 资讯类: 影评/排行/新闻
 每种类型至少1个，entertainmentType字段必填(video/game/music/review)` : ''}${category === 'food' ? `【强制要求】必须包含3种类型：
 - 食谱类: 纯菜名(如"宫保鸡丁")
 - 菜系类: "XX菜系餐厅"(如"川菜餐厅")
-- 场合类: "场合+菜系"(如"商务午餐")` : ''}${category === 'travel' ? `【格式要求】标题必须是"国家·城市"(如"日本·东京")，使用真实地名` : ''}${category === 'fitness' ? `【强制要求】必须包含3种类型，各至少1个：
-- 视频教程(B站): 健身课程视频
-- 地点推荐(地图): 健身房/运动场所
-- 器材教程: "XX使用教程"(不是购物链接)` : ''}
+- 场合类: "场合+菜系"(如"商务午餐")` : ''}${category === 'travel' ? `【格式要求】标题必须是"国家·城市"(如"中国·西安")，使用真实地名；CN版优先推荐中国境内目的地，至少前3条为中国境内。` : ''}${category === 'fitness' ? `【强制要求】必须包含3种类型，各至少1个，并且每项必须包含 fitnessType 字段：
+- 附近场所(nearby_place): 真实可去的健身房/运动场地/场馆（不是教程/不是装备评测）
+- 教程(tutorial): 健身动作/课程/跟练视频
+- 器材(equipment): "XX使用教程/入门要点"(不是购买链接/不是纯评测导购)
+fitnessType 必须为 nearby_place/tutorial/equipment 之一。
+
+【附近场所硬指标】当你输出 fitnessType=nearby_place 时，description 必须同时提到：
+1) 通风系统（是否闷/异味，建议看评论）
+2) 深蹲架数量（照片里大概几个，是否需要排队）
+3) 距离（建议优先步行15分钟内，离家/公司近更容易坚持）
+并且 searchQuery 必须包含“附近/步行/地铁/商圈/街道”至少一项，方便定位周边。
+
+【教程硬指标】fitnessType=tutorial 时：searchQuery 必须包含“教程/跟练/训练/视频课”至少一项。
+【器材硬指标】fitnessType=equipment 时：searchQuery 必须包含“使用教程/怎么用/入门/动作要点”至少一项。` : ''}
 平台选择：${config.platforms.slice(0, 6).join('、')}
 勿生成URL` : `
 Generate ${desiredCount} personalized recommendations.
@@ -402,7 +412,11 @@ Category: ${category}
 Output JSON array with: title, description, reason, tags(3-5), searchQuery, platform${category === 'entertainment' ? ', entertainmentType' : ''}
 
 ${category === 'entertainment' ? `Must include 4 types: video(IMDb/YouTube), game(${(config as any).gamePlatforms?.slice(0, 4).join('/')}), music(Spotify), review
-Game searchQuery: game name only` : ''}${category === 'food' ? `3 types: recipe, cuisine, occasion` : ''}${category === 'travel' ? `Format: "Country·City"` : ''}${category === 'fitness' ? `Must include 3 types: video tutorial(YouTube), equipment review(GarageGymReviews), training plan(FitnessVolt)` : ''}
+Game searchQuery: game name only` : ''}${category === 'food' ? `3 types: recipe, cuisine, occasion` : ''}${category === 'travel' ? `Format: "Country·City"` : ''}${category === 'fitness' ? `Must include 3 types, at least 1 each, and include fitnessType:
+- nearby_place: real nearby gym/sports place
+- tutorial: workout tutorial video
+- equipment: equipment how-to (not pure shopping)
+fitnessType must be nearby_place/tutorial/equipment` : ''}
 Platform choices: ${config.platforms.slice(0, 6).join(', ')}
 No URLs`;
 

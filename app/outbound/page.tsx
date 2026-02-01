@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import type { CandidateLink, OutboundLink } from "@/lib/types/recommendation";
@@ -27,18 +26,28 @@ function detectMobileOs(): "ios" | "android" | "other" {
   return "other";
 }
 
-function getAutoTryLink(candidateLink: CandidateLink, os: "ios" | "android" | "other"): OutboundLink | null {
-  const appLinks = candidateLink.fallbacks.filter((l) => l.type === "app");
-  if (os === "ios") {
-    const ios = appLinks.find((l) => l.label === "iOS") || appLinks[0];
-    if (ios) return ios;
+function getAutoTryLinks(candidateLink: CandidateLink, os: "ios" | "android" | "other"): OutboundLink[] {
+  const primaryTry =
+    candidateLink.primary.type === "app" ||
+    candidateLink.primary.type === "intent" ||
+    candidateLink.primary.type === "universal_link"
+      ? [candidateLink.primary]
+      : [];
+
+  const fallbackTry = candidateLink.fallbacks.filter(
+    (l) => l.type === "app" || l.type === "intent" || l.type === "universal_link"
+  );
+
+  const ordered = [...fallbackTry, ...primaryTry];
+  const seen = new Set<string>();
+  const unique: OutboundLink[] = [];
+  for (const l of ordered) {
+    if (!l.url || seen.has(l.url)) continue;
+    if (os !== "other" && l.type === "intent" && os === "ios") continue;
+    seen.add(l.url);
+    unique.push(l);
   }
-  if (os === "android") {
-    const android = appLinks.find((l) => l.label === "Android") || appLinks[0];
-    if (android) return android;
-  }
-  if (candidateLink.primary.type === "intent" || candidateLink.primary.type === "app") return candidateLink.primary;
-  return null;
+  return unique;
 }
 
 function getWebLink(candidateLink: CandidateLink): OutboundLink | null {
@@ -53,6 +62,20 @@ function getStoreLinks(candidateLink: CandidateLink): OutboundLink[] {
 
 function getOtherFallbackLinks(candidateLink: CandidateLink): OutboundLink[] {
   return candidateLink.fallbacks.filter((l) => l.type !== "app" && l.type !== "web" && l.type !== "store");
+}
+
+function filterStoreLinksByOs(storeLinks: OutboundLink[], os: "ios" | "android" | "other") {
+  if (os === "ios") {
+    const appStore = storeLinks.filter((l) => (l.label || "").toLowerCase().includes("app store"));
+    const rest = storeLinks.filter((l) => !appStore.includes(l));
+    return [...appStore, ...rest];
+  }
+  if (os === "android") {
+    const yingyongbao = storeLinks.filter((l) => (l.label || "").includes("应用宝"));
+    const rest = storeLinks.filter((l) => !yingyongbao.includes(l));
+    return [...yingyongbao, ...rest];
+  }
+  return storeLinks;
 }
 
 async function attemptOpenUrl(url: string, timeoutMs: number): Promise<boolean> {
@@ -89,10 +112,34 @@ async function attemptOpenUrl(url: string, timeoutMs: number): Promise<boolean> 
   });
 }
 
+async function attemptOpenLinksSequential(links: OutboundLink[], timeoutMsEach: number): Promise<boolean> {
+  for (const link of links) {
+    const opened = await attemptOpenUrl(link.url, timeoutMsEach);
+    if (opened) return true;
+    await new Promise((r) => window.setTimeout(r, 120));
+  }
+  return false;
+}
+
 export default function OutboundPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const { language } = useLanguage();
   const [openState, setOpenState] = useState<OpenState>("idle");
+  const returnTo = searchParams.get("returnTo");
+
+  const handleBack = () => {
+    const safeReturnTo = returnTo && returnTo.startsWith("/") ? returnTo : null;
+    if (safeReturnTo) {
+      router.replace(safeReturnTo);
+      return;
+    }
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+      return;
+    }
+    router.replace("/");
+  };
 
   const decoded = useMemo((): { candidateLink: CandidateLink | null; error: string | null } => {
     const raw = searchParams.get("data");
@@ -137,13 +184,13 @@ export default function OutboundPage() {
   useEffect(() => {
     if (!decoded.candidateLink) return;
     const os = detectMobileOs();
-    const autoTry = getAutoTryLink(decoded.candidateLink, os);
-    if (!autoTry) {
+    const autoTryLinks = getAutoTryLinks(decoded.candidateLink, os);
+    if (autoTryLinks.length === 0) {
       setOpenState("failed");
       return;
     }
     setOpenState("trying");
-    attemptOpenUrl(autoTry.url, 1200).then((opened) => {
+    attemptOpenLinksSequential(autoTryLinks, 1100).then((opened) => {
       if (!opened) setOpenState("failed");
     });
   }, [decoded.candidateLink]);
@@ -156,9 +203,9 @@ export default function OutboundPage() {
             {language === "zh" ? "无法跳转" : "Unable to redirect"}
           </div>
           <div className="text-sm text-gray-600 mb-4">{decoded.error}</div>
-          <Link href="/">
-            <Button className="w-full">{language === "zh" ? "返回首页" : "Go Home"}</Button>
-          </Link>
+          <Button className="w-full" onClick={handleBack}>
+            {language === "zh" ? "返回" : "Back"}
+          </Button>
         </Card>
       </div>
     );
@@ -166,10 +213,12 @@ export default function OutboundPage() {
 
   if (!decoded.candidateLink) return null;
   const candidateLink = decoded.candidateLink;
+  const os = detectMobileOs();
 
   const webLink = getWebLink(candidateLink);
-  const storeLinks = getStoreLinks(candidateLink);
+  const storeLinks = filterStoreLinksByOs(getStoreLinks(candidateLink), os);
   const otherLinks = getOtherFallbackLinks(candidateLink);
+  const autoTryLinks = getAutoTryLinks(candidateLink, os);
 
   return (
     <div className="min-h-screen bg-[#F7F9FC] p-4 flex items-center justify-center">
@@ -199,8 +248,8 @@ export default function OutboundPage() {
 
         <div className="space-y-3">
           <Button
-            className="w-full"
-            onClick={() => attemptOpenUrl(candidateLink.primary.url, 1200)}
+            className="w-full bg-black text-white hover:bg-black/90"
+            onClick={() => attemptOpenLinksSequential(autoTryLinks, 1100)}
           >
             {language === "zh" ? "打开 App（或继续）" : "Open app (or continue)"}
           </Button>
@@ -257,11 +306,9 @@ export default function OutboundPage() {
             </div>
           )}
 
-          <Link href="/">
-            <Button className="w-full" variant="ghost">
-              {language === "zh" ? "返回" : "Back"}
-            </Button>
-          </Link>
+          <Button className="w-full" variant="ghost" onClick={handleBack}>
+            {language === "zh" ? "返回" : "Back"}
+          </Button>
         </div>
       </Card>
     </div>

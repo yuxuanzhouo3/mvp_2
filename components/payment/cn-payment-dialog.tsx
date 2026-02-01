@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import Image from "next/image";
 import QRCode from "qrcode";
 import {
   Dialog,
@@ -300,7 +301,14 @@ export function CNPaymentDialog({
                 >
                   {status === "pending" && qrCodeImage ? (
                     <>
-                      <img src={qrCodeImage} alt="支付二维码" className="w-48 h-48" />
+                      <Image
+                        src={qrCodeImage}
+                        alt="支付二维码"
+                        width={192}
+                        height={192}
+                        className="w-48 h-48"
+                        unoptimized
+                      />
                       <div className="absolute -bottom-3 left-1/2 -translate-x-1/2">
                         <Badge variant="secondary" className="whitespace-nowrap">
                           <Smartphone className="w-3 h-3 mr-1" />

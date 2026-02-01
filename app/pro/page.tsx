@@ -113,7 +113,7 @@ export default function PricingPage() {
     if (inMiniProgram && (selectedPayment === "stripe" || selectedPayment === "paypal")) {
       setSelectedPayment("wechat")
     }
-  }, [])
+  }, [selectedPayment])
 
   // 从服务器获取订阅状态，确保显示最新值
   useEffect(() => {

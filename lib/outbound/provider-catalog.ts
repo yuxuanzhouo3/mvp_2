@@ -21,11 +21,17 @@ export type ProviderId =
   | "优酷"
   | "豆瓣"
   | "QQ音乐"
+  | "酷狗音乐"
+  | "网易云音乐"
+  | "TapTap"
+  | "小红书"
+  | "去哪儿"
   | "携程"
   | "马蜂窝"
   | "穷游"
   | "高德地图"
   | "百度地图"
+  | "腾讯地图"
   | "Google Maps"
   | "Google"
   | "百度"
@@ -117,6 +123,10 @@ function baiduMapSearchUrl(query: string) {
   return `https://map.baidu.com/search/${encodeURIComponent(query)}`;
 }
 
+function tencentMapSearchUrl(query: string) {
+  return `https://map.qq.com/m/search?keyword=${encodeURIComponent(query)}`;
+}
+
 export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
   return {
     "Google Maps": {
@@ -178,6 +188,40 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       domains: ["y.qq.com"],
       hasApp: true,
       webLink: ({ query }) => `https://y.qq.com/n/ryqq/search?w=${encodeURIComponent(query)}`,
+    },
+    "酷狗音乐": {
+      id: "酷狗音乐",
+      displayName: { zh: "酷狗音乐", en: "Kugou Music" },
+      domains: ["kugou.com"],
+      hasApp: true,
+      webLink: ({ query }) =>
+        `https://www.kugou.com/yy/html/search.html#searchType=song&searchKeyWord=${encodeURIComponent(query)}`,
+      iosScheme: () => `kugouURL://`,
+      androidScheme: () => `kugouURL://`,
+    },
+    "网易云音乐": {
+      id: "网易云音乐",
+      displayName: { zh: "网易云音乐", en: "NetEase Cloud Music" },
+      domains: ["music.163.com"],
+      hasApp: true,
+      webLink: ({ query }) => `https://music.163.com/#/search/m/?s=${encodeURIComponent(query)}`,
+      iosScheme: () => `orpheuswidget://`,
+      androidScheme: () => `orpheuswidget://`,
+    },
+    TapTap: {
+      id: "TapTap",
+      displayName: { zh: "TapTap", en: "TapTap" },
+      domains: ["taptap.cn", "taptap.com"],
+      hasApp: true,
+      webLink: ({ query }) => `https://www.taptap.cn/search/${encodeURIComponent(query)}`,
+    },
+    "小红书": {
+      id: "小红书",
+      displayName: { zh: "小红书", en: "Xiaohongshu" },
+      domains: ["xiaohongshu.com"],
+      hasApp: true,
+      webLink: ({ query }) =>
+        `https://www.xiaohongshu.com/search_result?keyword=${encodeURIComponent(query)}&type=note`,
     },
     "YouTube Fitness": {
       id: "YouTube Fitness",
@@ -297,6 +341,13 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
         `baidumap://map/place/search?query=${encodeURIComponent(query)}`,
       androidScheme: ({ query }) =>
         `baidumap://map/place/search?query=${encodeURIComponent(query)}`,
+    },
+    "腾讯地图": {
+      id: "腾讯地图",
+      displayName: { zh: "腾讯地图", en: "Tencent Maps" },
+      domains: ["map.qq.com"],
+      hasApp: true,
+      webLink: ({ query }) => tencentMapSearchUrl(query),
     },
     美团: {
       id: "美团",
@@ -488,6 +539,13 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       webLink: ({ query }) =>
         `https://you.ctrip.com/globalsearch/?keyword=${encodeURIComponent(query)}`,
     },
+    "去哪儿": {
+      id: "去哪儿",
+      displayName: { zh: "去哪儿", en: "Qunar" },
+      domains: ["qunar.com"],
+      hasApp: true,
+      webLink: ({ query }) => `https://www.qunar.com/search?searchWord=${encodeURIComponent(query)}`,
+    },
     "马蜂窝": {
       id: "马蜂窝",
       displayName: { zh: "马蜂窝", en: "Mafengwo" },
@@ -513,50 +571,44 @@ export function getWeightedProvidersForCategory(
     switch (category) {
       case "food":
         return [
-          { provider: "美团", weight: 0.3, tier: "mainstream" },
-          { provider: "饿了么", weight: 0.3, tier: "mainstream" },
-          { provider: "京东到家", weight: 0.1, tier: "longtail" },
-          { provider: "淘宝闪购", weight: 0.1, tier: "longtail" },
-          { provider: "高德地图", weight: 0.1, tier: "longtail" },
-          { provider: "百度地图", weight: 0.1, tier: "longtail" },
+          { provider: "大众点评", weight: 0.35, tier: "mainstream" },
+          { provider: "高德地图", weight: 0.25, tier: "mainstream" },
+          { provider: "百度地图", weight: 0.2, tier: "mainstream" },
+          { provider: "腾讯地图", weight: 0.2, tier: "mainstream" },
         ];
       case "shopping":
         return [
-          { provider: "淘宝闪购", weight: 0.2, tier: "mainstream" },
-          { provider: "京东到家", weight: 0.2, tier: "mainstream" },
-          { provider: "美团", weight: 0.2, tier: "mainstream" },
-          { provider: "百度", weight: 0.1, tier: "longtail" },
-          { provider: "高德地图", weight: 0.1, tier: "longtail" },
-          { provider: "百度地图", weight: 0.1, tier: "longtail" },
-          { provider: "B站", weight: 0.1, tier: "longtail" },
+          { provider: "京东", weight: 0.3, tier: "mainstream" },
+          { provider: "淘宝", weight: 0.3, tier: "mainstream" },
+          { provider: "拼多多", weight: 0.2, tier: "mainstream" },
+          { provider: "唯品会", weight: 0.2, tier: "mainstream" },
         ];
       case "entertainment":
         return [
-          { provider: "B站", weight: 0.2, tier: "mainstream" },
-          { provider: "百度", weight: 0.2, tier: "mainstream" },
-          { provider: "YouTube", weight: 0.2, tier: "mainstream" },
-          { provider: "Google", weight: 0.1, tier: "longtail" },
-          { provider: "高德地图", weight: 0.1, tier: "longtail" },
-          { provider: "百度地图", weight: 0.1, tier: "longtail" },
-          { provider: "Netflix", weight: 0.1, tier: "longtail" },
+          { provider: "腾讯视频", weight: 0.25, tier: "mainstream" },
+          { provider: "优酷", weight: 0.25, tier: "mainstream" },
+          { provider: "QQ音乐", weight: 0.15, tier: "mainstream" },
+          { provider: "酷狗音乐", weight: 0.1, tier: "mainstream" },
+          { provider: "网易云音乐", weight: 0.1, tier: "mainstream" },
+          { provider: "TapTap", weight: 0.15, tier: "mainstream" },
         ];
       case "travel":
         return [
-          { provider: "高德地图", weight: 0.3, tier: "mainstream" },
-          { provider: "百度地图", weight: 0.3, tier: "mainstream" },
-          { provider: "百度", weight: 0.1, tier: "longtail" },
-          { provider: "B站", weight: 0.1, tier: "longtail" },
-          { provider: "Google Maps", weight: 0.1, tier: "longtail" },
-          { provider: "TripAdvisor", weight: 0.1, tier: "longtail" },
+          { provider: "携程", weight: 0.3, tier: "mainstream" },
+          { provider: "去哪儿", weight: 0.25, tier: "mainstream" },
+          { provider: "小红书", weight: 0.2, tier: "mainstream" },
+          { provider: "马蜂窝", weight: 0.25, tier: "mainstream" },
         ];
       case "fitness":
         return [
-          { provider: "Keep", weight: 0.3, tier: "mainstream" },
-          { provider: "B站", weight: 0.3, tier: "mainstream" },
-          { provider: "百度", weight: 0.1, tier: "longtail" },
-          { provider: "高德地图", weight: 0.1, tier: "longtail" },
-          { provider: "百度地图", weight: 0.1, tier: "longtail" },
-          { provider: "YouTube", weight: 0.1, tier: "longtail" },
+          { provider: "Keep", weight: 0.23, tier: "mainstream" },
+          { provider: "B站", weight: 0.18, tier: "mainstream" },
+          { provider: "优酷", weight: 0.15, tier: "mainstream" },
+          { provider: "大众点评", weight: 0.14, tier: "mainstream" },
+          { provider: "美团", weight: 0.1, tier: "mainstream" },
+          { provider: "高德地图", weight: 0.08, tier: "longtail" },
+          { provider: "百度地图", weight: 0.07, tier: "longtail" },
+          { provider: "腾讯地图", weight: 0.05, tier: "longtail" },
         ];
       default:
         return [];

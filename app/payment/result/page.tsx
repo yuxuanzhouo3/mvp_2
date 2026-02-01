@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -21,6 +21,39 @@ function PaymentResultContent() {
     amount?: string
     tradeNo?: string
   }>({})
+
+  // 刷新用户订阅状态
+  const refreshSubscriptionStatus = useCallback(async () => {
+    try {
+      // 尝试刷新用户资料以获取最新订阅状态
+      const response = await fetch("/api/profile")
+      if (response.ok) {
+        const profile = await response.json()
+        // 更新本地存储的用户状态
+        if (typeof window !== "undefined") {
+          try {
+            const authState = localStorage.getItem("app-auth-state")
+            if (authState) {
+              const state = JSON.parse(authState)
+              if (state.user) {
+                state.user.metadata = {
+                  ...state.user.metadata,
+                  pro: profile.pro || profile.subscription?.status === "active",
+                  plan: profile.plan || profile.subscription?.plan_type || "free",
+                  plan_exp: profile.plan_exp || profile.subscription?.subscription_end,
+                }
+                localStorage.setItem("app-auth-state", JSON.stringify(state))
+              }
+            }
+          } catch (e) {
+            console.warn("更新本地订阅状态失败:", e)
+          }
+        }
+      }
+    } catch (error) {
+      console.error("刷新订阅状态失败:", error)
+    }
+  }, [])
 
   useEffect(() => {
     // 从 URL 参数中获取支付宝返回的信息
@@ -53,40 +86,7 @@ function PaymentResultContent() {
       setStatus("failed")
       setMessage("支付未完成或已取消")
     }
-  }, [searchParams])
-
-  // 刷新用户订阅状态
-  const refreshSubscriptionStatus = async () => {
-    try {
-      // 尝试刷新用户资料以获取最新订阅状态
-      const response = await fetch("/api/profile")
-      if (response.ok) {
-        const profile = await response.json()
-        // 更新本地存储的用户状态
-        if (typeof window !== "undefined") {
-          try {
-            const authState = localStorage.getItem("app-auth-state")
-            if (authState) {
-              const state = JSON.parse(authState)
-              if (state.user) {
-                state.user.metadata = {
-                  ...state.user.metadata,
-                  pro: profile.pro || profile.subscription?.status === "active",
-                  plan: profile.plan || profile.subscription?.plan_type || "free",
-                  plan_exp: profile.plan_exp || profile.subscription?.subscription_end,
-                }
-                localStorage.setItem("app-auth-state", JSON.stringify(state))
-              }
-            }
-          } catch (e) {
-            console.warn("更新本地订阅状态失败:", e)
-          }
-        }
-      }
-    } catch (error) {
-      console.error("刷新订阅状态失败:", error)
-    }
-  }
+  }, [hideSubscriptionUI, refreshSubscriptionStatus, searchParams])
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-4 py-12">

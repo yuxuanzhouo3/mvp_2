@@ -417,12 +417,14 @@ export function generateSearchLink(
       '4399小游戏': (q) => `https://s.4399.com/search_default.php?keyword=${encodeURIComponent(q)}`,
       '爱奇艺': (q) => `https://so.iqiyi.com/so/q_${encodeURIComponent(q)}`,
       '腾讯视频': (q) => `https://v.qq.com/x/search/?q=${encodeURIComponent(q)}`,
+      '优酷': (q) => `https://so.youku.com/search_video/q_${encodeURIComponent(q)}`,
 
       // 美食平台 - 增加更多选择
       '大众点评': (q) => `https://www.dianping.com/search/keyword/2/0_${encodeURIComponent(q)}`,
       '下厨房': (q) => `https://www.xiachufang.com/search/?keyword=${encodeURIComponent(q)}`,
       '百度地图美食': (q) => `https://map.baidu.com/search/${encodeURIComponent(q + ' 餐厅')}`,  // 地图搜附近餐厅
       '高德地图美食': (q) => `https://ditu.amap.com/search?query=${encodeURIComponent(q + ' 餐厅')}`,  // 高德地图搜餐厅
+      '腾讯地图美食': (q) => `https://map.qq.com/m/search?keyword=${encodeURIComponent(q + ' 餐厅')}`,
       '饿了么': (q) => `https://www.ele.me/search/${encodeURIComponent(q)}`,  // 外卖平台
       '美团': (q) => `https://www.meituan.com/s/${encodeURIComponent(q)}/`,  // 本地生活/外卖
       '百度美食': (q) => `https://www.baidu.com/s?wd=${encodeURIComponent(q)} 美食 附近`,
@@ -432,6 +434,7 @@ export function generateSearchLink(
       // 旅游/出行平台 - 增加更多选择，去掉需登录的小红书
       '携程': (q) => `https://you.ctrip.com/globalsearch/?keyword=${encodeURIComponent(q)}`,  // 携程正确URL格式
       '去哪儿': (q) => `https://www.qunar.com/search?searchWord=${encodeURIComponent(q)}`,
+      '小红书': (q) => `https://www.xiaohongshu.com/search_result?keyword=${encodeURIComponent(q)}&type=note`,
       '马蜂窝': (q) => `https://www.mafengwo.cn/search/q.php?q=${encodeURIComponent(q)}`,
       '飞猪': (q) => `https://s.fliggy.com/?q=${encodeURIComponent(q)}`,
       '穷游': (q) => `https://www.qyer.com/search?q=${encodeURIComponent(q)}`,
@@ -452,7 +455,9 @@ export function generateSearchLink(
       '优酷健身': (q) => `https://so.youku.com/search_video/q_${encodeURIComponent(q + ' 健身')}`,  // 优酷健身视频
       '百度地图健身': (q) => `https://map.baidu.com/search/${encodeURIComponent(q + ' 健身房')}`,  // 百度地图搜健身房
       '高德地图健身': (q) => `https://ditu.amap.com/search?query=${encodeURIComponent(q + ' 健身房')}`,  // 高德地图搜健身房
+      '腾讯地图健身': (q) => `https://map.qq.com/m/search?keyword=${encodeURIComponent(q + ' 健身房')}`,
       '百度健身': (q) => `https://www.baidu.com/s?wd=${encodeURIComponent(q)} 健身教程 视频`,  // 百度搜索健身视频
+      'Keep': (q) => `https://www.gotokeep.com/search?q=${encodeURIComponent(q)}`,
       'FitnessVolt': (q) => `https://fitnessvolt.com/?s=${encodeURIComponent(q)}`,
       'GarageGymReviews': (q) => `https://www.garagegymreviews.com/?s=${encodeURIComponent(q)}`,
 
@@ -716,7 +721,7 @@ export function selectBestPlatform(
     // 智能选择：根据推荐内容选择最佳游戏平台
     // 优先返回多样化的平台，而不是总是 Steam
     const platformRotation = locale === 'zh' 
-      ? ['Steam', 'TapTap', 'Epic Games', 'WeGame', '小黑盒', '3DM', '游民星空', 'B站游戏']
+      ? ['TapTap']
       : ['Steam', 'Epic Games', 'GOG', 'PlayStation Store', 'Xbox Store', 'Nintendo eShop', 'Humble Bundle', 'itch.io'];
     
     // 如果有建议的平台，尝试匹配
@@ -739,9 +744,9 @@ export function selectBestPlatform(
   // 针对其他娱乐类型的平台映射
   const entertainmentPlatformMap: Record<string, Record<string, string[]>> = {
     zh: {
-      video: ['豆瓣', 'B站', '爱奇艺', '腾讯视频', '优酷'],
-      music: ['QQ音乐', '酷狗音乐', '汽水音乐', '酷我音乐', 'B站'],  // 去掉网易云（需登录）
-      review: ['豆瓣', 'B站', '知乎', '百度']  // 增加百度
+      video: ['腾讯视频', '优酷'],
+      music: ['酷狗音乐', 'QQ音乐', '网易云音乐'],
+      review: ['豆瓣', '百度']
     },
     en: {
       video: ['IMDb', 'YouTube', 'Netflix', 'Rotten Tomatoes'],
@@ -753,10 +758,10 @@ export function selectBestPlatform(
   const categoryPlatforms: Record<string, Record<string, string[]>> = {
     zh: {
       entertainment: entertainmentPlatformMap.zh[entertainmentType || 'video'] || ['豆瓣', 'B站', '爱奇艺'],
-      shopping: ['什么值得买', '苏宁易购', '拼多多', '唯品会', '当当网', '1688', '淘宝', '京东'],  // 优先无需登录的平台
-      food: ['百度地图美食', '高德地图美食', '饿了么', '下厨房', '豆果美食', '大众点评', '小红书美食'],  // 增加大众点评、小红书
-      travel: ['携程', '马蜂窝', '穷游', '去哪儿', '飞猪', '途牛', '同程旅行', 'Booking.com', 'Agoda'],  // 去掉需登录的小红书
-      fitness: ['B站健身', '腾讯视频健身', '优酷健身', '百度地图健身', '高德地图健身', '百度健身']  // 去掉需登录的抖音、小红书
+      shopping: ['京东', '淘宝', '拼多多', '唯品会'],
+      food: ['大众点评', '高德地图美食', '百度地图美食', '腾讯地图美食'],
+      travel: ['携程', '去哪儿', '小红书', '马蜂窝'],
+      fitness: ['B站健身', '优酷健身', 'Keep', '大众点评', '美团', '百度地图健身', '高德地图健身', '腾讯地图健身']
     },
     en: {
       entertainment: entertainmentPlatformMap.en[entertainmentType || 'video'] || ['IMDb', 'YouTube', 'Netflix'],
@@ -790,7 +795,7 @@ export function selectFoodPlatformWithRotation(
 ): string {
   // 对于中文环境，使用新的平台列表（增加大众点评、小红书美食）
   if (locale === 'zh') {
-    const cnPlatforms = ['百度地图美食', '高德地图美食', '饿了么', '下厨房', '豆果美食', '大众点评', '小红书美食'];
+    const cnPlatforms = ['大众点评', '高德地图美食', '百度地图美食', '腾讯地图美食'];
     if (suggestedPlatform && cnPlatforms.includes(suggestedPlatform)) {
       return suggestedPlatform;
     }

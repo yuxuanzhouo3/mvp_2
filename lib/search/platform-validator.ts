@@ -6,14 +6,14 @@
 // 可信平台白名单 - CN 环境优化版（去掉需登录的平台）
 export const TRUSTED_PLATFORMS = {
   zh: {
-    video: ['豆瓣', '豆瓣电影', 'B站', '爱奇艺', '腾讯视频', '优酷', '咪咕视频', '芒果TV'],
-    game: ['Steam', 'B站', 'TapTap', 'WeGame', '小黑盒', '3DM', '游民星空', 'B站游戏', '4399小游戏', '杉果'],
-    music: ['QQ音乐', '酷狗音乐', '汽水音乐', '酷我音乐', 'B站'],  // 去掉需登录的网易云音乐
-    review: ['豆瓣', 'B站', '知乎', '微博', '时光网', '百度'],  // 去掉需登录的小红书
-    shopping: ['什么值得买', '苏宁易购', '拼多多', '唯品会', '当当网', '1688', '淘宝', '京东', '天猫'],  // 去掉需登录的小红书购物
-    food: ['百度地图美食', '高德地图美食', '饿了么', '下厨房', '豆果美食', '大众点评', '小红书美食'],  // 去掉需登录的美团
-    travel: ['携程', '马蜂窝', '穷游', '去哪儿', '飞猪', '途牛', '同程旅行', '驴妈妈', '高德地图旅游', '百度地图旅游', 'Booking.com', 'Agoda', 'Airbnb'],  // 去掉需登录的小红书旅游
-    fitness: ['B站健身', '腾讯视频健身', '优酷健身', '百度地图健身', '高德地图健身', '百度健身', 'FitnessVolt', 'GarageGymReviews']  // 去掉需登录的抖音健身、小红书健身
+    video: ['腾讯视频', '优酷', '豆瓣', '豆瓣电影'],
+    game: ['TapTap'],
+    music: ['酷狗音乐', 'QQ音乐', '网易云音乐'],
+    review: ['豆瓣', '百度'],
+    shopping: ['京东', '淘宝', '拼多多', '唯品会'],
+    food: ['大众点评', '高德地图美食', '百度地图美食', '腾讯地图美食'],
+    travel: ['携程', '去哪儿', '小红书', '马蜂窝'],
+    fitness: ['B站健身', '优酷健身', 'Keep', '大众点评', '美团', '百度地图健身', '高德地图健身', '腾讯地图健身']
   },
   en: {
     video: ['IMDb', 'YouTube', 'Netflix', 'Rotten Tomatoes', 'Hulu', 'Disney+', 'Amazon Prime Video', 'HBO Max'],
@@ -74,6 +74,7 @@ export const PLATFORM_DOMAINS = {
   '小红书美食': 'xiaohongshu.com',
   '百度地图美食': 'map.baidu.com',
   '高德地图美食': 'ditu.amap.com',
+  '腾讯地图美食': 'map.qq.com',
   '美团': 'meituan.com',
   '饿了么': 'ele.me',
   '下厨房': 'xiachufang.com',
@@ -98,6 +99,9 @@ export const PLATFORM_DOMAINS = {
   '小红书健身': 'xiaohongshu.com',
   '百度地图健身': 'map.baidu.com',
   '高德地图健身': 'ditu.amap.com',
+  '腾讯地图健身': 'map.qq.com',
+  '腾讯地图': 'map.qq.com',
+  'Keep': 'gotokeep.com',
   // 国际平台
   'IMDb': 'imdb.com',
   'YouTube': 'youtube.com',
@@ -157,7 +161,9 @@ export const OUTBOUND_ALLOWED_SCHEMES = [
   "baidumap",
   "imeituan",
   "eleme",
-  "keep"
+  "keep",
+  "kugouurl",
+  "orpheuswidget"
 ] as const;
 
 const OUTBOUND_ALLOWED_HOSTS = [
@@ -166,7 +172,9 @@ const OUTBOUND_ALLOWED_HOSTS = [
   "sj.qq.com",
   "uri.amap.com",
   "ditu.amap.com",
-  "map.baidu.com"
+  "map.baidu.com",
+  "api.map.baidu.com",
+  "map.qq.com"
 ];
 
 export function isAllowedOutboundUrl(url: string): boolean {

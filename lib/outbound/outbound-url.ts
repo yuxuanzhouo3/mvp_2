@@ -9,8 +9,10 @@ export function encodeCandidateLinkToQueryParam(candidateLink: CandidateLink): s
   return base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
-export function buildOutboundHref(candidateLink: CandidateLink): string {
+export function buildOutboundHref(candidateLink: CandidateLink, returnTo?: string): string {
   const data = encodeCandidateLinkToQueryParam(candidateLink);
-  return `/outbound?data=${encodeURIComponent(data)}`;
+  const base = `/outbound?data=${encodeURIComponent(data)}`;
+  if (!returnTo) return base;
+  if (!returnTo.startsWith("/")) return base;
+  return `${base}&returnTo=${encodeURIComponent(returnTo)}`;
 }
-

@@ -131,7 +131,8 @@ const HistoryCardComponent = forwardRef<HTMLDivElement, HistoryCardProps>(
                     (typeof window !== "undefined" && window.innerWidth < 768)
                 const candidateLink = (item.metadata as any)?.candidateLink
                 if (isMobile && candidateLink) {
-                    window.location.href = buildOutboundHref(candidateLink)
+                    const returnTo = typeof window !== "undefined" ? `${window.location.pathname}${window.location.search}` : "/"
+                    window.location.href = buildOutboundHref(candidateLink, returnTo)
                     return
                 }
                 window.open(item.link, "_blank", "noopener,noreferrer")
