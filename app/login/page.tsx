@@ -11,7 +11,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { auth } from '@/lib/auth/client'
 import { RegionConfig, isChinaRegion } from '@/lib/config/region'
-import { useIsIPhone } from '@/hooks/use-device'
+import { useIsIPhone, useIsMobile } from '@/hooks/use-device'
 import { useLanguage } from '@/components/language-provider'
 import { useTranslations } from '@/lib/i18n'
 import {
@@ -26,6 +26,7 @@ import { saveAuthState } from '@/lib/auth/auth-state-manager'
 export default function LoginPage() {
   const router = useRouter()
   const isIPhone = useIsIPhone()
+  const isMobile = useIsMobile()
   const { language } = useLanguage()
   const t = useTranslations(language)
   const [email, setEmail] = useState('')
@@ -242,7 +243,7 @@ export default function LoginPage() {
 
     try {
       // 小程序环境：跳转到小程序原生登录页面
-      if (isInMiniProgram) {
+      if (isInMiniProgram && !isAppContainer()) {
         console.log('[Login] Detected miniprogram environment, requesting native login...')
         const success = await requestWxMpLoginAsync(window.location.href)
         if (!success) {
@@ -252,38 +253,81 @@ export default function LoginPage() {
         return
       }
 
+      // CN 环境 + App 容器：使用 wechat-login:// scheme 触发原生微信登录
+      if (isChina && isAppContainer()) {
+        console.log('[Login] CN App container detected, using native WeChat login scheme')
+
+        const callbackName = '__wechatNativeAuthCallback'
+
+        // 定义全局回调函数
+        ;(window as any)[callbackName] = async (payload: any) => {
+          console.log('[Login] Received native WeChat login callback:', payload)
+
+          if (!payload || typeof payload !== 'object') {
+            setError('微信登录失败：无效回调')
+            setOauthLoading(null)
+            return
+          }
+
+          if (payload.errCode !== 0 || !payload.code) {
+            setError(payload.errStr || '微信登录已取消或失败')
+            setOauthLoading(null)
+            return
+          }
+
+          // 使用 code 完成登录
+          try {
+            const baseUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin
+            const callbackUrl = new URL('/auth/callback', baseUrl)
+            callbackUrl.searchParams.set('provider', 'wechat_mobile')
+            callbackUrl.searchParams.set('code', payload.code)
+            callbackUrl.searchParams.set('state', payload.state || '')
+            callbackUrl.searchParams.set('redirect', '/')
+
+            window.location.href = callbackUrl.toString()
+          } catch (err) {
+            console.error('[Login] Failed to process WeChat callback:', err)
+            setError('微信登录处理失败')
+            setOauthLoading(null)
+          }
+        }
+
+        const scheme = `wechat-login://start?callback=${encodeURIComponent(callbackName)}`
+        console.log('[Login] Launching native WeChat login, scheme:', scheme)
+        window.location.href = scheme
+        return
+      }
+
       const nextPath = '/'
 
       const w = window as any
-      if (isAppContainer()) {
-        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin
-        const callbackUrl = new URL('/auth/callback', baseUrl)
-        callbackUrl.searchParams.set('provider', 'wechat_mobile')
-        callbackUrl.searchParams.set('redirect', nextPath)
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin
+      const callbackUrl = new URL('/auth/callback', baseUrl)
+      callbackUrl.searchParams.set('provider', 'wechat_mobile')
+      callbackUrl.searchParams.set('redirect', nextPath)
 
-        const payload = JSON.stringify({
-          type: "wechat_mobile_login",
-          callbackUrl: callbackUrl.toString(),
-        })
+      const payload = JSON.stringify({
+        type: 'wechat_mobile_login',
+        callbackUrl: callbackUrl.toString(),
+      })
 
-        if (w.ReactNativeWebView?.postMessage) {
-          w.ReactNativeWebView.postMessage(payload)
-          return
-        }
-        if (w.webkit?.messageHandlers?.wechatLogin?.postMessage) {
-          w.webkit.messageHandlers.wechatLogin.postMessage(payload)
-          return
-        }
-        if (w.webkit?.messageHandlers?.native?.postMessage) {
-          w.webkit.messageHandlers.native.postMessage(payload)
-          return
-        }
-        if (typeof w.Android?.wechatLogin === "function") {
-          w.Android.wechatLogin(callbackUrl.toString())
-          return
-        }
+      const sentToNative =
+        typeof w.ReactNativeWebView?.postMessage === 'function'
+          ? (w.ReactNativeWebView.postMessage(payload), true)
+          : typeof w.webkit?.messageHandlers?.wechatLogin?.postMessage === 'function'
+            ? (w.webkit.messageHandlers.wechatLogin.postMessage(payload), true)
+            : typeof w.webkit?.messageHandlers?.native?.postMessage === 'function'
+              ? (w.webkit.messageHandlers.native.postMessage(payload), true)
+              : typeof w.Android?.wechatLogin === 'function'
+                ? (w.Android.wechatLogin(callbackUrl.toString()), true)
+                : false
 
-        throw new Error('检测到 App 环境，但未发现可用的原生登录桥接')
+      if (sentToNative) {
+        return
+      }
+
+      if (isMobile || isAppContainer()) {
+        throw new Error('当前为移动端环境，但未检测到可用的原生登录桥接')
       }
 
       // PC/手机浏览器：获取微信登录二维码 URL

@@ -18,6 +18,17 @@ export async function GET(request: Request) {
     );
   }
 
+  const userAgent = request.headers.get("user-agent") || "";
+  if (/(Android|iPhone|iPad|iPod|Mobile)/i.test(userAgent)) {
+    return NextResponse.json(
+      {
+        error: "WeChat QR code login is only supported on desktop",
+        supported: false,
+      },
+      { status: 400 }
+    );
+  }
+
   const appId = process.env.WECHAT_APP_ID || process.env.NEXT_PUBLIC_WECHAT_APP_ID;
 
   if (!appId) {

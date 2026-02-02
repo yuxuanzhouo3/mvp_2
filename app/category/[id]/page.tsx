@@ -24,6 +24,8 @@ import { isValidUserId } from "@/lib/utils"
 import { fetchWithAuth } from "@/lib/auth/fetch-with-auth"
 import { trackClientEvent } from "@/lib/analytics/client"
 import { getClientHint } from "@/lib/app/app-container"
+import { resolveCandidateLink } from "@/lib/outbound/link-resolver"
+import { mapSearchPlatformToProvider } from "@/lib/outbound/provider-mapping"
 
 // 使用量信息类型
 interface UsageInfo {
@@ -80,7 +82,26 @@ const categoryConfig: Record<
 // åŽ†å²è®°å½•å¡«å……ä¸º AI æŽ¨èæ ¼å¼ï¼Œç»Ÿä¸€ä¾é� å•ä¸ªæŽ¨èå¡
 type HistoryItem = AIRecommendation & { historyId?: string }
 
-function mapHistoryRecordToRecommendation(record: RecommendationHistory): HistoryItem {
+function mapHistoryRecordToRecommendation(
+  record: RecommendationHistory,
+  locale: "zh" | "en",
+  region: "CN" | "INTL"
+): HistoryItem {
+  const storedCandidateLink = (record.metadata as any)?.candidateLink as AIRecommendation["candidateLink"] | undefined
+  const searchQuery = (record.metadata as any)?.searchQuery as string | undefined
+  const originalPlatform = (record.metadata as any)?.originalPlatform as string | undefined
+
+  const candidateLink =
+    storedCandidateLink ||
+    resolveCandidateLink({
+      title: record.title,
+      query: searchQuery || record.title,
+      category: record.category,
+      locale,
+      region,
+      provider: originalPlatform ? mapSearchPlatformToProvider(originalPlatform, locale) : undefined,
+    })
+
   return {
     historyId: record.id,
     title: record.title,
@@ -88,7 +109,7 @@ function mapHistoryRecordToRecommendation(record: RecommendationHistory): Histor
     category: record.category,
     link: record.link,
     linkType: record.link_type || "search",
-    candidateLink: (record.metadata as any)?.candidateLink,
+    candidateLink,
     metadata: record.metadata || {},
     reason: record.reason || "",
     tags: (record.metadata?.tags as string[] | undefined) || undefined,
@@ -214,6 +235,7 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
   const [upgradeMessage, setUpgradeMessage] = useState<string | null>(null)
   // 使用环境变量中的地区设置
   const [locale] = useState<"zh" | "en">(() => getClientLocale())
+  const region = RegionConfig.database.provider === "cloudbase" ? "CN" : "INTL"
   const [locationDialogOpen, setLocationDialogOpen] = useState(false)
   const [locationRequestPending, setLocationRequestPending] = useState(false)
   const [locationConsent, setLocationConsent] = useState<"unknown" | "granted" | "denied">("unknown")
@@ -373,7 +395,9 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
         }
 
         const mappedHistory: HistoryItem[] = dedupeHistory(
-          (result.data || []).map(mapHistoryRecordToRecommendation)
+          (result.data || []).map((record: RecommendationHistory) =>
+            mapHistoryRecordToRecommendation(record, locale, region)
+          )
         )
         setHistory(mappedHistory)
         setHistorySource(historyProvider)
@@ -386,7 +410,7 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
         setIsHistoryLoading(false)
       }
     },
-    [categoryId, historyProvider, loadLocalHistory, params.id]
+    [categoryId, historyProvider, loadLocalHistory, locale, params.id, region]
   )
 
   // 初始化加载本地历史缓存（仅对已登录用户）

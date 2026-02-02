@@ -10,8 +10,9 @@ import { motion } from "framer-motion";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { AIRecommendation } from "@/lib/types/recommendation";
+import type { AIRecommendation, CandidateLink } from "@/lib/types/recommendation";
 import { buildOutboundHref } from "@/lib/outbound/outbound-url";
+import { getClientHint } from "@/lib/app/app-container";
 
 // 图标组件
 const ExternalLinkIcon = () => (
@@ -88,12 +89,33 @@ export function TravelRecommendationCard({
     reason,
   } = recommendation;
 
+  const buildFallbackCandidateLink = (rec: AIRecommendation): CandidateLink => {
+    return {
+      provider: rec.platform || "Web",
+      title: rec.title,
+      primary: { type: "web", url: rec.link, label: "Web" },
+      fallbacks: [],
+      metadata: {
+        source: "client_fallback",
+        category: rec.category,
+        platform: rec.platform,
+      },
+    };
+  };
+
   const handleLinkClick = () => {
     onLinkClick?.(recommendation);
+    const inAppContainer = getClientHint() === "app";
     const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
     const isMobile =
       /iphone|ipad|ipod|android/i.test(ua) ||
       (typeof window !== "undefined" && window.innerWidth < 768);
+    if (inAppContainer) {
+      const returnTo = typeof window !== "undefined" ? `${window.location.pathname}${window.location.search}` : "/";
+      const candidateLink = recommendation.candidateLink ?? buildFallbackCandidateLink(recommendation);
+      window.location.href = buildOutboundHref(candidateLink, returnTo);
+      return;
+    }
     if (isMobile && recommendation.candidateLink) {
       const returnTo = typeof window !== "undefined" ? `${window.location.pathname}${window.location.search}` : "/";
       window.location.href = buildOutboundHref(recommendation.candidateLink, returnTo);

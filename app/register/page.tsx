@@ -10,14 +10,16 @@ import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { auth } from '@/lib/auth/client'
-import { RegionConfig } from '@/lib/config/region'
-import { useIsIPhone } from '@/hooks/use-device'
+import { RegionConfig, isChinaRegion } from '@/lib/config/region'
+import { useIsIPhone, useIsMobile } from '@/hooks/use-device'
 import { useLanguage } from '@/components/language-provider'
 import { useTranslations } from '@/lib/i18n'
+import { isAppContainer } from '@/lib/app/app-container'
 
 export default function RegisterPage() {
   const router = useRouter()
   const isIPhone = useIsIPhone()
+  const isMobile = useIsMobile()
   const { language } = useLanguage()
   const t = useTranslations(language)
   const [name, setName] = useState('')
@@ -31,6 +33,7 @@ export default function RegisterPage() {
   const [agreeToPrivacy, setAgreeToPrivacy] = useState(false)
   const isChineseLanguage = language === 'zh'
   const isChinaDeployment = RegionConfig.auth.provider === 'cloudbase'
+  const isChina = isChinaRegion()
 
   const validateForm = (): boolean => {
     // 所有区域都必须同意隐私政策
@@ -152,13 +155,90 @@ export default function RegisterPage() {
     setError(null)
 
     try {
-      const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL || window.location.origin}/auth/callback`
-      await auth.toDefaultLoginPage?.(callbackUrl)
+      // CN ?? + App ????? wechat-login:// scheme ????????
+      if (isChina && isAppContainer()) {
+        const callbackName = '__wechatNativeAuthCallback'
+
+        ;(window as any)[callbackName] = async (payload: any) => {
+          if (!payload || typeof payload !== 'object') {
+            setError('???????????')
+            setOauthLoading(null)
+            return
+          }
+
+          if (payload.errCode !== 0 || !payload.code) {
+            setError(payload.errStr || '??????????')
+            setOauthLoading(null)
+            return
+          }
+
+          try {
+            const baseUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin
+            const callbackUrl = new URL('/auth/callback', baseUrl)
+            callbackUrl.searchParams.set('provider', 'wechat_mobile')
+            callbackUrl.searchParams.set('code', payload.code)
+            callbackUrl.searchParams.set('state', payload.state || '')
+            callbackUrl.searchParams.set('redirect', '/')
+
+            window.location.href = callbackUrl.toString()
+          } catch (err) {
+            console.error('[Register] Failed to process WeChat callback:', err)
+            setError('????????')
+            setOauthLoading(null)
+          }
+        }
+
+        const scheme = `wechat-login://start?callback=${encodeURIComponent(callbackName)}`
+        window.location.href = scheme
+        return
+      }
+
+      const nextPath = '/'
+
+      const w = window as any
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin
+      const callbackUrl = new URL('/auth/callback', baseUrl)
+      callbackUrl.searchParams.set('provider', 'wechat_mobile')
+      callbackUrl.searchParams.set('redirect', nextPath)
+
+      const payload = JSON.stringify({
+        type: 'wechat_mobile_login',
+        callbackUrl: callbackUrl.toString(),
+      })
+
+      const sentToNative =
+        typeof w.ReactNativeWebView?.postMessage === 'function'
+          ? (w.ReactNativeWebView.postMessage(payload), true)
+          : typeof w.webkit?.messageHandlers?.wechatLogin?.postMessage === 'function'
+            ? (w.webkit.messageHandlers.wechatLogin.postMessage(payload), true)
+            : typeof w.webkit?.messageHandlers?.native?.postMessage === 'function'
+              ? (w.webkit.messageHandlers.native.postMessage(payload), true)
+              : typeof w.Android?.wechatLogin === 'function'
+                ? (w.Android.wechatLogin(callbackUrl.toString()), true)
+                : false
+
+      if (sentToNative) {
+        return
+      }
+
+      if (isMobile || isAppContainer()) {
+        throw new Error('???????????????????????')
+      }
+
+      const response = await fetch(`/api/auth/wechat/qrcode?next=${encodeURIComponent(nextPath)}`)
+      const data = await response.json()
+
+      if (!response.ok || !data.qrcodeUrl) {
+        throw new Error(data.error || 'Failed to get WeChat login URL')
+      }
+
+      window.location.href = data.qrcodeUrl
     } catch (err) {
-      setError(err instanceof Error ? err.message : (isChineseLanguage ? '微信登录失败' : 'WeChat login failed'))
+      setError(err instanceof Error ? err.message : (isChineseLanguage ? '??????' : 'WeChat login failed'))
       setOauthLoading(null)
     }
   }
+
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-4 py-12">

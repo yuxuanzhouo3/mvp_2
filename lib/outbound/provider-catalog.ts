@@ -254,8 +254,10 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       domains: ["dianping.com"],
       hasApp: true,
       androidPackageId: "com.dianping.v1",
+      universalLink: ({ query }) =>
+        `https://m.dianping.com/search/keyword/2/0_${encodeURIComponent(query)}`,
       webLink: ({ query }) =>
-        `https://www.dianping.com/search/keyword/2/0_${encodeURIComponent(query)}`,
+        `https://m.dianping.com/search/keyword/2/0_${encodeURIComponent(query)}`,
     },
     "下厨房": {
       id: "下厨房",
@@ -415,6 +417,7 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       displayName: { zh: "饿了么", en: "Eleme" },
       domains: ["ele.me"],
       hasApp: true,
+      androidPackageId: "me.ele",
       webLink: ({ query }) =>
         `https://www.ele.me/search/${encodeURIComponent(query)}`,
       iosScheme: () => `eleme://`,

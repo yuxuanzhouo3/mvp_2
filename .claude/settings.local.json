@@ -47,9 +47,15 @@
       "Bash(xargs ls:*)",
       "Bash(xargs basename:*)",
       "Bash(robocopy:*)",
-      "mcp__thinking__sequentialthinking"
+      "mcp__thinking__sequentialthinking",
+      "Read(//c/Users/18264/Downloads/mvp_24-master/**)",
+      "Read(//d/code/Project One/android-CN/app/src/main/java/co/median/android/**)",
+      "Read(//d/code/Project One/android-CN/app/**)"
     ],
     "deny": [],
-    "ask": []
+    "ask": [],
+    "additionalDirectories": [
+      "D:\\code\\Project One\\android\\app\\src\\main\\java\\co\\median\\android"
+    ]
   }
 }

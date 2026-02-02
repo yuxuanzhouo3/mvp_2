@@ -12,7 +12,11 @@ type AuthStatus = "loading" | "success" | "error"
 function AuthCallbackContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const code = searchParams.get("code")
+  const code =
+    searchParams.get("code") ||
+    searchParams.get("auth_code") ||
+    searchParams.get("wx_code") ||
+    searchParams.get("wechat_code")
   const stateParam = searchParams.get("state")
   const errorParam = searchParams.get("error")
   const errorDescription = searchParams.get("error_description")

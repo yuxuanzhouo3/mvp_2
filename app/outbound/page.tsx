@@ -132,7 +132,6 @@ export default function OutboundPage() {
   const searchParams = useSearchParams();
   const { language } = useLanguage();
   const [openState, setOpenState] = useState<OpenState>("idle");
-  const [autoRedirectSeconds, setAutoRedirectSeconds] = useState<number | null>(null);
   const returnTo = searchParams.get("returnTo");
 
   const handleBack = () => {
@@ -147,8 +146,6 @@ export default function OutboundPage() {
     }
     router.replace("/");
   };
-
-  const cancelAutoRedirect = () => setAutoRedirectSeconds(null);
 
   const decoded = useMemo((): { candidateLink: CandidateLink | null; error: string | null } => {
     const raw = searchParams.get("data");
@@ -204,31 +201,6 @@ export default function OutboundPage() {
     });
   }, [decoded.candidateLink]);
 
-  useEffect(() => {
-    if (!decoded.candidateLink) return;
-    if (openState !== "failed") {
-      setAutoRedirectSeconds(null);
-      return;
-    }
-    const web = getWebLink(decoded.candidateLink);
-    if (!web) return;
-
-    setAutoRedirectSeconds(3);
-    const timer = window.setInterval(() => {
-      setAutoRedirectSeconds((prev) => {
-        if (prev === null) return null;
-        if (prev <= 1) {
-          window.clearInterval(timer);
-          window.location.href = web.url;
-          return null;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => window.clearInterval(timer);
-  }, [openState, decoded.candidateLink]);
-
   if (decoded.error) {
     return (
       <div className="min-h-screen bg-[#F7F9FC] p-4 flex items-center justify-center">
@@ -278,12 +250,10 @@ export default function OutboundPage() {
             {language === "zh" ? (
               <>
                 未检测到 App 拉起，建议下载 App 或继续使用网页版。
-                {webLink && autoRedirectSeconds !== null ? `（${autoRedirectSeconds} 秒后自动打开网页版）` : ""}
               </>
             ) : (
               <>
                 App launch not detected. Download the app or continue on web.
-                {webLink && autoRedirectSeconds !== null ? ` (Auto-opening web in ${autoRedirectSeconds}s)` : ""}
               </>
             )}
           </div>
@@ -294,7 +264,6 @@ export default function OutboundPage() {
             <Button
               className="w-full bg-black text-white hover:bg-black/90"
               onClick={() => {
-                cancelAutoRedirect();
                 attemptOpenLinksSequential(autoTryLinks, 1100);
               }}
             >
@@ -307,7 +276,6 @@ export default function OutboundPage() {
               className="w-full"
               variant="secondary"
               onClick={() => {
-                cancelAutoRedirect();
                 window.location.href = webLink.url;
               }}
             >
@@ -327,7 +295,6 @@ export default function OutboundPage() {
                     className="w-full"
                     variant="outline"
                     onClick={() => {
-                      cancelAutoRedirect();
                       window.open(l.url, "_blank", "noopener,noreferrer");
                     }}
                   >
@@ -350,7 +317,6 @@ export default function OutboundPage() {
                     className="w-full"
                     variant="ghost"
                     onClick={() => {
-                      cancelAutoRedirect();
                       window.open(l.url, "_blank", "noopener,noreferrer");
                     }}
                   >
