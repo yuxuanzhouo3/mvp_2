@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { isChinaRegion } from "@/lib/config/region";
 import { cloudbaseSignInWithWechat } from "@/lib/auth/cloudbase-auth";
 import { getCloudBaseDatabase, CloudBaseCollections } from "@/lib/database/cloudbase-client";
+import { parseWeChatSignedState } from "@/lib/auth/wechat-oauth";
 
 export async function POST(request: Request) {
   if (!isChinaRegion()) {
@@ -24,11 +25,36 @@ export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({} as any));
     const code = (body as any)?.code as string | undefined;
+    const state = (body as any)?.state as string | undefined;
 
     if (!code) {
       return NextResponse.json(
         { error: "Missing authorization code" },
         { status: 400 }
+      );
+    }
+
+    if (!state) {
+      return NextResponse.json(
+        { error: "缺少 state", errorCode: "MISSING_STATE" },
+        { status: 400 }
+      );
+    }
+
+    let signedState = null;
+    try {
+      signedState = parseWeChatSignedState(state);
+    } catch (err) {
+      return NextResponse.json(
+        { error: "WeChat state validation failed" },
+        { status: 500 }
+      );
+    }
+
+    if (!signedState || signedState.t !== "mobile_app") {
+      return NextResponse.json(
+        { error: "无效的 state", errorCode: "INVALID_STATE" },
+        { status: 401 }
       );
     }
 
@@ -165,4 +191,3 @@ export async function POST(request: Request) {
     );
   }
 }
-

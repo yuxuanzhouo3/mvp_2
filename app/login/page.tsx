@@ -253,6 +253,8 @@ export default function LoginPage() {
         return
       }
 
+      const nextPath = '/'
+
       // CN 环境 + App 容器：使用 wechat-login:// scheme 触发原生微信登录
       if (isChina && isAppContainer()) {
         console.log('[Login] CN App container detected, using native WeChat login scheme')
@@ -282,7 +284,7 @@ export default function LoginPage() {
             callbackUrl.searchParams.set('provider', 'wechat_mobile')
             callbackUrl.searchParams.set('code', payload.code)
             callbackUrl.searchParams.set('state', payload.state || '')
-            callbackUrl.searchParams.set('redirect', '/')
+            callbackUrl.searchParams.set('redirect', nextPath)
 
             window.location.href = callbackUrl.toString()
           } catch (err) {
@@ -292,13 +294,29 @@ export default function LoginPage() {
           }
         }
 
-        const scheme = `wechat-login://start?callback=${encodeURIComponent(callbackName)}`
+        let signedState = ''
+        try {
+          const stateResponse = await fetch(
+            `/api/auth/wechat/mobile/start?redirect=${encodeURIComponent(nextPath)}`
+          )
+          const stateData = await stateResponse.json().catch(() => ({}))
+          if (!stateResponse.ok || !stateData.state) {
+            throw new Error(stateData.error || '无法获取微信登录状态')
+          }
+          signedState = stateData.state
+        } catch (err) {
+          setError(err instanceof Error ? err.message : '无法获取微信登录状态')
+          setOauthLoading(null)
+          return
+        }
+
+        const scheme = `wechat-login://start?callback=${encodeURIComponent(
+          callbackName
+        )}&state=${encodeURIComponent(signedState)}`
         console.log('[Login] Launching native WeChat login, scheme:', scheme)
         window.location.href = scheme
         return
       }
-
-      const nextPath = '/'
 
       const w = window as any
       const baseUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin

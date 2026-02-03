@@ -155,6 +155,8 @@ export default function RegisterPage() {
     setError(null)
 
     try {
+      const nextPath = '/'
+
       // CN ?? + App ????? wechat-login:// scheme ????????
       if (isChina && isAppContainer()) {
         const callbackName = '__wechatNativeAuthCallback'
@@ -178,7 +180,7 @@ export default function RegisterPage() {
             callbackUrl.searchParams.set('provider', 'wechat_mobile')
             callbackUrl.searchParams.set('code', payload.code)
             callbackUrl.searchParams.set('state', payload.state || '')
-            callbackUrl.searchParams.set('redirect', '/')
+            callbackUrl.searchParams.set('redirect', nextPath)
 
             window.location.href = callbackUrl.toString()
           } catch (err) {
@@ -188,12 +190,28 @@ export default function RegisterPage() {
           }
         }
 
-        const scheme = `wechat-login://start?callback=${encodeURIComponent(callbackName)}`
+        let signedState = ''
+        try {
+          const stateResponse = await fetch(
+            `/api/auth/wechat/mobile/start?redirect=${encodeURIComponent(nextPath)}`
+          )
+          const stateData = await stateResponse.json().catch(() => ({}))
+          if (!stateResponse.ok || !stateData.state) {
+            throw new Error(stateData.error || '??????????')
+          }
+          signedState = stateData.state
+        } catch (err) {
+          setError(err instanceof Error ? err.message : '??????????')
+          setOauthLoading(null)
+          return
+        }
+
+        const scheme = `wechat-login://start?callback=${encodeURIComponent(
+          callbackName
+        )}&state=${encodeURIComponent(signedState)}`
         window.location.href = scheme
         return
       }
-
-      const nextPath = '/'
 
       const w = window as any
       const baseUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin
