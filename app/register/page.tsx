@@ -157,37 +157,62 @@ export default function RegisterPage() {
     try {
       const nextPath = '/'
 
-      // CN ?? + App ????? wechat-login:// scheme ????????
+      // CN region + App container: native WeChat login
       if (isChina && isAppContainer()) {
-        const callbackName = '__wechatNativeAuthCallback'
-
-        ;(window as any)[callbackName] = async (payload: any) => {
-          if (!payload || typeof payload !== 'object') {
-            setError('???????????')
-            setOauthLoading(null)
-            return
-          }
-
-          if (payload.errCode !== 0 || !payload.code) {
-            setError(payload.errStr || '??????????')
-            setOauthLoading(null)
-            return
-          }
-
+        const handleNativeSuccess = async (code: string, state?: string) => {
           try {
             const baseUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin
             const callbackUrl = new URL('/auth/callback', baseUrl)
             callbackUrl.searchParams.set('provider', 'wechat_mobile')
-            callbackUrl.searchParams.set('code', payload.code)
-            callbackUrl.searchParams.set('state', payload.state || '')
+            callbackUrl.searchParams.set('code', code)
+            callbackUrl.searchParams.set('state', state || '')
             callbackUrl.searchParams.set('redirect', nextPath)
 
             window.location.href = callbackUrl.toString()
           } catch (err) {
             console.error('[Register] Failed to process WeChat callback:', err)
-            setError('????????')
+            setError('Failed to process WeChat callback')
             setOauthLoading(null)
           }
+        }
+
+        const handleNativeError = (message?: string, errCode?: number) => {
+          const details = [
+            message ? `errStr=${message}` : null,
+            errCode != null ? `errCode=${errCode}` : null,
+          ].filter(Boolean).join(' | ')
+          const fallback = errCode != null ? `WeChat login failed (errCode=${errCode})` : 'WeChat login failed'
+          const fullMessage = details ? `WeChat login failed: ${details}` : fallback
+          console.error('[Register] WeChat login error:', { message, errCode })
+          setError(fullMessage)
+          setOauthLoading(null)
+        }
+
+        ;(window as any).handleWeChatLoginSuccess = (code: string, state?: string) => {
+          if (!code) {
+            handleNativeError('Missing WeChat auth code')
+            return
+          }
+          handleNativeSuccess(code, state)
+        }
+        ;(window as any).handleWeChatLoginError = (error: string) => {
+          handleNativeError(error)
+        }
+
+        const callbackName = '__wechatNativeAuthCallback'
+
+        ;(window as any)[callbackName] = async (payload: any) => {
+          if (!payload || typeof payload !== 'object') {
+            handleNativeError('Invalid native login payload')
+            return
+          }
+
+          if (payload.errCode !== 0 || !payload.code) {
+            handleNativeError(payload.errStr, payload.errCode)
+            return
+          }
+
+          await handleNativeSuccess(payload.code, payload.state)
         }
 
         let signedState = ''
@@ -197,12 +222,22 @@ export default function RegisterPage() {
           )
           const stateData = await stateResponse.json().catch(() => ({}))
           if (!stateResponse.ok || !stateData.state) {
-            throw new Error(stateData.error || '??????????')
+            throw new Error(stateData.error || 'Failed to fetch WeChat state')
           }
           signedState = stateData.state
         } catch (err) {
-          setError(err instanceof Error ? err.message : '??????????')
+          setError(err instanceof Error ? err.message : 'Failed to fetch WeChat state')
           setOauthLoading(null)
+          return
+        }
+
+        const androidBridge = (window as any).AndroidWeChatBridge
+        if (androidBridge && typeof androidBridge.startLogin === 'function') {
+          androidBridge.startLogin(signedState)
+          return
+        }
+        if (androidBridge && typeof androidBridge.loginWithState === 'function') {
+          androidBridge.loginWithState(signedState)
           return
         }
 
@@ -240,7 +275,7 @@ export default function RegisterPage() {
       }
 
       if (isMobile || isAppContainer()) {
-        throw new Error('???????????????????????')
+        throw new Error('WeChat login is only available in the app')
       }
 
       const response = await fetch(`/api/auth/wechat/qrcode?next=${encodeURIComponent(nextPath)}`)
@@ -252,7 +287,7 @@ export default function RegisterPage() {
 
       window.location.href = data.qrcodeUrl
     } catch (err) {
-      setError(err instanceof Error ? err.message : (isChineseLanguage ? '??????' : 'WeChat login failed'))
+      setError(err instanceof Error ? err.message : 'WeChat login failed')
       setOauthLoading(null)
     }
   }

@@ -8,6 +8,12 @@ export function isAppContainer(): boolean {
   if (typeof w.webkit?.messageHandlers?.wechatLogin?.postMessage === "function") return true;
   if (typeof w.webkit?.messageHandlers?.native?.postMessage === "function") return true;
   if (typeof w.Android?.wechatLogin === "function") return true;
+  if (
+    typeof w.AndroidWeChatBridge?.startLogin === "function" ||
+    typeof w.AndroidWeChatBridge?.loginWithState === "function" ||
+    typeof w.AndroidWeChatBridge?.login === "function"
+  )
+    return true;
 
   // 检测 Median/GoNative 容器
   const ua = navigator.userAgent || "";

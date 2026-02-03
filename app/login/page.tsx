@@ -242,56 +242,81 @@ export default function LoginPage() {
     setError(null)
 
     try {
-      // 小程序环境：跳转到小程序原生登录页面
+      // Mini Program login when not in the app container
       if (isInMiniProgram && !isAppContainer()) {
         console.log('[Login] Detected miniprogram environment, requesting native login...')
         const success = await requestWxMpLoginAsync(window.location.href)
         if (!success) {
-          throw new Error('无法跳转到小程序登录页面，请确认在微信小程序中打开')
+          throw new Error('Failed to start Mini Program login')
         }
-        // 跳转后不需要重置状态，页面会被小程序替换
+        // Stop here; Mini Program flow handles the rest
         return
       }
 
       const nextPath = '/'
 
-      // CN 环境 + App 容器：使用 wechat-login:// scheme 触发原生微信登录
+      // CN region + App container: native WeChat login
       if (isChina && isAppContainer()) {
-        console.log('[Login] CN App container detected, using native WeChat login scheme')
+        console.log('[Login] CN App container detected, using native WeChat login')
 
-        const callbackName = '__wechatNativeAuthCallback'
-
-        // 定义全局回调函数
-        ;(window as any)[callbackName] = async (payload: any) => {
-          console.log('[Login] Received native WeChat login callback:', payload)
-
-          if (!payload || typeof payload !== 'object') {
-            setError('微信登录失败：无效回调')
-            setOauthLoading(null)
-            return
-          }
-
-          if (payload.errCode !== 0 || !payload.code) {
-            setError(payload.errStr || '微信登录已取消或失败')
-            setOauthLoading(null)
-            return
-          }
-
-          // 使用 code 完成登录
+        const handleNativeSuccess = async (code: string, state?: string) => {
           try {
             const baseUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin
             const callbackUrl = new URL('/auth/callback', baseUrl)
             callbackUrl.searchParams.set('provider', 'wechat_mobile')
-            callbackUrl.searchParams.set('code', payload.code)
-            callbackUrl.searchParams.set('state', payload.state || '')
+            callbackUrl.searchParams.set('code', code)
+            callbackUrl.searchParams.set('state', state || '')
             callbackUrl.searchParams.set('redirect', nextPath)
 
             window.location.href = callbackUrl.toString()
           } catch (err) {
             console.error('[Login] Failed to process WeChat callback:', err)
-            setError('微信登录处理失败')
+            setError('Failed to process WeChat callback')
             setOauthLoading(null)
           }
+        }
+
+        const handleNativeError = (message?: string, errCode?: number) => {
+          const details = [
+            message ? `errStr=${message}` : null,
+            errCode != null ? `errCode=${errCode}` : null,
+          ].filter(Boolean).join(' | ')
+          const fallback = errCode != null ? `WeChat login failed (errCode=${errCode})` : 'WeChat login failed'
+          const fullMessage = details ? `WeChat login failed: ${details}` : fallback
+          console.error('[Login] WeChat login error:', { message, errCode })
+          setError(fullMessage)
+          setOauthLoading(null)
+        }
+
+        // Android JS Bridge callbacks
+        ;(window as any).handleWeChatLoginSuccess = (code: string, state?: string) => {
+          if (!code) {
+            handleNativeError('Missing WeChat auth code')
+            return
+          }
+          handleNativeSuccess(code, state)
+        }
+        ;(window as any).handleWeChatLoginError = (error: string) => {
+          handleNativeError(error)
+        }
+
+        const callbackName = '__wechatNativeAuthCallback'
+
+        // Scheme callback
+        ;(window as any)[callbackName] = async (payload: any) => {
+          console.log('[Login] Received native WeChat login callback:', payload)
+
+          if (!payload || typeof payload !== 'object') {
+            handleNativeError('Invalid native login payload')
+            return
+          }
+
+          if (payload.errCode !== 0 || !payload.code) {
+            handleNativeError(payload.errStr, payload.errCode)
+            return
+          }
+
+          await handleNativeSuccess(payload.code, payload.state)
         }
 
         let signedState = ''
@@ -301,12 +326,22 @@ export default function LoginPage() {
           )
           const stateData = await stateResponse.json().catch(() => ({}))
           if (!stateResponse.ok || !stateData.state) {
-            throw new Error(stateData.error || '无法获取微信登录状态')
+            throw new Error(stateData.error || 'Failed to fetch WeChat state')
           }
           signedState = stateData.state
         } catch (err) {
-          setError(err instanceof Error ? err.message : '无法获取微信登录状态')
+          setError(err instanceof Error ? err.message : 'Failed to fetch WeChat state')
           setOauthLoading(null)
+          return
+        }
+
+        const androidBridge = (window as any).AndroidWeChatBridge
+        if (androidBridge && typeof androidBridge.startLogin === 'function') {
+          androidBridge.startLogin(signedState)
+          return
+        }
+        if (androidBridge && typeof androidBridge.loginWithState === 'function') {
+          androidBridge.loginWithState(signedState)
           return
         }
 
@@ -345,10 +380,10 @@ export default function LoginPage() {
       }
 
       if (isMobile || isAppContainer()) {
-        throw new Error('当前为移动端环境，但未检测到可用的原生登录桥接')
+        throw new Error('WeChat login is only available in the app')
       }
 
-      // PC/手机浏览器：获取微信登录二维码 URL
+      // PC/Browser: request QR code URL
       const response = await fetch(`/api/auth/wechat/qrcode?next=${encodeURIComponent(nextPath)}`)
       const data = await response.json()
 
@@ -356,13 +391,14 @@ export default function LoginPage() {
         throw new Error(data.error || 'Failed to get WeChat login URL')
       }
 
-      // 重定向到微信授权页面
+      // Redirect to QR code URL
       window.location.href = data.qrcodeUrl
     } catch (err) {
       setError(err instanceof Error ? err.message : 'WeChat login failed')
       setOauthLoading(null)
     }
   }
+
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-4 py-12">
