@@ -353,8 +353,8 @@ export function RecommendationCard({
               <button
                 onClick={handleSave}
                 className={`p-1.5 rounded-full transition-colors ${isSaved
-                    ? "bg-red-100 text-red-500"
-                    : "bg-gray-100 text-gray-400 hover:text-red-500"
+                  ? "bg-red-100 text-red-500"
+                  : "bg-gray-100 text-gray-400 hover:text-red-500"
                   }`}
                 title={locale === "zh" ? "收藏" : "Save"}
               >
@@ -474,33 +474,57 @@ export function RecommendationList({
   return (
     <div className={compact ? "space-y-2" : "space-y-4"}>
       {recommendations.map((rec, index) => {
+        // Staggered animation delay for streaming effect
+        const animationDelay = index * 0.1;
+        const itemStyle = { animationDelay: `${animationDelay}s` };
+
         // 如果是旅游类别且不是紧凑模式，使用专门的旅游卡片
         if (category === 'travel' && !compact) {
           return (
-            <TravelRecommendationCard
+            <motion.div
               key={`${rec.title}-${index}`}
-              recommendation={rec}
-              onLinkClick={onLinkClick}
-              onSave={onSave}
-              onDismiss={onDismiss}
-              locale={locale}
-            />
+              initial={{ opacity: 0, y: 20, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{
+                duration: 0.4,
+                delay: animationDelay,
+                ease: [0.25, 0.46, 0.45, 0.94]
+              }}
+            >
+              <TravelRecommendationCard
+                recommendation={rec}
+                onLinkClick={onLinkClick}
+                onSave={onSave}
+                onDismiss={onDismiss}
+                locale={locale}
+              />
+            </motion.div>
           );
         }
 
-        // 其他情况使用通用卡片
+        // 其他情况使用通用卡片，带有流式动画效果
         return (
-          <RecommendationCard
+          <motion.div
             key={`${rec.title}-${index}`}
-            recommendation={rec}
-            category={category}
-            onLinkClick={onLinkClick}
-            onSave={onSave}
-            onDismiss={onDismiss}
-            showReason={showReason}
-            compact={compact}
-            locale={locale}
-          />
+            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{
+              duration: 0.4,
+              delay: animationDelay,
+              ease: [0.25, 0.46, 0.45, 0.94]
+            }}
+          >
+            <RecommendationCard
+              recommendation={rec}
+              category={category}
+              onLinkClick={onLinkClick}
+              onSave={onSave}
+              onDismiss={onDismiss}
+              showReason={showReason}
+              compact={compact}
+              locale={locale}
+            />
+          </motion.div>
         );
       })}
     </div>

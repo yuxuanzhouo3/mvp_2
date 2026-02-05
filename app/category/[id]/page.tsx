@@ -586,10 +586,12 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
           url.searchParams.set("lng", String(coordsOverride.lng))
         }
 
-        const response = await fetch(`${url.pathname}?${url.searchParams.toString()}`, { method: "GET" })
-        const data = await response.json()
+        url.searchParams.set("stream", "true")
 
-        if (response.status === 429 || data.limitExceeded) {
+        const response = await fetch(`${url.pathname}?${url.searchParams.toString()}`, { method: "GET" })
+
+        if (response.status === 429) {
+          const data = await response.json().catch(() => null)
           trackClientEvent({
             eventType: "recommend_error",
             userId: resolvedUserId,
@@ -603,9 +605,9 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
             },
           })
           setLimitExceeded(true)
-          setError(data.error || (locale === "zh" ? "已达到使用限制" : "Usage limit reached"))
-          setUpgradeMessage(data.upgradeMessage || null)
-          if (data.usage) {
+          setError(data?.error || (locale === "zh" ? "已达到使用限制" : "Usage limit reached"))
+          setUpgradeMessage(data?.upgradeMessage || null)
+          if (data?.usage) {
             setUsageInfo(data.usage as UsageInfo)
           }
           setIsShaking(false)
@@ -613,8 +615,141 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
           return
         }
 
-        if (!data.success || data.recommendations.length === 0) {
-          throw new Error(data.error || "No recommendations received")
+        const contentType = response.headers.get("content-type") || ""
+        if (contentType.includes("text/event-stream") && response.body) {
+          const reader = response.body.getReader()
+          const decoder = new TextDecoder()
+          let buffer = ""
+          let aiStarted = false
+          let collected: HistoryItem[] = []
+
+          const flushMessage = (raw: string) => {
+            const lines = raw.split("\n").map((l) => l.trimEnd())
+            let eventName = "message"
+            const dataLines: string[] = []
+            for (const line of lines) {
+              if (line.startsWith("event:")) {
+                eventName = line.slice("event:".length).trim()
+              } else if (line.startsWith("data:")) {
+                dataLines.push(line.slice("data:".length).trim())
+              }
+            }
+            const dataRaw = dataLines.join("\n").trim()
+            if (!dataRaw) return
+            let payload: any = null
+            try {
+              payload = JSON.parse(dataRaw)
+            } catch {
+              return
+            }
+
+            if (eventName === "error" || payload?.type === "error") {
+              setError(payload?.message || (locale === "zh" ? "获取推荐失败，请重试" : "Failed to get recommendations"))
+              setIsShaking(false)
+              setIsLoading(false)
+              return
+            }
+
+            if (payload?.type === "partial" && Array.isArray(payload?.recommendations)) {
+              if (payload?.phase === "ai") {
+                if (!aiStarted) {
+                  aiStarted = true
+                  collected = []
+                }
+                const merged = dedupeHistory([...collected, ...payload.recommendations])
+                collected = merged
+                setCurrentRecommendations(merged)
+                setSource(payload?.source || "ai")
+                return
+              }
+
+              const warm = dedupeHistory(payload.recommendations)
+              if (!aiStarted) {
+                setCurrentRecommendations(warm)
+                setSource(payload?.source || "warmup")
+              }
+              return
+            }
+
+            if (payload?.type === "complete") {
+              const finalRecs = Array.isArray(payload?.recommendations)
+                ? dedupeHistory(payload.recommendations)
+                : collected
+
+              const uniqueRecs = dedupeHistory(finalRecs)
+              setCurrentRecommendations(uniqueRecs)
+              setSource(payload?.source || (aiStarted ? "ai" : "fallback"))
+
+              if (payload?.usage) {
+                setUsageInfo(payload.usage as UsageInfo)
+              }
+
+              trackClientEvent({
+                eventType: "recommend_success",
+                userId: resolvedUserId,
+                path: `/category/${categoryId}`,
+                step: null,
+                properties: {
+                  categoryId,
+                  locale,
+                  returned: uniqueRecs.length,
+                  source: payload?.source || null,
+                },
+              })
+
+              trackClientEvent({
+                eventType: "recommend_result_view",
+                userId: resolvedUserId,
+                path: `/category/${categoryId}`,
+                step: null,
+                properties: {
+                  categoryId,
+                  locale,
+                  shown: uniqueRecs.length,
+                  source: payload?.source || null,
+                },
+              })
+
+              const newHistory: HistoryItem[] = dedupeHistory([...uniqueRecs, ...history]).slice(0, 10)
+              setHistory(newHistory)
+              localStorage.setItem(`ai_history_${params.id}`, JSON.stringify(newHistory))
+
+              if (isValidUserId(resolvedUserId)) {
+                fetchRemoteHistory(resolvedUserId)
+              }
+
+              setIsShaking(false)
+              setIsLoading(false)
+            }
+          }
+
+          try {
+            while (true) {
+              const { value, done } = await reader.read()
+              if (done) break
+              buffer += decoder.decode(value, { stream: true })
+              let idx = buffer.indexOf("\n\n")
+              while (idx !== -1) {
+                const msg = buffer.slice(0, idx)
+                buffer = buffer.slice(idx + 2)
+                flushMessage(msg)
+                idx = buffer.indexOf("\n\n")
+              }
+            }
+          } finally {
+            try {
+              reader.releaseLock()
+            } catch {}
+          }
+
+          setIsShaking(false)
+          setIsLoading(false)
+          return
+        }
+
+        const data = await response.json().catch(() => null)
+        if (!data?.success || !Array.isArray(data?.recommendations) || data.recommendations.length === 0) {
+          throw new Error(data?.error || "No recommendations received")
         }
 
         trackClientEvent({
@@ -634,35 +769,33 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
           setUsageInfo(data.usage as UsageInfo)
         }
 
-        setTimeout(() => {
-          const uniqueRecs = dedupeHistory(data.recommendations)
-          setCurrentRecommendations(uniqueRecs)
-          setSource(data.source)
+        const uniqueRecs = dedupeHistory(data.recommendations)
+        setCurrentRecommendations(uniqueRecs)
+        setSource(data.source)
 
-          trackClientEvent({
-            eventType: "recommend_result_view",
-            userId: resolvedUserId,
-            path: `/category/${categoryId}`,
-            step: null,
-            properties: {
-              categoryId,
-              locale,
-              shown: uniqueRecs.length,
-              source: data.source || null,
-            },
-          })
+        trackClientEvent({
+          eventType: "recommend_result_view",
+          userId: resolvedUserId,
+          path: `/category/${categoryId}`,
+          step: null,
+          properties: {
+            categoryId,
+            locale,
+            shown: uniqueRecs.length,
+            source: data.source || null,
+          },
+        })
 
-          const newHistory: HistoryItem[] = dedupeHistory([...uniqueRecs, ...history]).slice(0, 10)
-          setHistory(newHistory)
-          localStorage.setItem(`ai_history_${params.id}`, JSON.stringify(newHistory))
+        const newHistory: HistoryItem[] = dedupeHistory([...uniqueRecs, ...history]).slice(0, 10)
+        setHistory(newHistory)
+        localStorage.setItem(`ai_history_${params.id}`, JSON.stringify(newHistory))
 
-          if (isValidUserId(resolvedUserId)) {
-            fetchRemoteHistory(resolvedUserId)
-          }
+        if (isValidUserId(resolvedUserId)) {
+          fetchRemoteHistory(resolvedUserId)
+        }
 
-          setIsShaking(false)
-          setIsLoading(false)
-        }, 1500)
+        setIsShaking(false)
+        setIsLoading(false)
       } catch (err) {
         console.error("Error fetching recommendations:", err)
         trackClientEvent({

@@ -29,8 +29,8 @@ function detectMobileOs(): "ios" | "android" | "other" {
 function getAutoTryLinks(candidateLink: CandidateLink, os: "ios" | "android" | "other"): OutboundLink[] {
   const primaryTry =
     candidateLink.primary.type === "app" ||
-    candidateLink.primary.type === "intent" ||
-    candidateLink.primary.type === "universal_link"
+      candidateLink.primary.type === "intent" ||
+      candidateLink.primary.type === "universal_link"
       ? [candidateLink.primary]
       : [];
 
@@ -187,6 +187,13 @@ export default function OutboundPage() {
     }
   }, [searchParams, language]);
 
+  const candidateLink = decoded.candidateLink;
+  const webLinkUrl = useMemo(() => {
+    if (!candidateLink) return null;
+    const webLink = getWebLink(candidateLink);
+    return webLink?.url || null;
+  }, [candidateLink]);
+
   useEffect(() => {
     if (!decoded.candidateLink) return;
     const os = detectMobileOs();
@@ -195,11 +202,49 @@ export default function OutboundPage() {
       setOpenState("failed");
       return;
     }
+    // iOS: only auto-try Universal Links (custom schemes require user gesture)
+    if (os === "ios") {
+      const universalLinks = autoTryLinks.filter(l => l.type === "universal_link");
+      if (universalLinks.length === 0) {
+        // No universal links - stay idle, show manual button
+        return;
+      }
+      setOpenState("trying");
+      attemptOpenLinksSequential(universalLinks, 1100).then((opened) => {
+        if (!opened) setOpenState("failed");
+      });
+      return;
+    }
+    // Android: try all app links
     setOpenState("trying");
     attemptOpenLinksSequential(autoTryLinks, 1100).then((opened) => {
       if (!opened) setOpenState("failed");
     });
   }, [decoded.candidateLink]);
+
+  useEffect(() => {
+    if (!webLinkUrl) return;
+
+    const key = "outbound:store-return";
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== "visible") return;
+      try {
+        const raw = sessionStorage.getItem(key);
+        if (!raw) return;
+        const parsed = JSON.parse(raw) as { ts?: number };
+        const ts = typeof parsed?.ts === "number" ? parsed.ts : 0;
+        sessionStorage.removeItem(key);
+        if (!ts) return;
+        if (Date.now() - ts > 10 * 60 * 1000) return;
+      } catch {
+        return;
+      }
+      window.location.href = webLinkUrl;
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, [webLinkUrl]);
 
   if (decoded.error) {
     return (
@@ -218,13 +263,13 @@ export default function OutboundPage() {
   }
 
   if (!decoded.candidateLink) return null;
-  const candidateLink = decoded.candidateLink;
   const os = detectMobileOs();
+  const link = decoded.candidateLink; // Non-null confirmed by check above
 
-  const webLink = getWebLink(candidateLink);
-  const storeLinks = filterStoreLinksByOs(getStoreLinks(candidateLink), os);
-  const otherLinks = getOtherFallbackLinks(candidateLink);
-  const autoTryLinks = getAutoTryLinks(candidateLink, os);
+  const webLink = getWebLink(link);
+  const storeLinks = filterStoreLinksByOs(getStoreLinks(link), os);
+  const otherLinks = getOtherFallbackLinks(link);
+  const autoTryLinks = getAutoTryLinks(link, os);
   const hasAutoTry = autoTryLinks.length > 0;
 
   return (
@@ -234,7 +279,7 @@ export default function OutboundPage() {
           {language === "zh" ? "正在为你打开" : "Opening"}
         </div>
         <div className="text-sm text-gray-600 mt-1 mb-4">
-          {candidateLink.title}
+          {link.title}
         </div>
 
         {openState === "trying" && (
@@ -246,16 +291,26 @@ export default function OutboundPage() {
         )}
 
         {openState === "failed" && (
+          <div className="text-sm mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-lg">📱</span>
+              <span className="font-medium text-amber-800">
+                {language === "zh" ? "未检测到 App" : "App not detected"}
+              </span>
+            </div>
+            <p className="text-amber-700 text-xs">
+              {language === "zh"
+                ? "建议下载 App 获得更好体验，或继续使用网页版。"
+                : "Download the app for a better experience, or continue on web."}
+            </p>
+          </div>
+        )}
+
+        {openState === "idle" && os === "ios" && hasAutoTry && (
           <div className="text-sm text-gray-700 mb-4">
-            {language === "zh" ? (
-              <>
-                未检测到 App 拉起，建议下载 App 或继续使用网页版。
-              </>
-            ) : (
-              <>
-                App launch not detected. Download the app or continue on web.
-              </>
-            )}
+            {language === "zh"
+              ? "iOS 需要手动点击按钮才能唤起 App。"
+              : "On iOS, tap the button to open the app."}
           </div>
         )}
 
@@ -264,11 +319,48 @@ export default function OutboundPage() {
             <Button
               className="w-full bg-black text-white hover:bg-black/90"
               onClick={() => {
-                attemptOpenLinksSequential(autoTryLinks, 1100);
+                setOpenState("trying");
+                attemptOpenLinksSequential(autoTryLinks, 1100).then((opened) => {
+                  if (!opened) setOpenState("failed");
+                });
               }}
             >
               {language === "zh" ? "打开 App" : "Open app"}
             </Button>
+          )}
+
+          {storeLinks.length > 0 && (
+            <div className="pt-2">
+              <div className="flex items-center gap-2 text-sm font-medium text-gray-900 mb-2">
+                <span className="text-base">⬇️</span>
+                <span>{language === "zh" ? "下载 App 获得更好体验" : "Download App for better experience"}</span>
+              </div>
+              <div className="space-y-2">
+                {storeLinks.map((l, idx) => (
+                  <Button
+                    key={`${l.type}:${l.url}`}
+                    className={`w-full ${idx === 0
+                      ? "bg-gradient-to-r from-blue-500 to-cyan-500 text-white hover:from-blue-600 hover:to-cyan-600"
+                      : ""
+                      }`}
+                    variant={idx === 0 ? "default" : "outline"}
+                    onClick={() => {
+                      try {
+                        sessionStorage.setItem("outbound:store-return", JSON.stringify({ ts: Date.now() }));
+                      } catch { }
+                      window.location.href = l.url;
+                    }}
+                  >
+                    {l.label || (language === "zh" ? "应用商店" : "Store")}
+                  </Button>
+                ))}
+              </div>
+              <p className="text-xs text-gray-500 mt-2 text-center">
+                {language === "zh"
+                  ? "下载安装后返回此页面，将自动跳转网页版"
+                  : "After downloading, return here to continue on web"}
+              </p>
+            </div>
           )}
 
           {webLink && (
@@ -283,28 +375,6 @@ export default function OutboundPage() {
             </Button>
           )}
 
-          {storeLinks.length > 0 && (
-            <div className="pt-1">
-              <div className="text-sm font-medium text-gray-900 mb-2">
-                {language === "zh" ? "下载 App" : "Download app"}
-              </div>
-              <div className="space-y-2">
-                {storeLinks.map((l) => (
-                  <Button
-                    key={`${l.type}:${l.url}`}
-                    className="w-full"
-                    variant="outline"
-                    onClick={() => {
-                      window.open(l.url, "_blank", "noopener,noreferrer");
-                    }}
-                  >
-                    {l.label || (language === "zh" ? "应用商店" : "Store")}
-                  </Button>
-                ))}
-              </div>
-            </div>
-          )}
-
           {otherLinks.length > 0 && (
             <div className="pt-1">
               <div className="text-sm font-medium text-gray-900 mb-2">
@@ -317,7 +387,7 @@ export default function OutboundPage() {
                     className="w-full"
                     variant="ghost"
                     onClick={() => {
-                      window.open(l.url, "_blank", "noopener,noreferrer");
+                      window.location.href = l.url;
                     }}
                   >
                     {l.label || l.type}

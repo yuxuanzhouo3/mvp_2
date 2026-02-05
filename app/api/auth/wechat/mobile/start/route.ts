@@ -37,7 +37,7 @@ export async function GET(request: Request) {
     });
 
     return NextResponse.json({ state, appId, redirectPath });
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       { error: "WeChat state secret is not configured" },
       { status: 500 }

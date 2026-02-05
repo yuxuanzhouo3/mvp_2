@@ -44,7 +44,7 @@ export async function POST(request: Request) {
     let signedState = null;
     try {
       signedState = parseWeChatSignedState(state);
-    } catch (err) {
+    } catch {
       return NextResponse.json(
         { error: "WeChat state validation failed" },
         { status: 500 }

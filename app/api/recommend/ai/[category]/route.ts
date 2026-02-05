@@ -85,43 +85,102 @@ function selectWeightedPlatformForCategory(
   category: RecommendationCategory,
   locale: "zh" | "en",
   seed: string,
+  client: "app" | "web",
   suggestedPlatform?: string,
   entertainmentType?: "video" | "game" | "music" | "review"
 ): string | null {
   const isZh = locale === "zh";
-
-  if (category === "entertainment" && entertainmentType && entertainmentType !== "video") {
-    return null;
-  }
 
   const candidates: WeightedCandidate[] | null = (() => {
     if (isZh) {
       switch (category) {
         case "food":
           return [
-            { platform: "大众点评", weight: 0.35 },
-            { platform: "高德地图美食", weight: 0.25 },
-            { platform: "百度地图美食", weight: 0.2 },
-            { platform: "腾讯地图美食", weight: 0.2 },
+            ...(client === "app"
+              ? ([
+                { platform: "大众点评", weight: 0.16 },
+                { platform: "小红书美食", weight: 0.14 },
+                { platform: "美团", weight: 0.12 },
+                { platform: "美团外卖", weight: 0.12 },
+                { platform: "京东秒送", weight: 0.12 },
+                { platform: "淘宝闪购", weight: 0.12 },
+                { platform: "高德地图美食", weight: 0.1 },
+                { platform: "百度地图美食", weight: 0.06 },
+                { platform: "腾讯地图美食", weight: 0.06 },
+              ] satisfies WeightedCandidate[])
+              : ([
+                { platform: "下厨房", weight: 0.35 },
+                { platform: "高德地图美食", weight: 0.25 },
+                { platform: "大众点评", weight: 0.25 },
+                { platform: "小红书美食", weight: 0.15 },
+              ] satisfies WeightedCandidate[])),
           ];
         case "shopping":
           return [
-            { platform: "京东", weight: 0.3 },
-            { platform: "淘宝", weight: 0.3 },
-            { platform: "拼多多", weight: 0.2 },
-            { platform: "唯品会", weight: 0.2 },
+            ...(client === "app"
+              ? ([
+                { platform: "京东", weight: 0.3 },
+                { platform: "淘宝", weight: 0.3 },
+                { platform: "拼多多", weight: 0.2 },
+                { platform: "唯品会", weight: 0.2 },
+              ] satisfies WeightedCandidate[])
+              : ([
+                { platform: "京东", weight: 0.45 },
+                { platform: "什么值得买", weight: 0.3 },
+                { platform: "慢慢买", weight: 0.25 },
+              ] satisfies WeightedCandidate[])),
           ];
         case "entertainment":
-          return [
-            { platform: "腾讯视频", weight: 0.5 },
-            { platform: "优酷", weight: 0.5 },
-          ];
+          if (client === "web" && suggestedPlatform === "笔趣阁") {
+            return [{ platform: "笔趣阁", weight: 1 }];
+          }
+          switch (entertainmentType || "video") {
+            case "video":
+              return [
+                ...(client === "app"
+                  ? ([
+                    { platform: "腾讯视频", weight: 0.34 },
+                    { platform: "优酷", weight: 0.33 },
+                    { platform: "爱奇艺", weight: 0.33 },
+                  ] satisfies WeightedCandidate[])
+                  : ([{ platform: "腾讯视频", weight: 1 }] satisfies WeightedCandidate[])),
+              ];
+            case "game":
+              return [
+                ...(client === "app"
+                  ? ([{ platform: "TapTap", weight: 1 }] satisfies WeightedCandidate[])
+                  : ([
+                    { platform: "TapTap", weight: 0.5 },
+                    { platform: "Steam", weight: 0.5 },
+                  ] satisfies WeightedCandidate[])),
+              ];
+            case "music":
+              return [
+                ...(client === "app"
+                  ? ([
+                    { platform: "网易云音乐", weight: 0.34 },
+                    { platform: "酷狗音乐", weight: 0.33 },
+                    { platform: "QQ音乐", weight: 0.33 },
+                  ] satisfies WeightedCandidate[])
+                  : ([{ platform: "酷狗音乐", weight: 1 }] satisfies WeightedCandidate[])),
+              ];
+            case "review":
+            default:
+              return [{ platform: "百度", weight: 1 }];
+          }
         case "travel":
           return [
-            { platform: "携程", weight: 0.3 },
-            { platform: "去哪儿", weight: 0.25 },
-            { platform: "小红书", weight: 0.2 },
-            { platform: "马蜂窝", weight: 0.25 },
+            ...(client === "app"
+              ? ([
+                { platform: "携程", weight: 0.4 },
+                { platform: "去哪儿", weight: 0.3 },
+                { platform: "马蜂窝", weight: 0.3 },
+              ] satisfies WeightedCandidate[])
+              : ([
+                { platform: "携程", weight: 0.4 },
+                { platform: "马蜂窝", weight: 0.35 },
+                { platform: "穷游", weight: 0.25 },
+              ] satisfies WeightedCandidate[])),
           ];
         case "fitness":
           return null;
@@ -321,20 +380,20 @@ export async function GET(
     let userPreference: Awaited<ReturnType<typeof getUserCategoryPreference>> = null;
     let recommendationSignals:
       | {
-          topTags: string[];
-          positiveSamples: Array<{
-            title: string;
-            tags?: string[];
-            searchQuery?: string;
-          }>;
-          negativeSamples: Array<{
-            title: string;
-            tags?: string[];
-            searchQuery?: string;
-            feedbackType: string;
-            rating?: number | null;
-          }>;
-        }
+        topTags: string[];
+        positiveSamples: Array<{
+          title: string;
+          tags?: string[];
+          searchQuery?: string;
+        }>;
+        negativeSamples: Array<{
+          title: string;
+          tags?: string[];
+          searchQuery?: string;
+          feedbackType: string;
+          rating?: number | null;
+        }>;
+      }
       | null = null;
 
     if (isValidUserId(userId)) {
@@ -377,8 +436,8 @@ export async function GET(
             .slice(0, 12);
           const direct = Array.isArray((userPreference as any)?.tags)
             ? ((userPreference as any).tags as unknown[]).filter(
-                (t): t is string => typeof t === "string" && t.trim().length > 0
-              )
+              (t): t is string => typeof t === "string" && t.trim().length > 0
+            )
             : [];
           const merged = [...weighted, ...direct];
           const seen = new Set<string>();
@@ -480,395 +539,524 @@ export async function GET(
 
     // 使用新的 AI + 搜索引擎推荐系统
     try {
-      // 1. 使用智谱 AI 生成推荐内容（不含链接）
-      // 将用户偏好数据传递给 AI，用于生成更精准的个性化推荐
-      const candidateCount = Math.min(20, Math.max(count * 3, 12));
-      const aiRecommendations = await generateRecommendations(
-        userHistory || [],
-        category,
-        locale,
-        candidateCount,
-        userPreference, // 传递用户偏好数据（包含问卷画像）
-        { client, geo, avoidTitles: excludeTitles, signals: recommendationSignals }
-      );
-
-      // 2. 处理推荐的多样性
-      let processedRecommendations = aiRecommendations;
-
-      if (category === 'entertainment') {
-        // 分析类型分布
-        const diversity = analyzeEntertainmentDiversity(aiRecommendations);
-        console.log(`[Entertainment] Type distribution:`, diversity.distribution);
-
-        // 如果不够多样，尝试补充
-        if (!diversity.isDiverse && diversity.missingTypes.length > 0) {
-          console.log(`[Entertainment] Missing types:`, diversity.missingTypes);
-          const supplements = await supplementEntertainmentTypes(
-            aiRecommendations,
-            diversity.missingTypes.slice(0, 2), // 最多补充2种类型
-            userHistory || [],
-            locale
-          );
-          processedRecommendations = [...aiRecommendations, ...supplements];
-        }
-      } else if (category === 'fitness') {
-        // 健身推荐必须包含三种类型：健身视频、健身房地点、器材教程
-        const fitnessValidation = validateFitnessRecommendationDiversity(aiRecommendations);
-        console.log(`[Fitness] Validation:`, { isValid: fitnessValidation.isValid, missingTypes: fitnessValidation.missingTypes });
-
-        // 如果缺少任何类型，补充
-        if (!fitnessValidation.isValid && fitnessValidation.missingTypes.length > 0) {
-          console.log(`[Fitness] Missing types:`, fitnessValidation.missingTypes);
-          const supplements = await supplementFitnessTypes(
-            aiRecommendations,
-            fitnessValidation.missingTypes,
-            userHistory || [],
-            locale
-          );
-          processedRecommendations = [...aiRecommendations, ...supplements];
-        }
-      }
-
-      processedRecommendations = dedupeRecommendations(processedRecommendations as any, {
-        count,
-        userHistory: userHistory as any,
-        excludeTitles,
-        mode: "strict",
-      });
-
-      if (processedRecommendations.length < count) {
-        const missing = count - processedRecommendations.length;
-        const topUpCandidateCount = Math.min(20, Math.max(missing * 4, 8));
-        const avoidTitlesForTopUp = [
-          ...excludeTitles,
-          ...(processedRecommendations as any[]).map((r) => r?.title),
-          ...(userHistory || []).map((h) => h?.title),
-        ]
-          .filter((t): t is string => typeof t === "string" && t.trim().length > 0)
-          .slice(0, 120);
-
-        const topUps = await generateRecommendations(
+      const computeValidatedRecommendations = async () => {
+        const candidateCount = Math.min(20, Math.max(count * 3, 12));
+        const aiRecommendations = await generateRecommendations(
           userHistory || [],
           category,
           locale,
-          topUpCandidateCount,
+          candidateCount,
           userPreference,
-          { client, geo, avoidTitles: avoidTitlesForTopUp, signals: recommendationSignals }
+          { client, geo, avoidTitles: excludeTitles, signals: recommendationSignals }
         );
 
-        processedRecommendations = dedupeRecommendations(
-          [...(processedRecommendations as any[]), ...(topUps as any[])],
-          {
-            count,
-            userHistory: userHistory as any,
-            excludeTitles: avoidTitlesForTopUp,
-            mode: "strict",
+        let processedRecommendations = aiRecommendations;
+
+        if (category === "entertainment") {
+          const diversity = analyzeEntertainmentDiversity(aiRecommendations);
+          console.log(`[Entertainment] Type distribution:`, diversity.distribution);
+
+          if (!diversity.isDiverse && diversity.missingTypes.length > 0) {
+            console.log(`[Entertainment] Missing types:`, diversity.missingTypes);
+            const supplements = await supplementEntertainmentTypes(
+              aiRecommendations,
+              diversity.missingTypes.slice(0, 2),
+              userHistory || [],
+              locale
+            );
+            processedRecommendations = [...aiRecommendations, ...supplements];
           }
-        );
-      }
+        } else if (category === "fitness") {
+          const fitnessValidation = validateFitnessRecommendationDiversity(aiRecommendations);
+          console.log(`[Fitness] Validation:`, {
+            isValid: fitnessValidation.isValid,
+            missingTypes: fitnessValidation.missingTypes,
+          });
 
-      // 3. 为每个推荐生成搜索引擎链接
-      const finalRecommendations = processedRecommendations.map((rec, index) => {
-        let enhancedRec = rec;
-
-        // 特殊处理：旅游推荐使用增强器
-        if (category === 'travel') {
-          enhancedRec = enhanceTravelRecommendation(rec, locale);
-        }
-        // 特殊处理：健身推荐使用增强器
-        else if (category === 'fitness') {
-          enhancedRec = enhanceFitnessRecommendation(rec, locale);
-        }
-
-        const selectionSeed = `${userId || "anon"}:${category}:${index}:${enhancedRec.title}`;
-        const weightedPlatform = selectWeightedPlatformForCategory(
-          category,
-          locale,
-          selectionSeed,
-          enhancedRec.platform,
-          enhancedRec.entertainmentType
-        );
-
-        let platform: string;
-        if (weightedPlatform) {
-          platform = weightedPlatform;
-        } else if (category === 'food') {
-          platform = selectFoodPlatformWithRotation(index, enhancedRec.platform, locale);
-        } else if (category === 'fitness') {
-          const fitnessType = (enhancedRec as any).fitnessType || 'tutorial';
-          platform = selectFitnessPlatform(fitnessType, enhancedRec.platform, locale);
-        } else {
-          platform = selectBestPlatform(category, enhancedRec.platform, locale, enhancedRec.entertainmentType);
-        }
-
-        // 生成搜索链接（传递娱乐类型）
-        let searchLink = generateSearchLink(
-          enhancedRec.title,
-          enhancedRec.searchQuery,
-          platform,
-          locale,
-          category,
-          enhancedRec.entertainmentType
-        );
-
-        if (geo && locale === "zh") {
-          const baseQuery = (enhancedRec.searchQuery || enhancedRec.title) as string;
-          const mapQuery =
-            platform === "百度地图美食" || platform === "高德地图美食" || platform === "腾讯地图美食"
-              ? `${baseQuery} 餐厅`
-              : platform === "百度地图健身" || platform === "高德地图健身" || platform === "腾讯地图健身"
-                ? `${baseQuery} 健身房`
-                : baseQuery;
-
-          if (platform === "百度地图美食" || platform === "百度地图健身" || platform === "百度地图") {
-            searchLink = {
-              ...searchLink,
-              url: `https://api.map.baidu.com/place/search?query=${encodeURIComponent(mapQuery)}&location=${encodeURIComponent(
-                `${geo.lat},${geo.lng}`
-              )}&radius=2000&output=html&src=mvp_2-demo`,
-            };
-          }
-
-          if (platform === "高德地图美食" || platform === "高德地图健身" || platform === "高德地图") {
-            searchLink = {
-              ...searchLink,
-              url: `https://uri.amap.com/search?keyword=${encodeURIComponent(mapQuery)}&center=${encodeURIComponent(
-                `${geo.lng},${geo.lat}`
-              )}&radius=2000`,
-            };
+          if (!fitnessValidation.isValid && fitnessValidation.missingTypes.length > 0) {
+            console.log(`[Fitness] Missing types:`, fitnessValidation.missingTypes);
+            const supplements = await supplementFitnessTypes(
+              aiRecommendations,
+              fitnessValidation.missingTypes,
+              userHistory || [],
+              locale
+            );
+            processedRecommendations = [...aiRecommendations, ...supplements];
           }
         }
 
-        // 根据类别和平台确定 linkType
-        let linkType: LinkType = 'search'; // 默认值
-
-        if (category === 'travel') {
-          linkType = 'location';
-        } else if (category === 'fitness') {
-          // 健身分类根据推荐的具体类型设置 linkType
-          const fitnessType = (enhancedRec as any).fitnessType || 'tutorial';
-
-          switch (fitnessType) {
-            case 'tutorial':
-              linkType = 'video';
-              break;
-            case 'nearby_place':
-              linkType = 'location';
-              break;
-            case 'equipment':
-              if (platform === 'B站健身' || platform === '优酷健身' || platform === 'YouTube' || platform === 'YouTube Fitness') {
-                linkType = 'video';
-              } else {
-                linkType = 'search';
-              }
-              break;
-            default:
-              // 后备方案：根据平台
-              if (platform === 'YouTube' || platform === 'YouTube Fitness') {
-                linkType = 'video';
-              } else if (platform === 'Keep' || platform === 'Peloton') {
-                linkType = 'app';
-              } else if (platform === '小红书') {
-                linkType = 'article';
-              } else if (platform === '百度地图健身' || platform === '高德地图健身' || platform === '腾讯地图健身' || platform === '大众点评' || platform === '美团') {
-                linkType = 'location';
-              } else {
-                linkType = 'search';
-              }
-          }
-        } else if (category === 'entertainment') {
-          // 娱乐分类根据平台和娱乐类型设置 linkType
-          // 游戏平台列表（支持所有定义的游戏平台）
-          const gamePlatforms = [
-            'Steam', 'TapTap', 'Epic Games', 'WeGame', '杉果', '小黑盒', '3DM', '游民星空', 'B站游戏', '4399小游戏',
-            'PlayStation Store', 'Xbox Store', 'Nintendo eShop', 'GOG', 'Humble Bundle', 'itch.io', 'Game Pass', 'Green Man Gaming'
-          ];
-          
-          if (platform === 'B站' || platform === 'YouTube' || platform === '爱奇艺' || platform === '腾讯视频' || platform === '优酷' || platform === 'Netflix') {
-            linkType = 'video';
-          } else if (gamePlatforms.includes(platform) || enhancedRec.entertainmentType === 'game') {
-            linkType = 'game';
-          } else if (platform === '酷狗音乐' || platform === 'QQ音乐' || platform === '网易云音乐' || platform === 'Spotify') {
-            linkType = 'music';
-          } else if (platform === '豆瓣' || platform === 'IMDb') {
-            linkType = 'article';
-          }
-        } else if (category === 'shopping') {
-          // 购物分类统一设置为 product
-          linkType = 'product';
-        } else if (category === 'food') {
-          // 美食分类根据平台设置
-          if (
-            platform === '大众点评' ||
-            platform === '美团' ||
-            platform === 'TripAdvisor' ||
-            platform === 'OpenTable' ||
-            platform === '百度地图' ||
-            platform === '百度地图美食' ||
-            platform === '高德地图美食' ||
-            platform === '腾讯地图美食' ||
-            platform === 'Google Maps'
-          ) {
-            linkType = 'restaurant';
-          } else if (platform === '下厨房' || platform === 'Allrecipes') {
-            linkType = 'recipe';
-          } else {
-            linkType = 'article';
-          }
-        }
-
-        const region = isChinaDeployment() ? "CN" : "INTL";
-        const providerForCandidateLink = mapSearchPlatformToProvider(platform, locale);
-        const candidateLink = resolveCandidateLink({
-          title: enhancedRec.title,
-          query: (enhancedRec.searchQuery || enhancedRec.title) as string,
-          category,
-          locale,
-          region,
-          provider: providerForCandidateLink,
+        processedRecommendations = dedupeRecommendations(processedRecommendations as any, {
+          count,
+          userHistory: userHistory as any,
+          excludeTitles,
+          mode: "strict",
         });
 
-        const baseRecommendation = {
-          title: enhancedRec.title,
-          description: enhancedRec.description,
-          reason: enhancedRec.reason,
-          tags: enhancedRec.tags,
-          link: searchLink.url,           // 搜索引擎链接
-          platform: searchLink.displayName,
-          linkType: linkType,              // 根据类别和平台设置合适的类型
-          category: category,             // 添加缺失的 category 属性
-          candidateLink,
-          metadata: {
-            searchQuery: enhancedRec.searchQuery,
-            originalPlatform: enhancedRec.platform,
-            isSearchLink: true,          // 标记这是搜索链接
+        if (processedRecommendations.length < count) {
+          const missing = count - processedRecommendations.length;
+          const topUpCandidateCount = Math.min(20, Math.max(missing * 4, 8));
+          const avoidTitlesForTopUp = [
+            ...excludeTitles,
+            ...(processedRecommendations as any[]).map((r) => r?.title),
+            ...(userHistory || []).map((h) => h?.title),
+          ]
+            .filter((t): t is string => typeof t === "string" && t.trim().length > 0)
+            .slice(0, 120);
+
+          const topUps = await generateRecommendations(
+            userHistory || [],
+            category,
+            locale,
+            topUpCandidateCount,
+            userPreference,
+            { client, geo, avoidTitles: avoidTitlesForTopUp, signals: recommendationSignals }
+          );
+
+          processedRecommendations = dedupeRecommendations(
+            [...(processedRecommendations as any[]), ...(topUps as any[])],
+            {
+              count,
+              userHistory: userHistory as any,
+              excludeTitles: avoidTitlesForTopUp,
+              mode: "strict",
+            }
+          );
+        }
+
+        const finalRecommendations = processedRecommendations.map((rec, index) => {
+          let enhancedRec = rec;
+
+          if (category === "travel") {
+            enhancedRec = enhanceTravelRecommendation(rec, locale);
+          } else if (category === "fitness") {
+            enhancedRec = enhanceFitnessRecommendation(rec, locale);
+          }
+
+          const selectionSeed = `${userId || "anon"}:${category}:${index}:${enhancedRec.title}`;
+          const weightedPlatform = selectWeightedPlatformForCategory(
+            category,
+            locale,
+            selectionSeed,
+            client,
+            enhancedRec.platform,
+            enhancedRec.entertainmentType
+          );
+
+          let platform: string;
+          if (weightedPlatform) {
+            platform = weightedPlatform;
+          } else if (category === "food") {
+            platform = selectFoodPlatformWithRotation(index, enhancedRec.platform, locale);
+          } else if (category === "fitness") {
+            const fitnessType = (enhancedRec as any).fitnessType || "tutorial";
+            const titleText = typeof enhancedRec.title === "string" ? enhancedRec.title : "";
+            const tags = Array.isArray(enhancedRec.tags) ? enhancedRec.tags : [];
+            const looksLikeTheory =
+              client === "web" &&
+              (/(原理|科学|机制|为什么|误区|入门)/.test(titleText) ||
+                tags.some((t) => typeof t === "string" && /(原理|科学|机制|误区|入门)/.test(t)));
+            if (looksLikeTheory) {
+              platform = "知乎";
+            } else if (client === "web" && fitnessType === "equipment") {
+              platform = "什么值得买";
+            } else if (fitnessType === "tutorial") {
+              platform = locale === "zh" ? "B站健身" : "YouTube Fitness";
+            } else if (fitnessType === "nearby_place") {
+              platform = locale === "zh" ? (index % 2 === 0 ? "美团" : "高德地图健身") : "Google Maps";
+            } else {
+              platform = selectFitnessPlatform(fitnessType, enhancedRec.platform, locale);
+            }
+          } else {
+            platform = selectBestPlatform(category, enhancedRec.platform, locale, enhancedRec.entertainmentType);
+          }
+
+          let searchQueryForLink = (enhancedRec.searchQuery || enhancedRec.title) as string;
+          if (category === "shopping" && platform === "京东") {
+            const budgetHint = getShoppingBudgetHint(userPreference);
+            if (budgetHint && !searchQueryForLink.includes(budgetHint)) {
+              searchQueryForLink = `${searchQueryForLink} ${budgetHint}`;
+            }
+          }
+
+          let searchLink = generateSearchLink(
+            enhancedRec.title,
+            searchQueryForLink,
+            platform,
+            locale,
+            category,
+            enhancedRec.entertainmentType
+          );
+
+          if (category === "shopping" && platform === "京东" && locale === "zh" && client === "web") {
+            const range = getShoppingBudgetRange(userPreference);
+            if (range) {
+              try {
+                const url = new URL(searchLink.url);
+                if (url.hostname === "search.jd.com" && url.pathname === "/Search") {
+                  // 主要格式: ev=exprice_MIN-MAX^
+                  const ev = `exprice_${range.min}-${range.max}^`;
+                  if (!url.searchParams.get("ev")) {
+                    url.searchParams.set("ev", ev);
+                  }
+                  // 备用格式: pricefrom/priceto（提高兼容性）
+                  if (!url.searchParams.get("pricefrom")) {
+                    url.searchParams.set("pricefrom", String(range.min));
+                  }
+                  if (!url.searchParams.get("priceto") && range.max < 1000000) {
+                    url.searchParams.set("priceto", String(range.max));
+                  }
+                  searchLink = { ...searchLink, url: url.toString() };
+                }
+              } catch { }
+            }
+          }
+
+          if (geo && locale === "zh") {
+            const baseQuery = searchQueryForLink;
+            const mapQuery =
+              platform === "百度地图美食" || platform === "高德地图美食" || platform === "腾讯地图美食"
+                ? `${baseQuery} 餐厅`
+                : platform === "百度地图健身" || platform === "高德地图健身" || platform === "腾讯地图健身"
+                  ? `${baseQuery} 健身房`
+                  : baseQuery;
+
+            if (platform === "百度地图美食" || platform === "百度地图健身" || platform === "百度地图") {
+              searchLink = {
+                ...searchLink,
+                url: `https://api.map.baidu.com/place/search?query=${encodeURIComponent(mapQuery)}&location=${encodeURIComponent(
+                  `${geo.lat},${geo.lng}`
+                )}&radius=2000&output=html&src=mvp_2-demo`,
+              };
+            }
+
+            if (platform === "高德地图美食" || platform === "高德地图健身" || platform === "高德地图") {
+              searchLink = {
+                ...searchLink,
+                url: `https://uri.amap.com/search?keyword=${encodeURIComponent(mapQuery)}&center=${encodeURIComponent(
+                  `${geo.lng},${geo.lat}`
+                )}&radius=2000`,
+              };
+            }
+          }
+
+          let linkType: LinkType = "search";
+
+          if (category === "travel") {
+            linkType = "location";
+          } else if (category === "fitness") {
+            const fitnessType = (enhancedRec as any).fitnessType || "tutorial";
+
+            switch (fitnessType) {
+              case "tutorial":
+                linkType = "video";
+                break;
+              case "nearby_place":
+                linkType = "location";
+                break;
+              case "equipment":
+                if (
+                  platform === "B站健身" ||
+                  platform === "优酷健身" ||
+                  platform === "YouTube" ||
+                  platform === "YouTube Fitness"
+                ) {
+                  linkType = "video";
+                } else {
+                  linkType = "search";
+                }
+                break;
+              default:
+                if (platform === "YouTube" || platform === "YouTube Fitness") {
+                  linkType = "video";
+                } else if (platform === "Keep" || platform === "Peloton") {
+                  linkType = "app";
+                } else if (platform === "小红书" || platform === "知乎") {
+                  linkType = "article";
+                } else if (
+                  platform === "百度地图健身" ||
+                  platform === "高德地图健身" ||
+                  platform === "腾讯地图健身" ||
+                  platform === "大众点评" ||
+                  platform === "美团"
+                ) {
+                  linkType = "location";
+                } else {
+                  linkType = "search";
+                }
+            }
+          } else if (category === "entertainment") {
+            const gamePlatforms = [
+              "Steam",
+              "TapTap",
+              "Epic Games",
+              "WeGame",
+              "杉果",
+              "小黑盒",
+              "3DM",
+              "游民星空",
+              "B站游戏",
+              "4399小游戏",
+              "PlayStation Store",
+              "Xbox Store",
+              "Nintendo eShop",
+              "GOG",
+              "Humble Bundle",
+              "itch.io",
+              "Game Pass",
+              "Green Man Gaming",
+            ];
+
+            if (
+              platform === "B站" ||
+              platform === "YouTube" ||
+              platform === "爱奇艺" ||
+              platform === "腾讯视频" ||
+              platform === "优酷" ||
+              platform === "Netflix"
+            ) {
+              linkType = "video";
+            } else if (gamePlatforms.includes(platform) || enhancedRec.entertainmentType === "game") {
+              linkType = "game";
+            } else if (
+              platform === "酷狗音乐" ||
+              platform === "QQ音乐" ||
+              platform === "网易云音乐" ||
+              platform === "Spotify"
+            ) {
+              linkType = "music";
+            } else if (platform === "豆瓣" || platform === "IMDb") {
+              linkType = "article";
+            } else if (platform === "笔趣阁") {
+              linkType = "book";
+            }
+          } else if (category === "shopping") {
+            linkType = "product";
+          } else if (category === "food") {
+            if (
+              platform === "大众点评" ||
+              platform === "美团" ||
+              platform === "TripAdvisor" ||
+              platform === "OpenTable" ||
+              platform === "百度地图" ||
+              platform === "百度地图美食" ||
+              platform === "高德地图美食" ||
+              platform === "腾讯地图美食" ||
+              platform === "Google Maps"
+            ) {
+              linkType = "restaurant";
+            } else if (platform === "下厨房" || platform === "Allrecipes") {
+              linkType = "recipe";
+            } else {
+              linkType = "article";
+            }
+          }
+
+          const region = isChinaDeployment() ? "CN" : "INTL";
+          const providerForCandidateLink = mapSearchPlatformToProvider(platform, locale);
+          const candidateLink = resolveCandidateLink({
+            title: enhancedRec.title,
+            query: searchQueryForLink,
+            category,
+            locale,
+            region,
+            provider: providerForCandidateLink,
+          });
+
+          const baseRecommendation = {
+            title: enhancedRec.title,
+            description: enhancedRec.description,
+            reason: clampRecommendationReason(enhancedRec.reason, locale),
             tags: enhancedRec.tags,
+            link: searchLink.url,
+            platform: searchLink.displayName,
+            linkType: linkType,
+            category: category,
+            candidateLink,
+            metadata: {
+              searchQuery: searchQueryForLink,
+              originalPlatform: enhancedRec.platform,
+              isSearchLink: true,
+              tags: enhancedRec.tags,
+            },
+          };
+
+          if (category === "entertainment" && enhancedRec.entertainmentType) {
+            (baseRecommendation as any).entertainmentType = enhancedRec.entertainmentType;
           }
-        };
 
-        // 为娱乐推荐添加 entertainmentType 字段
-        if (category === 'entertainment' && enhancedRec.entertainmentType) {
-          (baseRecommendation as any).entertainmentType = enhancedRec.entertainmentType;
-        }
-
-        // 为健身推荐添加 fitnessType 元数据
-        if (category === 'fitness' && (enhancedRec as any).fitnessType) {
-          const metadata = baseRecommendation.metadata as any;
-          metadata.fitnessType = (enhancedRec as any).fitnessType;
-          // 添加易于理解的健身类型标签
-          switch ((enhancedRec as any).fitnessType) {
-            case 'tutorial':
-              metadata.fitnessTypeLabel = locale === 'zh' ? '健身教程跟练' : 'Workout Tutorial';
-              break;
-            case 'nearby_place':
-              metadata.fitnessTypeLabel = locale === 'zh' ? '附近健身场所' : 'Nearby Fitness Place';
-              break;
-            case 'equipment':
-              metadata.fitnessTypeLabel = locale === 'zh' ? '器材评测推荐' : 'Equipment Review';
-              break;
-            case 'video':
-              metadata.fitnessTypeLabel = locale === 'zh' ? '健身视频课程' : 'Fitness Video Course';
-              break;
-            case 'plan':
-              metadata.fitnessTypeLabel = locale === 'zh' ? '健身训练计划' : 'Fitness Training Plan';
-              break;
+          if (category === "fitness" && (enhancedRec as any).fitnessType) {
+            const metadata = baseRecommendation.metadata as any;
+            metadata.fitnessType = (enhancedRec as any).fitnessType;
+            switch ((enhancedRec as any).fitnessType) {
+              case "tutorial":
+                metadata.fitnessTypeLabel = locale === "zh" ? "健身教程跟练" : "Workout Tutorial";
+                break;
+              case "nearby_place":
+                metadata.fitnessTypeLabel = locale === "zh" ? "附近健身场所" : "Nearby Fitness Place";
+                break;
+              case "equipment":
+                metadata.fitnessTypeLabel = locale === "zh" ? "器材评测推荐" : "Equipment Review";
+                break;
+              case "video":
+                metadata.fitnessTypeLabel = locale === "zh" ? "健身视频课程" : "Fitness Video Course";
+                break;
+              case "plan":
+                metadata.fitnessTypeLabel = locale === "zh" ? "健身训练计划" : "Fitness Training Plan";
+                break;
+            }
           }
-        }
 
-        // 为旅游推荐添加特殊元数据
-        if (category === 'travel') {
-          const travelEnhanced = enhancedRec as any;
-          const metadata = baseRecommendation.metadata as any;
-          if (travelEnhanced.destination) {
-            metadata.destination = travelEnhanced.destination;
+          if (category === "travel") {
+            const travelEnhanced = enhancedRec as any;
+            const metadata = baseRecommendation.metadata as any;
+            if (travelEnhanced.destination) {
+              metadata.destination = travelEnhanced.destination;
+            }
+            if (travelEnhanced.highlights) {
+              metadata.highlights = travelEnhanced.highlights;
+            }
+            if (travelEnhanced.bestSeason) {
+              metadata.bestSeason = travelEnhanced.bestSeason;
+            }
+            if (travelEnhanced.travelStyle) {
+              metadata.travelStyle = travelEnhanced.travelStyle;
+            }
           }
-          if (travelEnhanced.highlights) {
-            metadata.highlights = travelEnhanced.highlights;
-          }
-          if (travelEnhanced.bestSeason) {
-            metadata.bestSeason = travelEnhanced.bestSeason;
-          }
-          if (travelEnhanced.travelStyle) {
-            metadata.travelStyle = travelEnhanced.travelStyle;
-          }
-        }
 
-        return baseRecommendation;
-      });
+          return baseRecommendation;
+        });
 
-      // 4. 验证平台可靠性
-      const validatedRecommendations = validateAndFixPlatforms(finalRecommendations, locale);
-      console.log(`[Platform] 验证平台可靠性完成`);
+        const validatedRecommendations = validateAndFixPlatforms(finalRecommendations, locale);
+        console.log(`[Platform] 验证平台可靠性完成`);
+        console.log(`[Search] 生成搜索链接数: ${validatedRecommendations.length}`);
+        return validatedRecommendations;
+      };
 
-      console.log(`[Search] 生成搜索链接数: ${validatedRecommendations.length}`);
-
-      // 6. 如果启用流式响应，分批发送结果
       if (enableStreaming) {
-        console.log(`[Stream] Streaming ${validatedRecommendations.length} recommendations...`);
-
-        // 创建流式响应
         const stream = new ReadableStream({
           async start(controller) {
             const encoder = new TextEncoder();
+            let eventId = 0;
+            const send = (event: string, data: any) => {
+              const payload = `id: ${eventId++}\nevent: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+              controller.enqueue(encoder.encode(payload));
+            };
 
-            // 分批大小：每次发送2个推荐
-            const batchSize = 2;
-            const selectedRecommendations = validatedRecommendations.slice(0, count);
+            try {
+              const warmupCount = Math.max(1, Math.min(2, count));
+              const warmupRecs = await generateFallbackRecommendations({
+                category,
+                locale,
+                count: warmupCount,
+                client,
+                geo,
+                userHistory,
+                userPreference,
+                excludeTitles,
+              });
 
-            // 分批发送推荐
-            for (let i = 0; i < selectedRecommendations.length; i += batchSize) {
-              const batch = selectedRecommendations.slice(i, i + batchSize);
-              const isLastBatch = i + batchSize >= selectedRecommendations.length;
+              send("recommend", {
+                type: "partial",
+                phase: "warmup",
+                recommendations: warmupRecs,
+                index: 0,
+                total: warmupRecs.length,
+                source: "warmup",
+              });
 
-              // 构建流式数据包
-              const data = {
-                type: isLastBatch ? 'complete' : 'partial',
-                recommendations: batch,
-                index: i,
+              const validatedRecommendations = await computeValidatedRecommendations();
+              const selectedRecommendations = validatedRecommendations.slice(0, count);
+
+              for (let i = 0; i < selectedRecommendations.length; i += 1) {
+                send("recommend", {
+                  type: "partial",
+                  phase: "ai",
+                  recommendations: [selectedRecommendations[i]],
+                  index: i,
+                  total: selectedRecommendations.length,
+                  source: "ai",
+                });
+              }
+
+              let usageInfo = null;
+              if (usageStats) {
+                usageInfo = {
+                  current: usageStats.currentPeriodUsage + 1,
+                  limit: usageStats.periodLimit,
+                  remaining: usageStats.isUnlimited ? -1 : Math.max(0, usageStats.remainingUsage - 1),
+                  periodType: usageStats.periodType,
+                  periodEnd: usageStats.periodEnd.toISOString(),
+                  isUnlimited: usageStats.isUnlimited,
+                };
+              }
+
+              send("recommend", {
+                type: "complete",
+                phase: "ai",
+                recommendations: [],
+                index: selectedRecommendations.length,
                 total: selectedRecommendations.length,
                 source: "ai",
-              };
+                ...(usageInfo && { usage: usageInfo }),
+              });
 
-              // 发送SSE格式的数据
-              const message = `data: ${JSON.stringify(data)}\n\n`;
-              controller.enqueue(encoder.encode(message));
-
-              // 添加小延迟以模拟逐步加载（可选，提升用户体验）
-              if (!isLastBatch) {
-                await new Promise(resolve => setTimeout(resolve, 100));
+              if (isValidUserId(userId) && selectedRecommendations.length > 0) {
+                Promise.all([
+                  saveRecommendationsToHistory(userId, selectedRecommendations),
+                  updateUserPreferences(userId, category, { incrementView: true }),
+                  recordRecommendationUsage(userId, { category, count: selectedRecommendations.length }),
+                ]).catch((err) => {
+                  console.error(`[Stream Save] Failed to save:`, err);
+                });
               }
-            }
 
-            // 异步保存到数据库（不阻塞流式响应）
-            if (isValidUserId(userId) && selectedRecommendations.length > 0) {
-              Promise.all([
-                saveRecommendationsToHistory(userId, selectedRecommendations),
-                updateUserPreferences(userId, category, { incrementView: true }),
-                recordRecommendationUsage(userId, { category, count: selectedRecommendations.length }),
-              ]).catch((err) => {
-                console.error(`[Stream Save] Failed to save:`, err);
+              if (!isAnonymous) {
+                cacheRecommendations(category, preferenceHash, selectedRecommendations, 30).catch((err) => {
+                  console.error("[Stream Cache] Failed to cache:", err);
+                });
+              }
+            } catch (err) {
+              const fallbackRecs = await generateFallbackRecommendations({
+                category,
+                locale,
+                count,
+                client,
+                geo,
+                userHistory,
+                userPreference,
+                excludeTitles,
               });
-            }
 
-            // 异步缓存（登录用户）
-            if (!isAnonymous) {
-              cacheRecommendations(category, preferenceHash, selectedRecommendations, 30).catch((err) => {
-                console.error("[Stream Cache] Failed to cache:", err);
+              send("error", {
+                type: "error",
+                message: err instanceof Error ? err.message : String(err || ""),
               });
-            }
 
-            controller.close();
+              send("recommend", {
+                type: "complete",
+                phase: "fallback",
+                recommendations: fallbackRecs,
+                index: 0,
+                total: fallbackRecs.length,
+                source: "fallback",
+              });
+            } finally {
+              controller.close();
+            }
           },
         });
 
         return new Response(stream, {
           headers: {
-            'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-            'Connection': 'keep-alive',
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache, no-transform",
+            Connection: "keep-alive",
+            "X-Accel-Buffering": "no",
           },
         });
       }
+
+      const validatedRecommendations = await computeValidatedRecommendations();
 
       // 5. 异步保存到数据库和缓存（不阻塞响应）- 非流式模式
       if (isValidUserId(userId) && validatedRecommendations.length > 0) {
@@ -962,6 +1150,71 @@ export async function GET(
   }
 }
 
+function clampRecommendationReason(value: unknown, locale: "zh" | "en") {
+  const raw = typeof value === "string" ? value : value == null ? "" : String(value);
+  const normalized = raw.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return locale === "zh" ? "结合你的偏好与近期行为筛选" : "Picked based on your preferences and recent interactions";
+  }
+  const limit = locale === "zh" ? 50 : 120;
+  const sliced = Array.from(normalized).slice(0, limit).join("");
+  return sliced.trim();
+}
+
+function getShoppingBudgetHint(userPreference: Awaited<ReturnType<typeof getUserCategoryPreference>> | null) {
+  const raw = (userPreference as any)?.preferences?.price_range;
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (typeof value !== "string" || !value.trim()) return "";
+  const key = value.trim();
+  if (/[元￥$]/.test(key) || /\d/.test(key)) return key;
+  const map: Record<string, string> = {
+    under_50: "50元以下",
+    "50_200": "50-200元",
+    "200_500": "200-500元",
+    "500_1000": "500-1000元",
+    over_1000: "1000元以上",
+  };
+  return map[key] || "";
+}
+
+function getShoppingBudgetRange(userPreference: Awaited<ReturnType<typeof getUserCategoryPreference>> | null) {
+  const raw = (userPreference as any)?.preferences?.price_range;
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (typeof value !== "string" || !value.trim()) return null;
+  const normalized = value.trim();
+  const map: Record<string, { min: number; max: number }> = {
+    under_50: { min: 0, max: 50 },
+    "50_200": { min: 50, max: 200 },
+    "200_500": { min: 200, max: 500 },
+    "500_1000": { min: 500, max: 1000 },
+  };
+  if (map[normalized]) return map[normalized];
+
+  const rangeMatch = normalized.match(/(\d+)\s*[-~]\s*(\d+)\s*(元|￥|RMB)?/);
+  if (rangeMatch) {
+    const min = Number(rangeMatch[1]);
+    const max = Number(rangeMatch[2]);
+    if (Number.isFinite(min) && Number.isFinite(max) && min >= 0 && max > min) {
+      return { min, max };
+    }
+  }
+
+  const underMatch = normalized.match(/(\d+)\s*(元|￥|RMB)?\s*以下/);
+  if (underMatch) {
+    const max = Number(underMatch[1]);
+    if (Number.isFinite(max) && max > 0) return { min: 0, max };
+  }
+
+  const overMatch = normalized.match(/(\d+)\s*(元|￥|RMB)?\s*以上/);
+  if (overMatch) {
+    const min = Number(overMatch[1]);
+    if (Number.isFinite(min) && min >= 0) return { min, max: 1000000 };
+  }
+
+  if (normalized === "over_1000") return { min: 1000, max: 1000000 };
+  return null;
+}
+
 /**
  * 生成降级推荐（使用预定义的搜索链接）
  */
@@ -995,6 +1248,7 @@ async function generateFallbackRecommendations(
       category as RecommendationCategory,
       locale,
       selectionSeed,
+      client,
       rec.platform,
       rec.entertainmentType
     );
@@ -1006,7 +1260,23 @@ async function generateFallbackRecommendations(
       platform = selectFoodPlatformWithRotation(index, rec.platform, locale);
     } else if (category === 'fitness') {
       const fitnessType = rec.fitnessType || 'tutorial';
-      platform = selectFitnessPlatform(fitnessType as any, rec.platform, locale);
+      const titleText = typeof rec.title === "string" ? rec.title : "";
+      const tags = Array.isArray((rec as any).tags) ? ((rec as any).tags as any[]) : [];
+      const looksLikeTheory =
+        client === "web" &&
+        (/(原理|科学|机制|为什么|误区|入门)/.test(titleText) ||
+          tags.some((t) => typeof t === "string" && /(原理|科学|机制|误区|入门)/.test(t)));
+      if (looksLikeTheory) {
+        platform = "知乎";
+      } else if (client === "web" && fitnessType === "equipment") {
+        platform = "什么值得买";
+      } else if (fitnessType === "tutorial") {
+        platform = locale === "zh" ? "B站健身" : "YouTube Fitness";
+      } else if (fitnessType === "nearby_place") {
+        platform = locale === "zh" ? (index % 2 === 0 ? "美团" : "高德地图健身") : "Google Maps";
+      } else {
+        platform = selectFitnessPlatform(fitnessType as any, rec.platform, locale);
+      }
     } else {
       platform = selectBestPlatform(category, rec.platform, locale, rec.entertainmentType);
     }

@@ -16,6 +16,8 @@ export function mapSearchPlatformToProvider(platform: string, locale: "zh" | "en
     B站健身: "B站",
     腾讯视频健身: "腾讯视频",
     优酷健身: "优酷",
+    小红书美食: "小红书",
+    小红书购物: "小红书",
   };
 
   const intlMap: Record<string, string> = {

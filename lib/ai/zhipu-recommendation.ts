@@ -232,6 +232,107 @@ function cleanAIContent(content: string) {
   return content.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
 }
 
+function extractJsonCandidate(content: string) {
+  const trimmed = content.trim();
+  if (!trimmed) {
+    return trimmed;
+  }
+
+  const firstArray = trimmed.indexOf("[");
+  const lastArray = trimmed.lastIndexOf("]");
+  if (firstArray !== -1 && lastArray !== -1 && lastArray > firstArray) {
+    return trimmed.slice(firstArray, lastArray + 1);
+  }
+
+  const firstObject = trimmed.indexOf("{");
+  const lastObject = trimmed.lastIndexOf("}");
+  if (firstObject !== -1 && lastObject !== -1 && lastObject > firstObject) {
+    return trimmed.slice(firstObject, lastObject + 1);
+  }
+
+  return trimmed;
+}
+
+function escapeInvalidNewlines(json: string) {
+  let result = "";
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < json.length; i += 1) {
+    const ch = json[i];
+
+    if (escaped) {
+      result += ch;
+      escaped = false;
+      continue;
+    }
+
+    if (ch === "\\") {
+      result += ch;
+      escaped = true;
+      continue;
+    }
+
+    if (ch === "\"") {
+      inString = !inString;
+      result += ch;
+      continue;
+    }
+
+    if (inString) {
+      if (ch === "\n") {
+        result += "\\n";
+        continue;
+      }
+      if (ch === "\r") {
+        result += "\\r";
+        continue;
+      }
+      if (ch === "\t") {
+        result += "\\t";
+        continue;
+      }
+    }
+
+    result += ch;
+  }
+
+  return result;
+}
+
+function normalizeJsonContent(content: string) {
+  const withAsciiQuotes = content.replace(/[“”]/g, "\"").replace(/[‘’]/g, "'");
+  const withoutTrailingCommas = withAsciiQuotes.replace(/,\s*([}\]])/g, "$1");
+  return escapeInvalidNewlines(withoutTrailingCommas);
+}
+
+function parseAIJson(content: string) {
+  const cleaned = cleanAIContent(content);
+  const candidates = [cleaned, extractJsonCandidate(cleaned)];
+  let lastError: unknown;
+
+  for (const candidate of candidates) {
+    if (!candidate) {
+      continue;
+    }
+
+    try {
+      return JSON.parse(candidate);
+    } catch (error) {
+      lastError = error;
+    }
+
+    try {
+      const normalized = normalizeJsonContent(candidate);
+      return JSON.parse(normalized);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError || new Error("Failed to parse AI JSON output");
+}
+
 export async function callRecommendationAI(messages: AIMessage[], temperature = 0.8) {
   const result = await callAIWithFallback(messages, temperature);
   return cleanAIContent(result.content);
@@ -269,22 +370,22 @@ export type GenerateRecommendationsOptions = {
   geo?: { lat: number; lng: number } | null;
   avoidTitles?: string[] | null;
   signals?:
-    | {
-        topTags?: string[] | null;
-        positiveSamples?: Array<{
-          title: string;
-          tags?: string[] | null;
-          searchQuery?: string | null;
-        }> | null;
-        negativeSamples?: Array<{
-          title: string;
-          tags?: string[] | null;
-          searchQuery?: string | null;
-          feedbackType: string;
-          rating?: number | null;
-        }> | null;
-      }
-    | null;
+  | {
+    topTags?: string[] | null;
+    positiveSamples?: Array<{
+      title: string;
+      tags?: string[] | null;
+      searchQuery?: string | null;
+    }> | null;
+    negativeSamples?: Array<{
+      title: string;
+      tags?: string[] | null;
+      searchQuery?: string | null;
+      feedbackType: string;
+      rating?: number | null;
+    }> | null;
+  }
+  | null;
 };
 
 export function buildExpansionSignalPrompt(params: {
@@ -366,7 +467,7 @@ export async function generateRecommendations(
   const categoryConfig = {
     entertainment: {
       platforms: locale === 'zh'
-        ? ['腾讯视频', '优酷', 'QQ音乐', '酷狗音乐', '网易云音乐', 'TapTap', '豆瓣', '百度']
+        ? ['腾讯视频', '优酷', '爱奇艺', 'QQ音乐', '酷狗音乐', '网易云音乐', 'TapTap', '豆瓣', '百度', 'Steam', '笔趣阁']
         : ['IMDb', 'YouTube', 'Spotify', 'Netflix', 'Rotten Tomatoes', 'Steam', 'Epic Games', 'GOG', 'PlayStation Store', 'Xbox Store', 'Nintendo eShop', 'Humble Bundle', 'itch.io'],
       examples: locale === 'zh'
         ? '电影、电视剧、游戏、音乐、综艺、动漫'
@@ -385,7 +486,7 @@ export async function generateRecommendations(
     },
     shopping: {
       platforms: locale === 'zh'
-        ? ['京东', '淘宝', '拼多多', '唯品会']
+        ? ['京东', '淘宝', '拼多多', '唯品会', '什么值得买', '慢慢买']
         : ['Amazon', 'eBay', 'Walmart', 'Target'],
       examples: locale === 'zh'
         ? '数码产品、服装、家居用品'
@@ -394,7 +495,7 @@ export async function generateRecommendations(
     food: {
       platforms: locale === 'zh'
         ? client === "app"
-          ? ['京东秒送', '淘宝闪购', '美团外卖', '大众点评', '小红书']
+          ? ['大众点评', '美团', '腾讯地图美食', '百度地图美食', '高德地图美食', '京东秒送', '淘宝闪购', '美团外卖', '小红书']
           : ['大众点评', '高德地图美食', '百度地图美食', '腾讯地图美食']
         : ['Allrecipes', 'Google Maps', 'OpenTable'],
       examples: locale === 'zh'
@@ -403,7 +504,7 @@ export async function generateRecommendations(
     },
     travel: {
       platforms: locale === 'zh'
-        ? ['携程', '去哪儿', '小红书', '马蜂窝']
+        ? ['携程', '去哪儿', '马蜂窝', '穷游', '小红书']
         : ['Booking.com', 'Agoda', 'TripAdvisor', 'Expedia', 'Klook', 'Airbnb'],
       examples: locale === 'zh'
         ? '景点、酒店、旅游攻略、目的地体验'
@@ -411,7 +512,7 @@ export async function generateRecommendations(
     },
     fitness: {
       platforms: locale === 'zh'
-        ? ['B站健身', '优酷健身', 'Keep', '大众点评', '美团', '百度地图健身', '高德地图健身', '腾讯地图健身']
+        ? ['B站健身', '优酷健身', 'Keep', '大众点评', '美团', '百度地图健身', '高德地图健身', '腾讯地图健身', '知乎', '什么值得买']
         : ['YouTube Fitness', 'MyFitnessPal', 'Peloton', 'Google Maps', 'Amazon', 'Yelp'],
       examples: locale === 'zh'
         ? '健身课程、健身房、健身器材、运动装备'
@@ -426,53 +527,53 @@ export async function generateRecommendations(
   const positiveSamples =
     Array.isArray(signals?.positiveSamples) && signals!.positiveSamples!.length > 0
       ? signals!.positiveSamples!
-          .filter((s) => typeof (s as any)?.title === "string" && String((s as any).title).trim().length > 0)
-          .slice(0, 10)
-          .map((s) => ({
-            title: String((s as any).title),
-            tags: Array.isArray((s as any)?.tags)
-              ? ((s as any).tags as unknown[]).filter((t) => typeof t === "string" && t.trim().length > 0)
+        .filter((s) => typeof (s as any)?.title === "string" && String((s as any).title).trim().length > 0)
+        .slice(0, 10)
+        .map((s) => ({
+          title: String((s as any).title),
+          tags: Array.isArray((s as any)?.tags)
+            ? ((s as any).tags as unknown[]).filter((t) => typeof t === "string" && t.trim().length > 0)
+            : undefined,
+          searchQuery:
+            typeof (s as any)?.searchQuery === "string" && String((s as any).searchQuery).trim().length > 0
+              ? String((s as any).searchQuery)
               : undefined,
-            searchQuery:
-              typeof (s as any)?.searchQuery === "string" && String((s as any).searchQuery).trim().length > 0
-                ? String((s as any).searchQuery)
-                : undefined,
-          }))
+        }))
       : userHistory
-          .filter((h) => !!(h as any)?.clicked || !!(h as any)?.saved)
-          .slice(0, 10)
-          .map((h) => ({
-            title: h.title,
-            tags: (h as any)?.metadata?.tags,
-          }))
-          .filter((h) => typeof h.title === "string" && h.title.trim().length > 0);
+        .filter((h) => !!(h as any)?.clicked || !!(h as any)?.saved)
+        .slice(0, 10)
+        .map((h) => ({
+          title: h.title,
+          tags: (h as any)?.metadata?.tags,
+        }))
+        .filter((h) => typeof h.title === "string" && h.title.trim().length > 0);
 
   const negativeSamples =
     Array.isArray(signals?.negativeSamples) && signals!.negativeSamples!.length > 0
       ? signals!.negativeSamples!
-          .filter((s) => typeof (s as any)?.title === "string" && String((s as any).title).trim().length > 0)
-          .slice(0, 10)
-          .map((s) => ({
-            title: String((s as any).title),
-            tags: Array.isArray((s as any)?.tags)
-              ? ((s as any).tags as unknown[]).filter(
-                  (t): t is string => typeof t === "string" && t.trim().length > 0
-                )
+        .filter((s) => typeof (s as any)?.title === "string" && String((s as any).title).trim().length > 0)
+        .slice(0, 10)
+        .map((s) => ({
+          title: String((s as any).title),
+          tags: Array.isArray((s as any)?.tags)
+            ? ((s as any).tags as unknown[]).filter(
+              (t): t is string => typeof t === "string" && t.trim().length > 0
+            )
+            : undefined,
+          searchQuery:
+            typeof (s as any)?.searchQuery === "string" && String((s as any).searchQuery).trim().length > 0
+              ? String((s as any).searchQuery)
               : undefined,
-            searchQuery:
-              typeof (s as any)?.searchQuery === "string" && String((s as any).searchQuery).trim().length > 0
-                ? String((s as any).searchQuery)
-                : undefined,
-            feedbackType: String((s as any)?.feedbackType || ""),
-            rating: typeof (s as any)?.rating === "number" ? Number((s as any).rating) : undefined,
-          }))
+          feedbackType: String((s as any)?.feedbackType || ""),
+          rating: typeof (s as any)?.rating === "number" ? Number((s as any).rating) : undefined,
+        }))
       : [];
 
   const topTags =
     Array.isArray(signals?.topTags) && signals!.topTags!.length > 0
       ? signals!.topTags!
-          .filter((t) => typeof t === "string" && t.trim().length > 0)
-          .slice(0, 12)
+        .filter((t) => typeof t === "string" && t.trim().length > 0)
+        .slice(0, 12)
       : [];
 
   const recentShownTitles = userHistory
@@ -509,7 +610,15 @@ ${behaviorPrompt}
 客户端：${client}${geo ? `\n位置：${geo.lat},${geo.lng}` : ''}
 【去重要求】避免推荐与用户历史中的 title 重复或高度相似（同义/换序也算重复）。
 
-输出JSON数组，每项必须包含：title, description, reason, tags(3-5个), searchQuery, platform${category === 'entertainment' ? ', entertainmentType' : ''}
+输出JSON数组，每项必须包含：title, description, reason(50字以内), tags(3-5个), searchQuery, platform${category === 'entertainment' ? ', entertainmentType' : ''}
+
+【reason 要求 - 多样化推荐理由】每条推荐的 reason 必须具体且富有个性，从以下5种类型中轮换选择：
+1. 偏好匹配：「你喜欢XX类型，这个评分很高」「结合你对XX的偏好」
+2. 时机场景：「适合周末放松」「下班后的好选择」「约会必备」
+3. 社交热点：「最近很火，口碑爆棚」「朋友都在推荐」「本周热门」
+4. 个性发现：「小众但质量很高」「冷门佳作值得一试」「意外惊喜」
+5. 实用价值：「性价比超高」「好评如潮」「距离近方便到达」
+每个推荐的 reason 必须不同，禁止重复使用相同句式！
 
 ${category === 'entertainment' ? `【强制要求】必须包含4种不同类型，平均分配：
 - 视频类(腾讯视频/优酷): 影视作品
@@ -566,8 +675,8 @@ No URLs`;
         {
           role: 'system',
           content: locale === 'zh'
-            ? '推荐分析师。返回JSON数组，包含指定类型，无链接，无markdown。'
-            : 'Recommendation analyst. Return JSON array with specified types, no links, no markdown.'
+            ? '推荐分析师。返回JSON数组，无链接，无markdown。【reason核心要求】每条推荐的理由必须独特、具体、有吸引力，50字以内。从偏好匹配/时机场景/社交热点/个性发现/实用价值等角度轮换切入，禁止使用"根据你的偏好""为你推荐"等通用开头。'
+            : 'Recommendation analyst. Return JSON array with specified types, no links, no markdown. Each reason must be unique, specific, and engaging within 50 chars.'
         },
         {
           role: 'user',
@@ -582,7 +691,7 @@ No URLs`;
       return getFallbackRecommendations(category, locale);
     }
 
-    const result = JSON.parse(aiContent);
+    const result = parseAIJson(aiContent);
     return Array.isArray(result) ? result : [result];
 
   } catch (error) {

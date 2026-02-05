@@ -389,7 +389,8 @@ export function generateSearchLink(
       '京东': (q) => `https://search.jd.com/Search?keyword=${encodeURIComponent(q)}`,  // 需登录
       '天猫': (q) => `https://list.tmall.com/search_product.htm?q=${encodeURIComponent(q)}`,
       '拼多多': (q) => `https://mobile.yangkeduo.com/search_result.html?search_key=${encodeURIComponent(q)}`,
-      '什么值得买': (q) => `https://search.smzdm.com/?c=home&s=${encodeURIComponent(q)}`,  // 无需登录，好价推荐
+      '什么值得买': (q) => `https://search.smzdm.com/?c=home&s=${encodeURIComponent(q)}&v=b&mx_v=a`,  // 无需登录，好价推荐
+      '慢慢买': (q) => `https://s.manmanbuy.com/pc/search/result?keyword=${encodeURIComponent(q)}&btnSearch=%E6%90%9C%E7%B4%A2`,  // 比价/折扣
       '苏宁易购': (q) => `https://search.suning.com/${encodeURIComponent(q)}/`,  // 无需登录
       '唯品会': (q) => `https://category.vip.com/suggest.php?keyword=${encodeURIComponent(q)}`,  // 品牌折扣
       '当当网': (q) => `http://search.dangdang.com/?key=${encodeURIComponent(q)}`,  // 图书为主
@@ -405,7 +406,8 @@ export function generateSearchLink(
       '酷狗音乐': (q) => `https://www.kugou.com/yy/html/search.html#searchType=song&searchKeyWord=${encodeURIComponent(q)}`,  // 酷狗无需登录
       '汽水音乐': (q) => `https://www.qishui.com/search?keyword=${encodeURIComponent(q)}`,  // 汽水音乐
       '酷我音乐': (q) => `https://www.kuwo.cn/search/list?key=${encodeURIComponent(q)}`,  // 酷我音乐
-      'Steam': (q) => `https://store.steampowered.com/search/?term=${encodeURIComponent(q)}`,
+      '笔趣阁': (q) => `https://m.bqgl.cc/s?q=${encodeURIComponent(q)}`,  // 小说搜索
+      'Steam': (q) => `https://store.steampowered.com/search/?term=${encodeURIComponent(q)}&supportedlang=schinese&ndl=1`,
       'TapTap': (q) => `https://www.taptap.cn/search/${encodeURIComponent(q)}`,  // 正确URL格式
       'Epic Games': (q) => `https://www.epicgames.com/store/zh-CN/browse?q=${encodeURIComponent(q)}`,
       'WeGame': (q) => `https://www.wegame.com.cn/search.html?q=${encodeURIComponent(q)}`,
@@ -421,7 +423,7 @@ export function generateSearchLink(
 
       // 美食平台 - 增加更多选择
       '大众点评': (q) => `https://www.dianping.com/search/keyword/2/0_${encodeURIComponent(q)}`,
-      '下厨房': (q) => `https://www.xiachufang.com/search/?keyword=${encodeURIComponent(q)}`,
+      '下厨房': (q) => `https://www.xiachufang.com/search/?keyword=${encodeURIComponent(q)}&cat=1001`,
       '百度地图美食': (q) => `https://map.baidu.com/search/${encodeURIComponent(q + ' 餐厅')}`,  // 地图搜附近餐厅
       '高德地图美食': (q) => `https://ditu.amap.com/search?query=${encodeURIComponent(q + ' 餐厅')}`,  // 高德地图搜餐厅
       '腾讯地图美食': (q) => `https://map.qq.com/m/search?keyword=${encodeURIComponent(q + ' 餐厅')}`,
@@ -437,7 +439,7 @@ export function generateSearchLink(
       '小红书': (q) => `https://www.xiaohongshu.com/search_result?keyword=${encodeURIComponent(q)}&type=note`,
       '马蜂窝': (q) => `https://www.mafengwo.cn/search/q.php?q=${encodeURIComponent(q)}`,
       '飞猪': (q) => `https://s.fliggy.com/?q=${encodeURIComponent(q)}`,
-      '穷游': (q) => `https://www.qyer.com/search?q=${encodeURIComponent(q)}`,
+      '穷游': (q) => `https://search.qyer.com/all/${encodeURIComponent(q)}.html?tab=place`,
       '途牛': (q) => `https://www.tuniu.com/search?q=${encodeURIComponent(q)}`,
       '同程旅行': (q) => `https://www.ly.com/search.html?kw=${encodeURIComponent(q)}`,
       '驴妈妈': (q) => `https://www.lvmama.com/search/?q=${encodeURIComponent(q)}`,
@@ -458,6 +460,7 @@ export function generateSearchLink(
       '腾讯地图健身': (q) => `https://map.qq.com/m/search?keyword=${encodeURIComponent(q + ' 健身房')}`,
       '百度健身': (q) => `https://www.baidu.com/s?wd=${encodeURIComponent(q)} 健身教程 视频`,  // 百度搜索健身视频
       'Keep': (q) => `https://www.gotokeep.com/search?q=${encodeURIComponent(q)}`,
+      '知乎': (q) => `https://www.zhihu.com/search?type=content&q=${encodeURIComponent(q)}`,
       'FitnessVolt': (q) => `https://fitnessvolt.com/?s=${encodeURIComponent(q)}`,
       'GarageGymReviews': (q) => `https://www.garagegymreviews.com/?s=${encodeURIComponent(q)}`,
 
@@ -477,7 +480,7 @@ export function generateSearchLink(
       'Spotify': (q) => `https://open.spotify.com/search/${encodeURIComponent(q)}`,
       'Rotten Tomatoes': (q) => `https://www.rottentomatoes.com/search?search=${encodeURIComponent(q)}`,
       'Metacritic': (q) => `https://www.metacritic.com/search/all/${encodeURIComponent(q)}/results`,
-      'Steam': (q) => `https://store.steampowered.com/search/?term=${encodeURIComponent(q)}`,
+      'Steam': (q) => `https://store.steampowered.com/search/?term=${encodeURIComponent(q)}&supportedlang=schinese&ndl=1`,
       'Epic Games': (q) => `https://store.epicgames.com/en-US/browse?q=${encodeURIComponent(q)}`,
       'PlayStation Store': (q) => `https://store.playstation.com/en-us/search/${encodeURIComponent(q)}`,
       'Xbox Store': (q) => `https://www.xbox.com/en-US/search?q=${encodeURIComponent(q)}`,
