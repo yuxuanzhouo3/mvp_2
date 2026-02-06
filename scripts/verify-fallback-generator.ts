@@ -1,3 +1,4 @@
+import { isChinaDeployment } from "../lib/config/deployment.config";
 import { generateFallbackCandidates } from "../lib/recommendation/fallback-generator";
 
 function assert(condition: unknown, message: string) {
@@ -34,7 +35,11 @@ async function main() {
 
   assert(fitness.length > 0 && fitness.length <= 5, "fitness fallback count invalid");
   const fitnessTypes = new Set(fitness.map((r) => r.fitnessType).filter(Boolean));
-  assert(fitnessTypes.has("nearby_place"), "fitness fallback missing nearby_place");
+  if (isChinaDeployment()) {
+    assert(fitnessTypes.has("theory_article"), "fitness fallback missing theory_article");
+  } else {
+    assert(fitnessTypes.has("nearby_place"), "fitness fallback missing nearby_place");
+  }
   assert(fitnessTypes.has("tutorial"), "fitness fallback missing tutorial");
   assert(fitnessTypes.has("equipment"), "fitness fallback missing equipment");
 
@@ -45,4 +50,3 @@ main().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
-

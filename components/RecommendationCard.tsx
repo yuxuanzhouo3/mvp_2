@@ -100,6 +100,33 @@ export function RecommendationCard({
     reason,
     tags,
   } = recommendation;
+  const fitnessTypeLabel =
+    category === "fitness" ? (metadata as any)?.fitnessTypeLabel : null;
+  const badgeLabel = (() => {
+    const fallback = linkTypeLabels[linkType]?.[locale] || linkType;
+    if (category !== "food") return fallback;
+
+    const platformText = platform || "";
+    const tagList = tags || (metadata?.tags as string[] | undefined) || [];
+    const tagText = tagList.join(" ");
+    const combined = `${platformText} ${tagText}`.trim();
+
+    const isRecipe =
+      linkType === "recipe" ||
+      /下厨房|Allrecipes/.test(platformText) ||
+      /(食谱|菜谱|做法|recipe)/i.test(combined);
+    if (isRecipe) return locale === "zh" ? "食谱" : "Recipe";
+
+    const isReview = /大众点评/.test(platformText) || /(点评|评价|口碑|评分)/.test(tagText);
+    if (isReview) return locale === "zh" ? "点评" : "Review";
+
+    const isRestaurant =
+      linkType === "restaurant" ||
+      /地图|美团|Google Maps|OpenTable|TripAdvisor/.test(platformText);
+    if (isRestaurant) return locale === "zh" ? "餐厅" : "Restaurant";
+
+    return locale === "zh" ? "美食" : "Food";
+  })();
 
   const buildFallbackCandidateLink = (rec: AIRecommendation): CandidateLink => {
     return {
@@ -340,9 +367,17 @@ export function RecommendationCard({
               <Badge className="bg-[#4ECDC4] text-white">
                 <LinkTypeIcon linkType={linkType} metadata={metadata} />
                 <span className="ml-1">
-                  {linkTypeLabels[linkType]?.[locale] || linkType}
+                  {badgeLabel}
                 </span>
               </Badge>
+              {fitnessTypeLabel && (
+                <Badge
+                  variant="secondary"
+                  className="text-xs bg-emerald-50 text-emerald-700 border border-emerald-200"
+                >
+                  {fitnessTypeLabel}
+                </Badge>
+              )}
               {showReason && reason && (
                 <Badge variant="outline" className="text-xs">
                   AI {locale === "zh" ? "推荐" : "Pick"}
@@ -410,7 +445,7 @@ export function RecommendationCard({
           <div className="px-4 py-2 bg-gradient-to-r from-purple-50 to-pink-50 border-t">
             <p className="text-sm text-purple-700">
               <span className="font-medium">
-                {locale === "zh" ? "💡 为什么推荐给你：" : "💡 Why this recommendation: "}
+                {locale === "zh" ? "💡 推荐理由：" : "💡 Recommendation: "}
               </span>
               {reason}
             </p>

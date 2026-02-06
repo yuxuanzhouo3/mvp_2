@@ -122,8 +122,12 @@ function youtubeSearchUrl(query: string) {
   return `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
 }
 
-function amapSearchUrl(query: string) {
+function amapUniversalSearchUrl(query: string) {
   return `https://uri.amap.com/search?keyword=${encodeURIComponent(query)}`;
+}
+
+function amapWebSearchUrl(query: string) {
+  return `https://www.amap.com/search?query=${encodeURIComponent(query)}`;
 }
 
 function baiduMapSearchUrl(query: string) {
@@ -287,8 +291,9 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       domains: ["dianping.com"],
       hasApp: true,
       androidPackageId: "com.dianping.v1",
+      // 使用 Universal Link 优先，确保 App 能正常打开
       universalLink: ({ query }) =>
-        `https://www.dianping.com/search/keyword/1/0_${encodeURIComponent(query)}`,
+        `https://m.dianping.com/search/keyword/1/0_${encodeURIComponent(query)}`,
       webLink: ({ query }) =>
         `https://www.dianping.com/search/keyword/1/0_${encodeURIComponent(query)}`,
       iosScheme: ({ query }) => `dianping://search?keyword=${encodeURIComponent(query)}`,
@@ -302,7 +307,8 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       displayName: { zh: "下厨房", en: "Xiachufang" },
       domains: ["xiachufang.com"],
       hasApp: true,
-      webLink: ({ query }) => `https://www.xiachufang.com/search/?keyword=${encodeURIComponent(query)}`,
+      webLink: ({ query }) =>
+        `https://www.xiachufang.com/search/?keyword=${encodeURIComponent(query)}&cat=1001`,
     },
     百度: {
       id: "百度",
@@ -334,9 +340,9 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
     "笔趣阁": {
       id: "笔趣阁",
       displayName: { zh: "笔趣阁", en: "Biquge" },
-      domains: ["bqgl.cc", "m.bqgl.cc"],
+      domains: ["bqgde.de", "m.bqgde.de"],
       hasApp: false,
-      webLink: ({ query }) => `https://m.bqgl.cc/s?q=${encodeURIComponent(query)}`,
+      webLink: ({ query }) => `https://m.bqgde.de/s?q=${encodeURIComponent(query)}`,
     },
     "淘宝": {
       id: "淘宝",
@@ -344,8 +350,10 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       domains: ["taobao.com"],
       hasApp: true,
       androidPackageId: "com.taobao.taobao",
+      // 使用 Universal Link 确保 App 能正常打开
+      universalLink: ({ query }) => `https://s.taobao.com/search?q=${encodeURIComponent(query)}`,
       webLink: ({ query }) => `https://s.taobao.com/search?q=${encodeURIComponent(query)}`,
-      iosScheme: ({ query }) => `taobao://s.taobao.com/?q=${encodeURIComponent(query)}`,
+      iosScheme: ({ query }) => `taobao://s.taobao.com/search?q=${encodeURIComponent(query)}`,
       androidScheme: ({ query }) => {
         const web = `https://s.taobao.com/search?q=${encodeURIComponent(query)}`;
         return `intent://s.taobao.com/search?q=${encodeURIComponent(query)}#Intent;scheme=taobao;package=com.taobao.taobao;S.browser_fallback_url=${encodeURIComponent(web)};end`;
@@ -431,8 +439,8 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       displayName: { zh: "高德地图", en: "Amap" },
       domains: ["amap.com", "uri.amap.com", "ditu.amap.com"],
       hasApp: true,
-      universalLink: ({ query }) => amapSearchUrl(query),
-      webLink: ({ query }) => amapSearchUrl(query),
+      universalLink: ({ query }) => amapUniversalSearchUrl(query),
+      webLink: ({ query }) => amapWebSearchUrl(query),
       iosScheme: ({ query }) =>
         `iosamap://poi?keywords=${encodeURIComponent(query)}`,
       androidScheme: ({ query }) =>
@@ -578,7 +586,7 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       displayName: { zh: "OpenTable", en: "OpenTable" },
       domains: ["opentable.com"],
       hasApp: true,
-      webLink: ({ query }) => `https://www.opentable.com/search?q=${encodeURIComponent(query)}`,
+      webLink: ({ query }) => `https://www.opentable.com/s?term=${encodeURIComponent(query)}`,
     },
     Amazon: {
       id: "Amazon",
@@ -681,7 +689,7 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       displayName: { zh: "MyFitnessPal", en: "MyFitnessPal" },
       domains: ["myfitnesspal.com"],
       hasApp: true,
-      webLink: ({ query }) => `https://www.myfitnesspal.com/food/search?q=${encodeURIComponent(query)}`,
+      webLink: ({ query }) => `https://www.myfitnesspal.com/food/search?search=${encodeURIComponent(query)}`,
     },
     Peloton: {
       id: "Peloton",
@@ -695,7 +703,8 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       displayName: { zh: "Muscle & Strength", en: "Muscle & Strength" },
       domains: ["muscleandstrength.com"],
       hasApp: false,
-      webLink: ({ query }) => `https://www.muscleandstrength.com/?s=${encodeURIComponent(query)}`,
+      webLink: ({ query }) =>
+        `https://www.muscleandstrength.com/store/search/articles?q=${encodeURIComponent(query)}`,
     },
     "携程": {
       id: "携程",
@@ -734,7 +743,7 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       domains: ["qyer.com"],
       hasApp: true,
       androidPackageId: "com.qyer.android",
-      webLink: ({ query }) => `https://search.qyer.com/all/${encodeURIComponent(query)}.html?tab=place`,
+      webLink: ({ query }) => `https://search.qyer.com/qp/?keyword=${encodeURIComponent(query)}&tab=bbs`,
       iosScheme: () => `qyertravel://`,
       androidScheme: () => `qyertravel://`,
     },

@@ -4,17 +4,43 @@ import { isChinaDeployment } from "@/lib/config/deployment.config";
 import { generateFallbackCandidates } from "@/lib/recommendation/fallback-generator";
 import type { RecommendationCategory } from "@/lib/types/recommendation";
 
-type AIProvider = "openai" | "mistral" | "zhipu" | "qwen-max" | "qwen-plus" | "qwen-turbo";
+type AIProvider = "openai" | "mistral" | "zhipu" | "qwen-flash" | "qwen-max" | "qwen-plus" | "qwen-turbo";
 
 export type AIMessage = {
   role: "system" | "user" | "assistant";
   content: string;
 };
 
+type AIRequestErrorKind = "qwen_free_tier_only" | "http_error" | "empty_content";
+
+class AIRequestError extends Error {
+  kind: AIRequestErrorKind;
+  provider: AIProvider;
+  status?: number;
+  code?: string;
+  constructor(params: {
+    message: string;
+    kind: AIRequestErrorKind;
+    provider: AIProvider;
+    status?: number;
+    code?: string;
+  }) {
+    super(params.message);
+    this.name = "AIRequestError";
+    this.kind = params.kind;
+    this.provider = params.provider;
+    this.status = params.status;
+    this.code = params.code;
+  }
+}
+
+const DISABLED_PROVIDERS = new Set<AIProvider>();
+
 const DEFAULT_MODELS = {
   openai: process.env.OPENAI_MODEL || "gpt-4o-mini",
   mistral: process.env.MISTRAL_MODEL || "mistral-small-latest",
   zhipu: process.env.ZHIPU_MODEL || "glm-4.5-flash",
+  "qwen-flash": "qwen-flash",
   "qwen-max": "qwen-max",
   "qwen-plus": "qwen-plus",
   "qwen-turbo": "qwen-turbo",
@@ -29,11 +55,11 @@ function hasValidKey(value?: string | null): value is string {
 
 function getProviderOrder(): AIProvider[] {
   if (isChinaDeployment()) {
-    // CN环境: 优先使用通义千问（qwen-turbo首选，速度快成本低），智谱作为备用
+    // CN环境: 优先使用通义千问（qwen-flash首选，速度快成本低），智谱作为备用
     const providers: AIProvider[] = [];
 
     if (hasValidKey(process.env.QWEN_API_KEY)) {
-      providers.push("qwen-turbo", "qwen-plus", "qwen-max");
+      providers.push("qwen-flash", "qwen-turbo", "qwen-plus", "qwen-max");
     }
     if (hasValidKey(process.env.ZHIPU_API_KEY)) {
       providers.push("zhipu");
@@ -68,7 +94,7 @@ export function isQwenConfigured(): boolean {
 }
 
 async function callAIWithFallback(messages: AIMessage[], temperature = 0.8) {
-  const providers = getProviderOrder();
+  const providers = getProviderOrder().filter((p) => !DISABLED_PROVIDERS.has(p));
 
   if (providers.length === 0) {
     throw new Error("No AI provider configured for current deployment region");
@@ -97,6 +123,7 @@ async function callAIWithFallback(messages: AIMessage[], temperature = 0.8) {
             provider,
             model: DEFAULT_MODELS.zhipu,
           };
+        case "qwen-flash":
         case "qwen-max":
         case "qwen-plus":
         case "qwen-turbo":
@@ -108,14 +135,31 @@ async function callAIWithFallback(messages: AIMessage[], temperature = 0.8) {
       }
     } catch (error) {
       lastError = error;
-      console.error(`[AI][${provider}] request failed:`, error);
+
+      if (error instanceof AIRequestError && error.kind === "qwen_free_tier_only") {
+        DISABLED_PROVIDERS.add(provider);
+        console.warn(
+          `[AI][${provider}] disabled due to quota mode (${error.status || "?"} ${error.code || "FreeTierOnly"})`
+        );
+        continue;
+      }
+
+      const message =
+        error instanceof Error && typeof error.message === "string" && error.message.trim().length > 0
+          ? error.message
+          : String(error);
+      console.error(`[AI][${provider}] request failed: ${message}`);
     }
   }
 
   throw lastError || new Error("All AI providers failed");
 }
 
-async function callQwen(messages: AIMessage[], temperature: number, model: "qwen-max" | "qwen-plus" | "qwen-turbo") {
+async function callQwen(
+  messages: AIMessage[],
+  temperature: number,
+  model: "qwen-flash" | "qwen-max" | "qwen-plus" | "qwen-turbo"
+) {
   const apiKey = process.env.QWEN_API_KEY;
   if (!hasValidKey(apiKey)) {
     throw new Error("QWEN_API_KEY is not configured");
@@ -139,13 +183,52 @@ async function callQwen(messages: AIMessage[], temperature: number, model: "qwen
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Qwen API (${model}) error ${response.status}: ${errorText}`);
+    const status = response.status;
+    let code = "";
+    let message = "";
+    try {
+      const parsed = JSON.parse(errorText);
+      code = String(parsed?.error?.code || parsed?.error?.type || "");
+      message = String(parsed?.error?.message || "");
+    } catch {
+      message = errorText;
+    }
+
+    const normalizedMessage = (message || "").trim();
+    const normalizedCode = (code || "").trim();
+    const looksLikeFreeTierOnly =
+      status === 403 &&
+      (normalizedCode.includes("FreeTierOnly") ||
+        normalizedMessage.includes("FreeTierOnly") ||
+        /free tier/i.test(normalizedMessage));
+
+    if (looksLikeFreeTierOnly) {
+      throw new AIRequestError({
+        message: `Qwen quota mode prevents using ${model}`,
+        kind: "qwen_free_tier_only",
+        provider: model,
+        status,
+        code: normalizedCode || "AllocationQuota.FreeTierOnly",
+      });
+    }
+
+    throw new AIRequestError({
+      message: `Qwen API (${model}) error ${status}`,
+      kind: "http_error",
+      provider: model,
+      status,
+      code: normalizedCode || undefined,
+    });
   }
 
   const data = await response.json();
   const content = data?.choices?.[0]?.message?.content;
   if (!content) {
-    throw new Error(`Qwen (${model}) returned empty content`);
+    throw new AIRequestError({
+      message: `Qwen (${model}) returned empty content`,
+      kind: "empty_content",
+      provider: model,
+    });
   }
 
   console.log(`[AI] ✅ Successfully called Qwen API (${model})`);
@@ -292,6 +375,12 @@ function escapeInvalidNewlines(json: string) {
         result += "\\t";
         continue;
       }
+      // Handle other control characters that break JSON
+      const code = ch.charCodeAt(0);
+      if (code < 32) {
+        result += `\\u${code.toString(16).padStart(4, "0")}`;
+        continue;
+      }
     }
 
     result += ch;
@@ -306,28 +395,102 @@ function normalizeJsonContent(content: string) {
   return escapeInvalidNewlines(withoutTrailingCommas);
 }
 
+/**
+ * Attempt to repair truncated JSON arrays by closing open brackets
+ */
+function repairTruncatedJson(json: string): string {
+  const trimmed = json.trim();
+
+  let openBraces = 0;
+  let openBrackets = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < trimmed.length; i++) {
+    const ch = trimmed[i];
+    if (escaped) { escaped = false; continue; }
+    if (ch === "\\") { escaped = true; continue; }
+    if (ch === "\"") { inString = !inString; continue; }
+    if (!inString) {
+      if (ch === "{") openBraces++;
+      else if (ch === "}") openBraces--;
+      else if (ch === "[") openBrackets++;
+      else if (ch === "]") openBrackets--;
+    }
+  }
+
+  let result = trimmed;
+  if (inString) result = result.replace(/[^"]*$/, "") + "\"";
+  result = result.replace(/,\s*$/, "");
+  while (openBraces > 0) { result += "}"; openBraces--; }
+  while (openBrackets > 0) { result += "]"; openBrackets--; }
+  return result;
+}
+
+/**
+ * Extract valid JSON items from a partial array (handles truncated responses)
+ */
+function extractValidItemsFromPartialArray(content: string): any[] | null {
+  const trimmed = content.trim();
+  if (!trimmed.startsWith("[")) return null;
+
+  const items: any[] = [];
+  let depth = 0;
+  let itemStart = -1;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < trimmed.length; i++) {
+    const ch = trimmed[i];
+    if (escaped) { escaped = false; continue; }
+    if (ch === "\\") { escaped = true; continue; }
+    if (ch === "\"") { inString = !inString; continue; }
+    if (inString) continue;
+
+    if (ch === "[" || ch === "{") {
+      if (depth === 1 && ch === "{") itemStart = i;
+      depth++;
+    } else if (ch === "]" || ch === "}") {
+      depth--;
+      if (depth === 1 && ch === "}" && itemStart !== -1) {
+        try {
+          const item = JSON.parse(normalizeJsonContent(trimmed.slice(itemStart, i + 1)));
+          if (item && typeof item === "object" && item.title) items.push(item);
+        } catch { /* skip */ }
+        itemStart = -1;
+      }
+    }
+  }
+  return items.length > 0 ? items : null;
+}
+
 function parseAIJson(content: string) {
   const cleaned = cleanAIContent(content);
   const candidates = [cleaned, extractJsonCandidate(cleaned)];
   let lastError: unknown;
 
   for (const candidate of candidates) {
-    if (!candidate) {
-      continue;
-    }
+    if (!candidate) continue;
 
-    try {
-      return JSON.parse(candidate);
-    } catch (error) {
-      lastError = error;
-    }
+    try { return JSON.parse(candidate); } catch (e) { lastError = e; }
 
     try {
       const normalized = normalizeJsonContent(candidate);
       return JSON.parse(normalized);
-    } catch (error) {
-      lastError = error;
-    }
+    } catch (e) { lastError = e; }
+
+    try {
+      const repaired = repairTruncatedJson(normalizeJsonContent(candidate));
+      return JSON.parse(repaired);
+    } catch (e) { lastError = e; }
+
+    try {
+      const validItems = extractValidItemsFromPartialArray(candidate);
+      if (validItems && validItems.length > 0) {
+        console.log(`[JSON Repair] Extracted ${validItems.length} valid items from partial array`);
+        return validItems;
+      }
+    } catch { /* continue */ }
   }
 
   throw lastError || new Error("Failed to parse AI JSON output");
@@ -362,7 +525,7 @@ export interface RecommendationItem {
   searchQuery: string;  // 用于搜索引擎的查询词
   platform: string;      // 推荐的平台
   entertainmentType?: 'video' | 'game' | 'music' | 'review';  // 娱乐类型（仅娱乐分类）
-  fitnessType?: 'nearby_place' | 'tutorial' | 'equipment';
+  fitnessType?: 'nearby_place' | 'tutorial' | 'equipment' | 'theory_article';
 }
 
 export type GenerateRecommendationsOptions = {
@@ -419,6 +582,7 @@ export async function generateRecommendations(
 ): Promise<RecommendationItem[]> {
   const client = options?.client ?? "web";
   const geo = options?.geo ?? null;
+  const isCnWeb = isChinaDeployment() && locale === "zh" && client === "web";
   const avoidTitles = Array.isArray(options?.avoidTitles)
     ? options!.avoidTitles!.filter((t) => typeof t === "string" && t.trim().length > 0)
     : [];
@@ -467,21 +631,23 @@ export async function generateRecommendations(
   const categoryConfig = {
     entertainment: {
       platforms: locale === 'zh'
-        ? ['腾讯视频', '优酷', '爱奇艺', 'QQ音乐', '酷狗音乐', '网易云音乐', 'TapTap', '豆瓣', '百度', 'Steam', '笔趣阁']
+        ? (client === 'app'
+          ? ['腾讯视频', '优酷', '爱奇艺', 'TapTap', '网易云音乐', '酷狗音乐', 'QQ音乐', '百度']
+          : ['腾讯视频', 'TapTap', 'Steam', '酷狗音乐', '笔趣阁', '豆瓣'])
         : ['IMDb', 'YouTube', 'Spotify', 'Netflix', 'Rotten Tomatoes', 'Steam', 'Epic Games', 'GOG', 'PlayStation Store', 'Xbox Store', 'Nintendo eShop', 'Humble Bundle', 'itch.io'],
       examples: locale === 'zh'
-        ? '电影、电视剧、游戏、音乐、综艺、动漫'
+        ? '电影、电视剧、游戏、音乐、综艺、动漫、小说'
         : 'movies, TV shows, games, music, variety shows, anime',
       types: locale === 'zh'
-        ? ['视频', '游戏', '音乐', '影评/资讯']
+        ? ['视频', '游戏', '音乐', '小说/文章']
         : ['video', 'game', 'music', 'review/news'],
       // 游戏平台专用列表，供 AI 在推荐游戏时选择
       gamePlatforms: locale === 'zh'
-        ? ['TapTap']
+        ? (client === 'app' ? ['TapTap'] : ['TapTap', 'Steam'])
         : ['Steam', 'Epic Games', 'GOG', 'PlayStation Store', 'Xbox Store', 'Nintendo eShop', 'Humble Bundle', 'itch.io', 'Game Pass'],
       // 音乐平台专用列表
       musicPlatforms: locale === 'zh'
-        ? ['酷狗音乐', 'QQ音乐', '网易云音乐']
+        ? (client === 'app' ? ['网易云音乐', '酷狗音乐', 'QQ音乐'] : ['酷狗音乐', 'QQ音乐', '网易云音乐'])
         : ['Spotify', 'YouTube Music', 'Apple Music', 'SoundCloud']
     },
     shopping: {
@@ -496,10 +662,10 @@ export async function generateRecommendations(
       platforms: locale === 'zh'
         ? client === "app"
           ? ['大众点评', '美团', '腾讯地图美食', '百度地图美食', '高德地图美食', '京东秒送', '淘宝闪购', '美团外卖', '小红书']
-          : ['大众点评', '高德地图美食', '百度地图美食', '腾讯地图美食']
+          : ['下厨房', '高德地图美食', '大众点评']
         : ['Allrecipes', 'Google Maps', 'OpenTable'],
       examples: locale === 'zh'
-        ? '餐厅、菜谱、美食'
+        ? '食谱、附近好去处、菜系'
         : 'restaurants, recipes, food'
     },
     travel: {
@@ -512,13 +678,43 @@ export async function generateRecommendations(
     },
     fitness: {
       platforms: locale === 'zh'
-        ? ['B站健身', '优酷健身', 'Keep', '大众点评', '美团', '百度地图健身', '高德地图健身', '腾讯地图健身', '知乎', '什么值得买']
+        ? (isCnWeb
+          ? ['B站健身', '知乎', '什么值得买']
+          : ['B站健身', '优酷健身', 'Keep', '大众点评', '美团', '百度地图健身', '高德地图健身', '腾讯地图健身', '知乎', '什么值得买'])
         : ['YouTube Fitness', 'MyFitnessPal', 'Peloton', 'Google Maps', 'Amazon', 'Yelp'],
       examples: locale === 'zh'
-        ? '健身课程、健身房、健身器材、运动装备'
+        ? (isCnWeb ? '健身视频、健身原理文章、健身器材推荐' : '健身课程、健身房、健身器材、运动装备')
         : 'fitness classes, gyms, fitness equipment, workout gear'
     }
   };
+
+  const fitnessRequirementsZh =
+    category === "fitness"
+      ? (isCnWeb
+        ? `【强制要求】必须包含3种类型，各至少1个，并且每项必须包含 fitnessType 字段：
+- 健身视频(tutorial): 可跟练的视频课程/动作讲解
+- 健身原理文章(theory_article): 讲原理/机制/误区/小白科普的文章
+- 健身器材(equipment): 器材选购/评测/使用要点（偏推荐与评测，不要纯购物链接）
+fitnessType 必须为 tutorial/theory_article/equipment 之一。
+
+【视频硬指标】fitnessType=tutorial 时：searchQuery 必须包含“教程/跟练/训练/视频”至少一项。
+【原理文章硬指标】fitnessType=theory_article 时：searchQuery 必须包含“原理/机制/科学/小白/误区”至少一项。
+【器材硬指标】fitnessType=equipment 时：searchQuery 必须包含“器材/评测/选购/推荐/使用要点”至少一项。`
+        : `【强制要求】必须包含3种类型，各至少1个，并且每项必须包含 fitnessType 字段：
+- 附近场所(nearby_place): 真实可去的健身房/运动场地/场馆（不是教程/不是装备评测）
+- 教程(tutorial): 健身动作/课程/跟练视频
+- 器材(equipment): "XX使用教程/入门要点"(不是购买链接/不是纯评测导购)
+fitnessType 必须为 nearby_place/tutorial/equipment 之一。
+
+【附近场所硬指标】当你输出 fitnessType=nearby_place 时，description 必须同时提到：
+1) 通风系统（是否闷/异味，建议看评论）
+2) 深蹲架数量（照片里大概几个，是否需要排队）
+3) 距离（建议优先步行15分钟内，离家/公司近更容易坚持）
+并且 searchQuery 必须包含“附近/步行/地铁/商圈/街道”至少一项，方便定位周边。
+
+【教程硬指标】fitnessType=tutorial 时：searchQuery 必须包含“教程/跟练/训练/视频课”至少一项。
+【器材硬指标】fitnessType=equipment 时：searchQuery 必须包含“使用教程/怎么用/入门/动作要点”至少一项。`)
+      : "";
 
   const config = categoryConfig[category as keyof typeof categoryConfig] || categoryConfig.entertainment;
 
@@ -600,6 +796,17 @@ export async function generateRecommendations(
     requestNonce,
   });
 
+  const entertainmentSearchRules =
+    locale === "zh"
+      ? `
+【搜索词规范】
+- 视频（腾讯视频）：searchQuery 仅写片名/人物/剧情关键词，不要包含“豆瓣/评分/影评/解析/在线观看”等词
+- 游戏（TapTap/Steam）：searchQuery 只写游戏名，不要带“Steam/TapTap/中文版/下载/攻略”等后缀
+- 音乐（酷狗音乐/QQ音乐/网易云音乐）：searchQuery 只写歌名/歌手/专辑名，不要带平台名
+- 小说（笔趣阁）：searchQuery 只写小说名（可带作者），不要带“笔趣阁/TXT/下载/全文”等词
+`
+      : "";
+
   const prompt = locale === 'zh' ? `
 生成 ${desiredCount} 个多样化推荐，严格遵守类型分布要求。
 
@@ -620,33 +827,24 @@ ${behaviorPrompt}
 5. 实用价值：「性价比超高」「好评如潮」「距离近方便到达」
 每个推荐的 reason 必须不同，禁止重复使用相同句式！
 
-${category === 'entertainment' ? `【强制要求】必须包含4种不同类型，平均分配：
-- 视频类(腾讯视频/优酷): 影视作品
-- 游戏类(${(config as any).gamePlatforms?.slice(0, 4).join('/')}): 手机游戏名称(不含平台名，可在应用商店下载)
-- 音乐类(${(config as any).musicPlatforms?.slice(0, 3).join('/')}): 歌曲/专辑
-- 资讯类: 影评/排行/新闻
+${category === 'entertainment' ? `【强制要求】每条推荐必须是具体个体（具体的电影/游戏/歌曲名称），严禁推荐榜单、合集、分类：
+- 视频类(腾讯视频/优酷/爱奇艺): 推荐具体影视作品名(如《流浪地球2》《繁花》《庆余年》)，严禁"科幻电影推荐""热门电视剧"等
+- 游戏类(${(config as any).gamePlatforms?.slice(0, 4).join('/') || 'TapTap/Steam'}): 推荐具体游戏名(如《原神》《王者荣耀》《蛋仔派对》)，严禁"手游推荐榜单""独立游戏合集"等
+- 音乐类(${(config as any).musicPlatforms?.slice(0, 3).join('/') || '网易云音乐/QQ音乐'}): 推荐具体歌曲/专辑名(如《晴天》《范特西》《起风了》)，严禁"热门歌单""流行音乐推荐"等
+- 小说/文章类(笔趣阁/百度): 推荐具体小说名或文章(如《诡秘之主》《斗破苍穹》)
 每种类型至少1个，entertainmentType字段必填(video/game/music/review)` : ''}${category === 'food' ? `【强制要求】必须包含3种类型：
-- 食谱类: 纯菜名(如"宫保鸡丁")
-- 菜系类: "XX菜系餐厅"(如"川菜餐厅")
-- 场合类: "场合+菜系"(如"商务午餐")` : ''}${category === 'travel' ? `【强制要求】必须覆盖三类内容，并且名称要具体、可搜索：
+- 食谱类: 纯菜名(如"宫保鸡丁")，platform 优先：下厨房
+- 菜系类: 纯菜系名(如"川菜")，platform 优先：高德地图美食
+- 场合类: 纯场合词(如"商务午餐")，platform 优先：高德地图美食
+
+【搜索词规范】searchQuery 只写核心词，不要包含“美食/餐厅/推荐”等后缀；不要包含 URL 或平台名。
+【平台数量】大众点评最多 1 条，其余优先下厨房/高德地图美食。` : ''}${category === 'travel' ? `【强制要求】必须覆盖三类内容，并且名称要具体、可搜索：
 1) 附近风景名胜：如果提供了位置(geo)，至少输出2个“附近可去”的景点/公园/地标（必须是真实名称）。
 2) 国内旅游胜地：至少输出2个中国境内的具体目的地（建议包含具体景点/区域名，不要只写城市）。
 3) 国外旅游胜地：至少输出1个海外的具体目的地（同样要具体到景点/区域/街区）。
 
-【标题格式】优先使用“国家·城市·景点/区域”(如"中国·西安·大雁塔")；若确实无法精确到景点，也至少写到“国家·城市”。` : ''}${category === 'fitness' ? `【强制要求】必须包含3种类型，各至少1个，并且每项必须包含 fitnessType 字段：
-- 附近场所(nearby_place): 真实可去的健身房/运动场地/场馆（不是教程/不是装备评测）
-- 教程(tutorial): 健身动作/课程/跟练视频
-- 器材(equipment): "XX使用教程/入门要点"(不是购买链接/不是纯评测导购)
-fitnessType 必须为 nearby_place/tutorial/equipment 之一。
-
-【附近场所硬指标】当你输出 fitnessType=nearby_place 时，description 必须同时提到：
-1) 通风系统（是否闷/异味，建议看评论）
-2) 深蹲架数量（照片里大概几个，是否需要排队）
-3) 距离（建议优先步行15分钟内，离家/公司近更容易坚持）
-并且 searchQuery 必须包含“附近/步行/地铁/商圈/街道”至少一项，方便定位周边。
-
-【教程硬指标】fitnessType=tutorial 时：searchQuery 必须包含“教程/跟练/训练/视频课”至少一项。
-【器材硬指标】fitnessType=equipment 时：searchQuery 必须包含“使用教程/怎么用/入门/动作要点”至少一项。` : ''}
+【标题格式】优先使用“国家·城市·景点/区域”(如"中国·西安·大雁塔")；若确实无法精确到景点，也至少写到“国家·城市”。` : ''}${fitnessRequirementsZh}
+${category === 'entertainment' ? entertainmentSearchRules : ''}
 平台选择：${config.platforms.slice(0, 6).join('、')}
 勿生成URL` : `
 Generate ${desiredCount} personalized recommendations.
@@ -660,7 +858,7 @@ De-dup rule: avoid titles that repeat or closely paraphrase the user history tit
 
 Output JSON array with: title, description, reason, tags(3-5), searchQuery, platform${category === 'entertainment' ? ', entertainmentType' : ''}
 
-${category === 'entertainment' ? `Must include 4 types: video(IMDb/YouTube), game(${(config as any).gamePlatforms?.slice(0, 4).join('/')}), music(Spotify), review
+${category === 'entertainment' ? `Must include 4 types: video(IMDb/YouTube), game(${(config as any).gamePlatforms?.slice(0, 4).join('/') || 'Steam/Epic Games'}), music(Spotify), review
 Game searchQuery: game name only` : ''}${category === 'food' ? `3 types: recipe, cuisine, occasion` : ''}${category === 'travel' ? `Format: "Country·City"` : ''}${category === 'fitness' ? `Must include 3 types, at least 1 each, and include fitnessType:
 - nearby_place: real nearby gym/sports place
 - tutorial: workout tutorial video

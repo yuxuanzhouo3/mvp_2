@@ -33,6 +33,7 @@ export function enhanceTravelRecommendation(
 
   // 生成高度相关的搜索查询 - 使用目的地名称而不是通用关键词
   const enhancedSearchQuery = generateDestinationSearchQuery(recommendation, locale);
+  const enhancedReason = improveTravelReason(recommendation, locale);
 
   // 智能选择最佳平台 - 根据推荐类型选择
   const bestPlatform = selectPlatformByRecommendationType(recommendation);
@@ -40,10 +41,11 @@ export function enhanceTravelRecommendation(
   // 注意：不在这里生成链接，由 route.ts 处理
 
   // 生成亮点
-  const highlights = generateHighlights(recommendation);
+  const highlights = generateHighlights({ ...recommendation, reason: enhancedReason });
 
   return {
     ...recommendation,
+    reason: enhancedReason,
     searchQuery: enhancedSearchQuery,
     platform: bestPlatform,
     destination,
@@ -54,6 +56,81 @@ export function enhanceTravelRecommendation(
       highlights
     }
   };
+}
+
+/**
+ * Travel helper utils
+ */
+function trimByChars(value: string, limit: number): string {
+  return Array.from(value).slice(0, Math.max(0, limit)).join("");
+}
+
+function normalizeTravelText(value: unknown): string {
+  return typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
+}
+
+function extractLandmarkFromTitle(title: string): string {
+  const raw = normalizeTravelText(title);
+  if (!raw) return "";
+  const segments = raw.split(/[·・]/).map((s) => s.trim()).filter(Boolean);
+  return segments.length > 0 ? segments[segments.length - 1] : raw;
+}
+
+function pickMeaningfulTravelTag(tags: string[]): string | "" {
+  const generic = /^(旅行|旅游|出行|景点|目的地|热门|推荐|攻略)$/;
+  for (const tag of tags) {
+    if (tag && !generic.test(tag)) return tag;
+  }
+  return tags[0] || "";
+}
+
+function shouldReplaceTravelReason(reason: string, core: string, tags: string[]): boolean {
+  if (!reason) return true;
+  if (reason.length < 8) return true;
+
+  const hasCore = Boolean(core && reason.includes(core));
+  const hasTag = tags.some((tag) => tag && reason.includes(tag));
+  const genericPattern = /(适合|推荐|热门|打卡|周末|放松|口碑|必去|人气|小众|值得)/;
+  const genericHit = genericPattern.test(reason);
+
+  if (genericHit) {
+    if (reason.length <= 18) return true;
+    if (!hasTag) return true;
+    return !hasCore;
+  }
+
+  return !(hasCore || hasTag);
+}
+
+function improveTravelReason(recommendation: any, locale: string): string {
+  const title = normalizeTravelText(recommendation.title);
+  const description = normalizeTravelText(recommendation.description);
+  const rawReason = normalizeTravelText(recommendation.reason);
+  const tags = Array.isArray(recommendation.tags)
+    ? recommendation.tags.filter((t: unknown): t is string => typeof t === "string" && t.trim().length > 0)
+    : [];
+  const core = extractLandmarkFromTitle(title);
+
+  if (!shouldReplaceTravelReason(rawReason, core, tags)) {
+    return rawReason;
+  }
+
+  const sentence = description.split(/[。！？!?]/)[0]?.trim();
+  const limit = locale === "zh" ? 44 : 100;
+
+  if (sentence) {
+    const trimmed = trimByChars(sentence, limit);
+    return core && !trimmed.includes(core) ? `${core}：${trimmed}` : trimmed;
+  }
+
+  const tag = pickMeaningfulTravelTag(tags);
+  if (tag) {
+    const value = core ? `${core}主打${tag}体验` : `主打${tag}体验`;
+    return trimByChars(value, limit);
+  }
+
+  const fallback = locale === "zh" ? "细节丰富，值得安排" : "Packed with details worth the visit";
+  return core ? trimByChars(`${core}，${fallback}`, limit) : trimByChars(fallback, limit);
 }
 
 /**
@@ -78,30 +155,21 @@ function generateDestinationSearchQuery(
   recommendation: any,
   locale: string
 ): string {
-  // 提取核心地点名称
   const locationName = extractCoreLocationName(recommendation.title);
+  const title = typeof recommendation.title === "string" ? recommendation.title.trim() : "";
 
-  // 根据推荐类型添加特定关键词
+  if (locale === "zh") {
+    return (locationName || title).trim();
+  }
+
   const typeKeywords = getTypeSpecificKeywords(recommendation, locale);
-
-  // 构建搜索查询
-  let searchQuery = locationName;
-
-  // 添加类型关键词
+  let searchQuery = locationName || title;
   if (typeKeywords) {
     searchQuery += ` ${typeKeywords}`;
   }
-
-  // 优先使用英文搜索，因为大多数旅游平台是国际化的
-  if (locale === 'zh') {
-    const englishName = getEnglishLocationName(locationName);
-    if (englishName && englishName !== locationName) {
-      searchQuery = englishName + (typeKeywords ? ` ${typeKeywords}` : '');
-    }
-  }
-
   return searchQuery.trim();
 }
+
 
 /**
  * 根据推荐类型选择最佳平台
@@ -155,24 +223,27 @@ function selectPlatformByRecommendationType(
 function extractCoreLocationName(
   title: string
 ): string {
-  // 移除常见的后缀
   const suffixes = [
-    '旅游攻略', '游玩指南', '一日游', '两日游',
-    'Tour', 'Travel Guide', 'Day Trip', 'Experience'
+    "\u65c5\u884c\u653b\u7565", "\u6e38\u73a9\u6307\u5357", "\u4e00\u65e5\u6e38", "\u4e24\u65e5\u6e38",
+    "Tour", "Travel Guide", "Day Trip", "Experience"
   ];
 
   let name = title;
-  suffixes.forEach(suffix => {
+  suffixes.forEach((suffix) => {
     if (name.includes(suffix)) {
-      name = name.replace(suffix, '').trim();
+      name = name.replace(suffix, "").trim();
     }
   });
 
-  // 如果标题中有分隔符，取第一部分
-  const parts = name.split(/[，,·•]/);
-  name = parts[0]?.trim() || name;
+  const trimmed = name.trim();
+  if (!trimmed) return trimmed;
 
-  return name;
+  if (/[\u00b7\u30fb]/.test(trimmed)) {
+    return trimmed;
+  }
+
+  const parts = trimmed.split(/[\uFF0C,\u3001/\-]/);
+  return parts[0]?.trim() || trimmed;
 }
 
 /**

@@ -9,7 +9,7 @@ export const TRUSTED_PLATFORMS = {
     video: ['腾讯视频', '优酷', '爱奇艺', '豆瓣', '豆瓣电影'],
     game: ['TapTap', 'Steam'],
     music: ['酷狗音乐', 'QQ音乐', '网易云音乐'],
-    review: ['豆瓣', '百度'],
+    review: ['笔趣阁', '豆瓣', '百度'],
     shopping: ['京东', '淘宝', '拼多多', '唯品会', '什么值得买', '慢慢买'],
     food: ['京东秒送', '淘宝闪购', '美团外卖', '大众点评', '小红书', '小红书美食', '下厨房', '高德地图美食', '百度地图美食', '腾讯地图美食', '美团'],
     travel: ['携程', '去哪儿', '马蜂窝', '穷游', '小红书'],
@@ -66,7 +66,7 @@ export const PLATFORM_DOMAINS = {
   '虾米音乐': 'xiami.com',
   '知乎': 'zhihu.com',
   '微博': 'weibo.com',
-  '笔趣阁': 'bqgl.cc',
+  '笔趣阁': 'bqgde.de',
   '小红书': 'xiaohongshu.com',
   '时光网': 'mtime.com',
   '百度': 'baidu.com',
@@ -75,8 +75,9 @@ export const PLATFORM_DOMAINS = {
   // 美食平台
   '小红书美食': 'xiaohongshu.com',
   '百度地图美食': 'map.baidu.com',
-  '高德地图美食': 'ditu.amap.com',
+  '高德地图美食': 'amap.com',
   '腾讯地图美食': 'map.qq.com',
+  '高德地图': 'amap.com',
   '美团': 'meituan.com',
   '美团外卖': 'meituan.com',
   '饿了么': 'ele.me',
@@ -95,7 +96,7 @@ export const PLATFORM_DOMAINS = {
   '途牛': 'tuniu.com',
   '同程旅行': 'ly.com',
   '驴妈妈': 'lvmama.com',
-  '高德地图旅游': 'ditu.amap.com',
+  '高德地图旅游': 'amap.com',
   '百度地图旅游': 'map.baidu.com',
   '小红书旅游': 'xiaohongshu.com',
   // 健身平台
@@ -104,7 +105,7 @@ export const PLATFORM_DOMAINS = {
   '优酷健身': 'youku.com',
   '小红书健身': 'xiaohongshu.com',
   '百度地图健身': 'map.baidu.com',
-  '高德地图健身': 'ditu.amap.com',
+  '高德地图健身': 'amap.com',
   '腾讯地图健身': 'map.qq.com',
   '腾讯地图': 'map.qq.com',
   'Keep': 'gotokeep.com',
@@ -280,7 +281,7 @@ export function selectValidPlatform(
       video: '豆瓣',
       game: 'Steam',
       music: '网易云音乐',
-      review: '豆瓣'
+      review: '笔趣阁'
     },
     en: {
       video: 'IMDb',

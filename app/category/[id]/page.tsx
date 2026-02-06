@@ -126,6 +126,48 @@ function dedupeHistory(items: HistoryItem[]): HistoryItem[] {
   })
 }
 
+type EntertainmentType = "video" | "game" | "music" | "review"
+
+function getEntertainmentType(item: AIRecommendation): EntertainmentType | null {
+  const raw = (item as any)?.entertainmentType ?? (item.metadata as any)?.entertainmentType
+  if (raw === "video" || raw === "game" || raw === "music" || raw === "review") {
+    return raw
+  }
+  return null
+}
+
+function prioritizeEntertainmentRecommendations<T extends AIRecommendation>(items: T[]): T[] {
+  const order: EntertainmentType[] = ["video", "game", "music", "review"]
+  const pickedKeys = new Set<string>()
+  const picks: T[] = []
+  const firstByType = new Map<EntertainmentType, T>()
+
+  for (const item of items) {
+    const type = getEntertainmentType(item)
+    if (type && !firstByType.has(type)) {
+      firstByType.set(type, item)
+    }
+  }
+
+  for (const type of order) {
+    const item = firstByType.get(type)
+    if (!item) continue
+    const key = `${item.title}-${item.link}`
+    if (pickedKeys.has(key)) continue
+    pickedKeys.add(key)
+    picks.push(item)
+  }
+
+  const rest = items.filter((item) => {
+    const key = `${item.title}-${item.link}`
+    if (pickedKeys.has(key)) return false
+    pickedKeys.add(key)
+    return true
+  })
+
+  return [...picks, ...rest]
+}
+
 // èŽ·å–ç”¨æˆ· ID
 function getUserId(): string {
   if (typeof window !== "undefined") {
@@ -241,6 +283,7 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
   const [locationConsent, setLocationConsent] = useState<"unknown" | "granted" | "denied">("unknown")
   const [locationCoords, setLocationCoords] = useState<{ lat: number; lng: number } | null>(null)
 
+
   // 用户画像状态
   const {
     profileCompleteness,
@@ -272,6 +315,14 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
   const categoryId = params.id as RecommendationCategory
   const category = categoryConfig[categoryId]
 
+  const normalizeRecommendationsForUI = useCallback(
+    (items: HistoryItem[]) => {
+      if (categoryId !== "entertainment" || region !== "CN") return items
+      return prioritizeEntertainmentRecommendations(items)
+    },
+    [categoryId, region]
+  )
+
   useEffect(() => {
     if (currentRecommendations.length > 0) return
     try {
@@ -279,9 +330,9 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
       if (!raw) return
       const parsed = JSON.parse(raw) as unknown
       if (!Array.isArray(parsed)) return
-      setCurrentRecommendations(parsed as AIRecommendation[])
+      setCurrentRecommendations(normalizeRecommendationsForUI(parsed as AIRecommendation[]))
     } catch {}
-  }, [categoryId, currentRecommendations.length])
+  }, [categoryId, currentRecommendations.length, normalizeRecommendationsForUI])
 
   useEffect(() => {
     if (currentRecommendations.length === 0) return
@@ -622,6 +673,7 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
           let buffer = ""
           let aiStarted = false
           let collected: HistoryItem[] = []
+          let warmup: HistoryItem[] = []
 
           const flushMessage = (raw: string) => {
             const lines = raw.split("\n").map((l) => l.trimEnd())
@@ -651,6 +703,7 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
             }
 
             if (payload?.type === "partial" && Array.isArray(payload?.recommendations)) {
+              console.log('[Stream] Received partial:', payload.phase, payload.recommendations.length, 'items')
               if (payload?.phase === "ai") {
                 if (!aiStarted) {
                   aiStarted = true
@@ -658,27 +711,37 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
                 }
                 const merged = dedupeHistory([...collected, ...payload.recommendations])
                 collected = merged
-                setCurrentRecommendations(merged)
+                console.log('[Stream] Setting AI recommendations:', merged.length, 'items')
+                setCurrentRecommendations(normalizeRecommendationsForUI(merged))
                 setSource(payload?.source || "ai")
                 return
               }
 
               const warm = dedupeHistory(payload.recommendations)
+              warmup = warm
               if (!aiStarted) {
-                setCurrentRecommendations(warm)
+                console.log('[Stream] Setting warmup recommendations:', warm.length, 'items')
+                setCurrentRecommendations(normalizeRecommendationsForUI(warm))
                 setSource(payload?.source || "warmup")
               }
               return
             }
 
             if (payload?.type === "complete") {
-              const finalRecs = Array.isArray(payload?.recommendations)
-                ? dedupeHistory(payload.recommendations)
-                : collected
+              const payloadRecs = Array.isArray(payload?.recommendations) ? payload.recommendations : null
+              let finalRecs = payloadRecs && payloadRecs.length > 0 ? payloadRecs : collected
+              if (finalRecs.length === 0 && warmup.length > 0) {
+                finalRecs = warmup
+              }
 
               const uniqueRecs = dedupeHistory(finalRecs)
-              setCurrentRecommendations(uniqueRecs)
-              setSource(payload?.source || (aiStarted ? "ai" : "fallback"))
+              const normalizedRecs = normalizeRecommendationsForUI(uniqueRecs)
+              setCurrentRecommendations(normalizedRecs)
+              if (!aiStarted && normalizedRecs.length > 0 && payloadRecs && payloadRecs.length === 0) {
+                setSource("fallback")
+              } else {
+                setSource(payload?.source || (aiStarted ? "ai" : "fallback"))
+              }
 
               if (payload?.usage) {
                 setUsageInfo(payload.usage as UsageInfo)
@@ -692,7 +755,7 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
                 properties: {
                   categoryId,
                   locale,
-                  returned: uniqueRecs.length,
+                  returned: normalizedRecs.length,
                   source: payload?.source || null,
                 },
               })
@@ -705,12 +768,12 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
                 properties: {
                   categoryId,
                   locale,
-                  shown: uniqueRecs.length,
+                  shown: normalizedRecs.length,
                   source: payload?.source || null,
                 },
               })
 
-              const newHistory: HistoryItem[] = dedupeHistory([...uniqueRecs, ...history]).slice(0, 10)
+              const newHistory: HistoryItem[] = dedupeHistory([...normalizedRecs, ...history]).slice(0, 10)
               setHistory(newHistory)
               localStorage.setItem(`ai_history_${params.id}`, JSON.stringify(newHistory))
 
@@ -770,7 +833,8 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
         }
 
         const uniqueRecs = dedupeHistory(data.recommendations)
-        setCurrentRecommendations(uniqueRecs)
+        const normalizedRecs = normalizeRecommendationsForUI(uniqueRecs)
+        setCurrentRecommendations(normalizedRecs)
         setSource(data.source)
 
         trackClientEvent({
@@ -781,12 +845,12 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
           properties: {
             categoryId,
             locale,
-            shown: uniqueRecs.length,
+            shown: normalizedRecs.length,
             source: data.source || null,
           },
         })
 
-        const newHistory: HistoryItem[] = dedupeHistory([...uniqueRecs, ...history]).slice(0, 10)
+        const newHistory: HistoryItem[] = dedupeHistory([...normalizedRecs, ...history]).slice(0, 10)
         setHistory(newHistory)
         localStorage.setItem(`ai_history_${params.id}`, JSON.stringify(newHistory))
 

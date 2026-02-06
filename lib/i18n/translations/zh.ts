@@ -906,7 +906,7 @@ export const zh = {
       viewDetails: "查看详情",
       save: "收藏",
       notInterested: "不感兴趣",
-      whyRecommend: "为什么推荐给你：",
+      whyRecommend: "推荐理由：",
       recentHistory: "最近推荐",
       clear: "清空",
       categoryNotFound: "分类不存在",

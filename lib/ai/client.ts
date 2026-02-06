@@ -1,6 +1,6 @@
 /**
  * AI 客户端 - 多模型支持
- * 优先级: 通义千问 (qwen-turbo → qwen-plus → qwen-max) → 智谱 (glm-4.5-flash)
+ * 优先级: 通义千问 (qwen-flash → qwen-turbo → qwen-plus → qwen-max) → 智谱 (glm-4.5-flash)
  */
 
 interface AIRequest {
@@ -17,8 +17,8 @@ interface AIResponse {
   model: string;
 }
 
-// 模型配置 - turbo 优先（速度快、成本低）
-const QWEN_MODELS = ["qwen-turbo", "qwen-plus", "qwen-max"] as const;
+// 模型配置 - flash 优先（速度快、成本低）
+const QWEN_MODELS = ["qwen-flash", "qwen-turbo", "qwen-plus", "qwen-max"] as const;
 const ZHIPU_MODEL = "glm-4.5-flash";
 
 // API 端点
@@ -221,7 +221,7 @@ async function callZhipuAPI(request: AIRequest, retryCount: number = 0): Promise
 
 /**
  * 通用 AI 调用函数 - 多模型容错策略
- * 优先级: qwen-max → qwen-plus → qwen-turbo → glm-4.5-flash
+ * 优先级: qwen-flash → qwen-turbo → qwen-plus → qwen-max → glm-4.5-flash
  */
 export async function callAI(request: AIRequest): Promise<AIResponse> {
   const errors: string[] = [];

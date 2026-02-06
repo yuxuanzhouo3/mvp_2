@@ -197,3 +197,8 @@ export async function POST(request: NextRequest, { params }: { params: { categor
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
+
+
+
+
+

@@ -1,4 +1,5 @@
 import type { RecommendationCategory } from "@/lib/types/recommendation";
+import { isChinaDeployment } from "@/lib/config/deployment.config";
 import { dedupeRecommendations } from "@/lib/recommendation/dedupe";
 
 export type FallbackRecommendationItem = {
@@ -9,7 +10,7 @@ export type FallbackRecommendationItem = {
   searchQuery: string;
   platform: string;
   entertainmentType?: "video" | "game" | "music" | "review";
-  fitnessType?: "nearby_place" | "tutorial" | "equipment";
+  fitnessType?: "nearby_place" | "tutorial" | "equipment" | "theory_article";
 };
 
 type GenerateFallbackParams = {
@@ -277,12 +278,12 @@ function getFallbackPool(locale: "zh" | "en"): Record<RecommendationCategory, Fa
   return {
     entertainment: [
       {
-        title: "冷门高分科幻片清单（脑洞向）",
-        description: "避开通用爆款，从概念更硬的冷门佳作入手",
-        reason: "用更长尾的题材切入，提升新鲜度",
-        tags: ["电影", "科幻", "冷门", "高分"],
-        searchQuery: "冷门 高分 科幻 电影 清单",
-        platform: "豆瓣",
+        title: "玄幻长篇：诡秘之主",
+        description: "克苏鲁风格的神秘奇幻长篇，世界观宏大",
+        reason: "剧情张力强，适合沉浸式阅读",
+        tags: ["小说", "奇幻", "长篇", "克苏鲁"],
+        searchQuery: "诡秘之主",
+        platform: "笔趣阁",
         entertainmentType: "review",
       },
       {
@@ -313,12 +314,12 @@ function getFallbackPool(locale: "zh" | "en"): Record<RecommendationCategory, Fa
         entertainmentType: "music",
       },
       {
-        title: "电影榜单：近五年被低估的剧情片",
-        description: "避开通用爆款，用榜单方式挖掘口碑剧情片",
-        reason: "用“榜单+时间范围”做可搜索拓展",
-        tags: ["电影", "剧情", "榜单", "口碑"],
-        searchQuery: "近五年 被低估 剧情片 榜单",
-        platform: "豆瓣",
+        title: "权谋爽文：庆余年",
+        description: "权谋与成长线交织，节奏明快不拖沓",
+        reason: "故事张力足，适合一口气追读",
+        tags: ["小说", "权谋", "爽文", "长篇"],
+        searchQuery: "庆余年",
+        platform: "笔趣阁",
         entertainmentType: "review",
       },
       {
@@ -340,12 +341,12 @@ function getFallbackPool(locale: "zh" | "en"): Record<RecommendationCategory, Fa
         entertainmentType: "music",
       },
       {
-        title: "影评/资讯：年度最佳导演作品盘点",
-        description: "用导演维度找同风格作品，避免泛化推荐",
-        reason: "通过“导演维度”做长尾发现",
-        tags: ["影评", "导演", "盘点", "资讯"],
-        searchQuery: "年度 最佳 导演 作品 盘点",
-        platform: "豆瓣",
+        title: "修仙经典：凡人修仙传",
+        description: "从凡人起步的修仙成长线，剧情稳扎稳打",
+        reason: "成长路线清晰，适合长期追更",
+        tags: ["小说", "修仙", "经典", "长篇"],
+        searchQuery: "凡人修仙传",
+        platform: "笔趣阁",
         entertainmentType: "review",
       },
     ],
@@ -397,39 +398,39 @@ function getFallbackPool(locale: "zh" | "en"): Record<RecommendationCategory, Fa
         description: "经典川味下饭菜，鸡丁外酥里嫩、酱香微辣",
         reason: "食谱类拓展：用具体菜名提升可搜索性",
         tags: ["食谱", "家常菜", "川菜", "下饭"],
-        searchQuery: "宫保鸡丁 做法 家常",
-        platform: "大众点评",
+        searchQuery: "宫保鸡丁",
+        platform: "下厨房",
       },
       {
-        title: "川菜餐厅",
+        title: "川菜",
         description: "找“辣度可选、出菜稳定”的川菜馆，优先看差评点",
         reason: "菜系类拓展：按菜系找更稳定的选择",
         tags: ["餐厅", "川菜", "口碑", "辣度"],
-        searchQuery: "附近 川菜 餐厅 口碑",
-        platform: "大众点评",
+        searchQuery: "川菜",
+        platform: "高德地图美食",
       },
       {
         title: "商务午餐·日料",
         description: "环境安静、出餐快、可预约，适合正式会面",
         reason: "场合类拓展：用“场合+菜系”更贴近决策",
         tags: ["午餐", "日料", "商务", "预约"],
-        searchQuery: "附近 商务 午餐 日料 餐厅 预约",
-        platform: "大众点评",
+        searchQuery: "商务午餐 日料",
+        platform: "高德地图美食",
       },
       {
         title: "番茄牛腩",
         description: "酸甜开胃，适合配米饭或面，做一锅吃两顿",
         reason: "食谱类拓展：具体菜名 + 高复购",
         tags: ["食谱", "炖菜", "番茄", "牛腩"],
-        searchQuery: "番茄牛腩 做法 炖",
-        platform: "小红书",
+        searchQuery: "番茄牛腩",
+        platform: "下厨房",
       },
       {
         title: "夜宵·烧烤",
         description: "优先选通风好、油烟控制好的店，注意卫生与热量",
         reason: "场合类拓展：夜宵偏好",
         tags: ["夜宵", "烧烤", "聚会", "口碑"],
-        searchQuery: "附近 夜宵 烧烤 口碑",
+        searchQuery: "夜宵 烧烤",
         platform: "大众点评",
       },
     ],
@@ -504,6 +505,15 @@ function getFallbackPool(locale: "zh" | "en"): Record<RecommendationCategory, Fa
         fitnessType: "equipment",
       },
       {
+        title: "健身小白必读：肌肉增长与恢复原理",
+        description: "用通俗方式讲清训练刺激、恢复与进步的关系，减少无效训练",
+        reason: "补齐“健身原理”类型，帮助建立正确训练观念",
+        tags: ["健身原理", "小白", "科普", "误区"],
+        searchQuery: "健身小白 原理 科普 肌肉增长 恢复",
+        platform: "知乎",
+        fitnessType: "theory_article",
+      },
+      {
         title: "10分钟日常拉伸：改善久坐僵硬",
         description: "短时拉伸跟练，重点放松髋屈肌、胸椎与后侧链",
         reason: "从训练拓展到“恢复与灵活性”",
@@ -556,11 +566,19 @@ export function generateFallbackCandidates(params: GenerateFallbackParams): Fall
     (t): t is string => typeof t === "string" && t.trim().length > 0
   );
 
+  const isCnWebFitness =
+    params.category === "fitness" &&
+    params.locale === "zh" &&
+    params.client === "web" &&
+    isChinaDeployment();
+
   const requiredKinds =
     params.category === "entertainment"
       ? (["video", "game", "music", "review"] as const)
       : params.category === "fitness"
-        ? (["nearby_place", "tutorial", "equipment"] as const)
+        ? (isCnWebFitness
+          ? (["tutorial", "theory_article", "equipment"] as const)
+          : (["nearby_place", "tutorial", "equipment"] as const))
         : [];
 
   const requiredSelections =

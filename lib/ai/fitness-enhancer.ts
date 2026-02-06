@@ -6,9 +6,10 @@
  * 1. 必须包含附近场所（nearby_place）
  * 2. 必须包含健身教程（tutorial）
  * 3. 必须包含器材使用教程（equipment）
+ * 4. Web(CN) 场景可使用健身原理文章（theory_article）
  */
 
-export type FitnessRecommendationType = 'nearby_place' | 'tutorial' | 'equipment';
+export type FitnessRecommendationType = 'nearby_place' | 'tutorial' | 'equipment' | 'theory_article';
 
 export interface FitnessRecommendation {
     title: string;
@@ -26,9 +27,9 @@ export interface FitnessRecommendation {
  * 返回：{ isValid: boolean, missingTypes: FitnessRecommendationType[] }
  */
 export function validateFitnessRecommendationDiversity(
-    recommendations: any[]
+    recommendations: any[],
+    requiredTypes: FitnessRecommendationType[] = ['nearby_place', 'tutorial', 'equipment']
 ): { isValid: boolean; missingTypes: FitnessRecommendationType[] } {
-    const requiredTypes: FitnessRecommendationType[] = ['nearby_place', 'tutorial', 'equipment'];
     const foundTypes = new Set<FitnessRecommendationType>();
 
     // 识别每个推荐的健身类型
@@ -50,8 +51,11 @@ export function validateFitnessRecommendationDiversity(
  */
 export function identifyFitnessType(recommendation: any): FitnessRecommendationType | null {
     const declared = recommendation.fitnessType;
-    if (declared === 'nearby_place' || declared === 'tutorial' || declared === 'equipment') {
+    if (declared === 'nearby_place' || declared === 'tutorial' || declared === 'equipment' || declared === 'theory_article') {
         return declared;
+    }
+    if (declared === 'article' || declared === 'theory' || declared === 'principle' || declared === 'knowledge') {
+        return 'theory_article';
     }
     if (declared === 'video' || declared === 'plan') return 'tutorial';
     if (declared === 'equipment') return 'equipment';
@@ -84,6 +88,16 @@ export function identifyFitnessType(recommendation: any): FitnessRecommendationT
         (equipmentHowtoKeywords.some((kw) => title.includes(kw) || searchQuery.includes(kw) || description.includes(kw)) ||
             equipmentCommercialKeywords.some((kw) => title.includes(kw) || searchQuery.includes(kw) || description.includes(kw)));
 
+    const theoryKeywords = [
+        '原理', '机制', '科学', '生理', '解剖', '为什么', '误区', '小白', '科普', '基础知识', '训练原理',
+        'progressive overload', 'mechanism', 'science', 'physiology', 'principles', 'beginner'
+    ];
+    const theoryPlatforms = ['知乎', 'fitnessvolt', 'muscle & strength'];
+    const isTheory =
+        theoryKeywords.some((kw) => title.includes(kw) || searchQuery.includes(kw) || description.includes(kw)) ||
+        theoryPlatforms.some((plat) => platform.includes(plat)) ||
+        tags.some((tag: string) => theoryKeywords.some((kw) => tag.includes(kw)));
+
     const tutorialKeywords = ['教程', '跟练', '训练', '动作', '课程', '视频课', 'tutorial', 'workout', 'class', 'lesson', 'video'];
     const tutorialPlatforms = ['youtube', 'youtube fitness', 'b站', 'b站健身', '优酷健身', 'peloton', 'keep'];
     const isTutorial =
@@ -92,9 +106,11 @@ export function identifyFitnessType(recommendation: any): FitnessRecommendationT
         tags.some((tag: string) => tutorialKeywords.some((kw) => tag.includes(kw)));
 
     if (isEquipment) return 'equipment';
+    if (isTheory && !isPlace) return 'theory_article';
     if (isPlace && !isTutorial) return 'nearby_place';
     if (isPlace && isTutorial) return 'tutorial';
     if (isTutorial) return 'tutorial';
+    if (isTheory) return 'theory_article';
     if (isPlace) return 'nearby_place';
     return 'tutorial';
 }
@@ -162,6 +178,16 @@ function generateFitnessSupplementRecommendation(
                     platform: 'B站健身',
                     fitnessType: 'equipment',
                 };
+            case 'theory_article':
+                return {
+                    title: '健身小白必读：肌肉增长与恢复原理',
+                    description: '用通俗方式讲清训练刺激、恢复与进步的关系，帮你避开常见误区',
+                    reason: '补齐“健身原理”类型，建立正确训练观念',
+                    tags: ['健身原理', '小白', '科普', '误区'],
+                    searchQuery: '健身小白 原理 科普 肌肉增长 恢复',
+                    platform: '知乎',
+                    fitnessType: 'theory_article',
+                };
         }
     } else {
         // English versions
@@ -198,6 +224,16 @@ function generateFitnessSupplementRecommendation(
                     platform: 'YouTube Fitness',
                     fitnessType: 'equipment',
                 };
+            case 'theory_article':
+                return {
+                    title: 'Strength Training Basics: Progressive Overload Explained',
+                    description: 'Plain-language explanation of training stimulus, recovery, and how progress actually happens',
+                    reason: 'Fill the theory type with practical science-backed guidance',
+                    tags: ['principles', 'science', 'beginner', 'progress'],
+                    searchQuery: 'progressive overload basics training science',
+                    platform: 'Muscle & Strength',
+                    fitnessType: 'theory_article',
+                };
         }
     }
 
@@ -230,6 +266,8 @@ export function selectFitnessPlatform(
                     const equipmentPlatforms = ['B站健身', '优酷健身', 'B站'];
                     return equipmentPlatforms.includes(currentPlatform) ? currentPlatform : 'B站健身';
                 }
+            case 'theory_article':
+                return '知乎';
 
             default:
                 return currentPlatform;
@@ -252,6 +290,10 @@ export function selectFitnessPlatform(
                     const engEquipmentPlatforms = ['YouTube', 'YouTube Fitness', 'GarageGymReviews'];
                     return engEquipmentPlatforms.includes(currentPlatform) ? currentPlatform : 'YouTube Fitness';
                 }
+            case 'theory_article': {
+                const engTheoryPlatforms = ['Muscle & Strength', 'FitnessVolt'];
+                return engTheoryPlatforms.includes(currentPlatform) ? currentPlatform : 'Muscle & Strength';
+            }
 
             default:
                 return currentPlatform;
@@ -299,6 +341,11 @@ export function optimizeFitnessSearchQuery(
                     optimized += ' 使用教程 动作要点';
                 }
                 break;
+            case 'theory_article':
+                if (!optimized.includes('原理') && !optimized.includes('机制') && !optimized.includes('科学') && !optimized.includes('小白')) {
+                    optimized += ' 原理 科普 小白';
+                }
+                break;
         }
     } else {
         // English
@@ -321,6 +368,11 @@ export function optimizeFitnessSearchQuery(
                 }
                 if (!optimized.includes('how to') && !optimized.includes('tips') && !optimized.includes('form')) {
                     optimized += ' how to use form tips';
+                }
+                break;
+            case 'theory_article':
+                if (!optimized.includes('science') && !optimized.includes('principles')) {
+                    optimized += ' training science principles';
                 }
                 break;
         }

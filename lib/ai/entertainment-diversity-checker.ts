@@ -74,6 +74,7 @@ export function inferEntertainmentType(rec: RecommendationItem): EntertainmentTy
   // 影评/资讯类关键词
   const reviewKeywords = [
     '影评', '解析', '评测', '盘点', '排行榜', '评论', '分析', '资讯', '新闻',
+    '小说', '网文', '连载', '章节', '完结', '书名', '作者', '书单',
     'review', 'analysis', 'critique', 'ranking', 'list', 'news', 'commentary'
   ];
 
@@ -81,7 +82,7 @@ export function inferEntertainmentType(rec: RecommendationItem): EntertainmentTy
   const videoPlatforms = ['豆瓣', 'IMDb', 'B站', 'YouTube', '爱奇艺', '腾讯视频', 'Netflix', 'Hulu'];
   const gamePlatforms = ['Steam', 'Epic Games', 'Nintendo', 'PlayStation', 'Xbox', 'Twitch'];
   const musicPlatforms = ['网易云音乐', 'QQ音乐', 'Spotify', 'Apple Music', 'SoundCloud'];
-  const reviewPlatforms = ['豆瓣', 'IMDb', 'Rotten Tomatoes', 'Metacritic', '知乎', 'Reddit'];
+  const reviewPlatforms = ['笔趣阁', '豆瓣', 'IMDb', 'Rotten Tomatoes', 'Metacritic', '知乎', 'Reddit'];
 
   // 计算匹配分数
   const scores = {
@@ -230,7 +231,7 @@ ${getTypeSpecificRequirements(type, 'zh')}
 {
   "title": "具体推荐名称",
   "description": "简短描述",
-  "reason": "为什么推荐给这个用户",
+  "reason": "推荐理由（不超过50字）",
   "tags": ["标签1", "标签2", "标签3"],
   "searchQuery": "用于搜索的关键词",
   "platform": "平台名称",
@@ -302,8 +303,8 @@ Return JSON format (strictly, no extra text):
           description: '中国科幻巨制，展现人类文明危机',
           reason: '基于您对科幻题材的偏好',
           tags: ['科幻', '电影', '冒险'],
-          searchQuery: '流浪地球2 豆瓣评分',
-          platform: '豆瓣',
+          searchQuery: '流浪地球2',
+          platform: '腾讯视频',
           entertainmentType: 'video'
         },
         game: {
@@ -311,8 +312,8 @@ Return JSON format (strictly, no extra text):
           description: '开放世界冒险RPG游戏',
           reason: '精美的画风和丰富的游戏内容',
           tags: ['RPG', '开放世界', '冒险'],
-          searchQuery: '原神 下载 官方',
-          platform: '官网',
+          searchQuery: '原神',
+          platform: 'TapTap',
           entertainmentType: 'game'
         },
         music: {
@@ -321,16 +322,16 @@ Return JSON format (strictly, no extra text):
           reason: '融合多种音乐风格的创新之作',
           tags: ['流行', '华语', '专辑'],
           searchQuery: '周杰伦 新专辑 2024',
-          platform: '网易云音乐',
+          platform: '酷狗音乐',
           entertainmentType: 'music'
         },
         review: {
-          title: '2024年电影排行榜盘点',
-          description: '年度最佳电影深度解析',
-          reason: '了解最新的电影动态和评价',
-          tags: ['影评', '盘点', '电影'],
-          searchQuery: '2024年电影排行榜 豆瓣',
-          platform: '豆瓣',
+          title: '诡秘之主',
+          description: '克苏鲁风格的神秘奇幻长篇',
+          reason: '世界观宏大，节奏紧凑，适合沉浸式阅读',
+          tags: ['小说', '奇幻', '长篇'],
+          searchQuery: '诡秘之主',
+          platform: '笔趣阁',
           entertainmentType: 'review'
         }
       },
@@ -396,7 +397,7 @@ function getTypeLabel(type: EntertainmentType, locale: 'zh' | 'en'): string {
       en: 'music'
     },
     review: {
-      zh: '影评/资讯',
+      zh: '小说/网文',
       en: 'review/news'
     }
   };
@@ -410,11 +411,10 @@ function getTypeLabel(type: EntertainmentType, locale: 'zh' | 'en'): string {
 function getTypeSpecificRequirements(type: EntertainmentType, locale: 'zh' | 'en'): string {
   const requirements: Record<EntertainmentType, Record<'zh' | 'en', string>> = {
     video: {
-      zh: `
-视频类要求：
-- 可以推荐电影、电视剧、综艺、动漫、纪录片等
+      zh: `视频类要求：
+- 可以推荐电影、电视剧、综艺、动画、纪录片等
 - 示例：电影《满江红》、电视剧《狂飙》、综艺《向往的生活》
-- 搜索词格式："作品名称 平台"（如："满江红 豆瓣评分"）`,
+- 搜索词格式："作品名 + 关键词"（如：满江红），不要包含“豆瓣/评分/影评/解析/在线观看”等词`,
       en: `
 Video requirements:
 - Can recommend movies, TV shows, variety shows, anime, documentaries
@@ -422,11 +422,10 @@ Video requirements:
 - Search format: "Title platform" (e.g., "Inception IMDb rating")`
     },
     game: {
-      zh: `
-游戏类要求：
+      zh: `游戏类要求：
 - 可以推荐PC游戏、手机游戏、主机游戏等
-- 示例：《艾尔登法环》、《原神》、《塞尔达传说》
-- 搜索词格式："游戏名 下载/购买 平台"（如："艾尔登法环 Steam"）`,
+- 示例：《艾尔登法环》《原神》《塞尔达传说》
+- 搜索词格式："游戏名"（如：艾尔登法环），不要包含“Steam/TapTap/中文版/下载/攻略”等后缀`,
       en: `
 Game requirements:
 - Can recommend PC games, mobile games, console games
@@ -434,11 +433,10 @@ Game requirements:
 - Search format: "Game name download platform" (e.g., "Elden Ring Steam")`
     },
     music: {
-      zh: `
-音乐类要求：
+      zh: `音乐类要求：
 - 可以推荐歌曲、专辑、演唱会等
 - 示例：周杰伦新专辑、林俊杰演唱会、泰勒·斯威夫特单曲
-- 搜索词格式："歌手/作品名 平台"（如："周杰伦 新专辑 网易云音乐"）`,
+- 搜索词格式："歌名/歌手/专辑名"（如：周杰伦 稻香），不要包含平台名`,
       en: `
 Music requirements:
 - Can recommend songs, albums, concerts
@@ -446,11 +444,10 @@ Music requirements:
 - Search format: "Artist/work platform" (e.g., "Taylor Swift new album Spotify")`
     },
     review: {
-      zh: `
-影评/资讯类要求：
-- 可以推荐影评、娱乐新闻、明星资讯、作品盘点等
-- 示例：奥本海默影评、2024年电影盘点、娱乐圈新闻
-- 搜索词格式："关键词 盘点/影评"（如："2024年电影排行榜 豆瓣"）`,
+      zh: `小说/网文类要求：
+- 推荐具体小说名或系列，不要输出榜单/盘点
+- 示例：《诡秘之主》《庆余年》《凡人修仙传》
+- 搜索词格式："小说名（可带作者）"（如：诡秘之主），不要包含“笔趣阁/TXT/下载/全文”等词`,
       en: `
 Review/News requirements:
 - Can recommend movie reviews, entertainment news, celebrity updates, rankings
