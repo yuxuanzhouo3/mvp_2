@@ -368,6 +368,41 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
     }
   }, [])
 
+  // 健身类目：页面加载时主动请求位置权限
+  // 确保推荐附近健身房时有准确的位置信息
+  useEffect(() => {
+    if (categoryId !== "fitness") return
+    // 如果已经有位置或者用户已拒绝，不再请求
+    if (locationConsent === "denied") return
+    if (locationConsent === "granted" && locationCoords) return
+
+    // 延迟显示位置权限弹窗，等待页面完全加载
+    const timer = setTimeout(() => {
+      if (locationConsent === "unknown") {
+        setLocationDialogOpen(true)
+      } else if (locationConsent === "granted" && !locationCoords) {
+        // 已授权但没有坐标，重新获取
+        if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(
+            (pos) => {
+              const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude }
+              setLocationCoords(coords)
+              try {
+                localStorage.setItem("geo-coords", JSON.stringify(coords))
+              } catch {}
+            },
+            () => {
+              // 获取失败，静默处理
+            },
+            { enableHighAccuracy: false, timeout: 8000, maximumAge: 5 * 60 * 1000 }
+          )
+        }
+      }
+    }, 800)
+
+    return () => clearTimeout(timer)
+  }, [categoryId, locationConsent, locationCoords])
+
   // 页面可见性追踪 - 当用户从外部网站返回时触发
   usePageVisibility(
     useCallback(async (timeAway: number) => {
@@ -627,7 +662,7 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
             seen.add(title)
             unique.push(title)
           }
-          return unique.slice(0, 25)
+          return unique.slice(0, 40)
         })()
         if (excludeTitles.length > 0) {
           url.searchParams.set("excludeTitles", JSON.stringify(excludeTitles))

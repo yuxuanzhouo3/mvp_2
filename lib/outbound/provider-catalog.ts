@@ -260,6 +260,8 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       domains: ["taptap.cn", "taptap.com"],
       hasApp: true,
       androidPackageId: "com.taptap",
+      // 使用 universal link 可靠地打开 TapTap 搜索页（已安装则 App 拦截，未安装走浏览器）
+      universalLink: ({ query }) => `https://www.taptap.cn/search/${encodeURIComponent(query)}`,
       webLink: ({ query }) => `https://www.taptap.cn/search/${encodeURIComponent(query)}`,
       iosScheme: ({ query }) => `taptap://taptap.cn/search?keyword=${encodeURIComponent(query)}`,
       androidScheme: ({ query }) => {
@@ -316,14 +318,13 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       domains: ["dianping.com"],
       hasApp: true,
       androidPackageId: "com.dianping.v1",
-      // 使用 Universal Link 优先，确保 App 能正常打开
-      universalLink: ({ query }) =>
-        `https://m.dianping.com/search/keyword/1/0_${encodeURIComponent(query)}`,
       webLink: ({ query }) =>
         `https://www.dianping.com/search/keyword/1/0_${encodeURIComponent(query)}`,
+      // 大众点评 iOS：使用 scheme 直接打开搜索
       iosScheme: ({ query }) => `dianping://search?keyword=${encodeURIComponent(query)}`,
+      // 大众点评 Android：使用 intent 打开搜索，带 web fallback
       androidScheme: ({ query }) => {
-        const web = `https://www.dianping.com/search/keyword/1/0_${encodeURIComponent(query)}`;
+        const web = `https://m.dianping.com/search/keyword/1/0_${encodeURIComponent(query)}`;
         return `intent://search?keyword=${encodeURIComponent(query)}#Intent;scheme=dianping;package=com.dianping.v1;S.browser_fallback_url=${encodeURIComponent(web)};end`;
       },
     },
@@ -375,9 +376,8 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       domains: ["taobao.com"],
       hasApp: true,
       androidPackageId: "com.taobao.taobao",
-      // 使用 Universal Link 确保 App 能正常打开
-      universalLink: ({ query }) => `https://s.taobao.com/search?q=${encodeURIComponent(query)}`,
       webLink: ({ query }) => `https://s.taobao.com/search?q=${encodeURIComponent(query)}`,
+      // 淘宝 App 搜索深链：使用 m.taobao.com 的 universal link 更可靠地唤起 App
       iosScheme: ({ query }) => `taobao://s.taobao.com/search?q=${encodeURIComponent(query)}`,
       androidScheme: ({ query }) => {
         const web = `https://s.taobao.com/search?q=${encodeURIComponent(query)}`;
@@ -449,10 +449,11 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       androidPackageId: "com.achievo.vipshop",
       webLink: ({ query }) =>
         `https://category.vip.com/suggest.php?keyword=${encodeURIComponent(query)}`,
-      iosScheme: ({ query }) => `vipshop://goHome?keyword=${encodeURIComponent(query)}`,
+      // 唯品会深链：使用 search 路径进行搜索而非 goHome
+      iosScheme: ({ query }) => `vipshop://search?keyword=${encodeURIComponent(query)}`,
       androidScheme: ({ query }) => {
         const web = `https://category.vip.com/suggest.php?keyword=${encodeURIComponent(query)}`;
-        return `intent://goHome?keyword=${encodeURIComponent(query)}#Intent;scheme=vipshop;package=com.achievo.vipshop;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+        return `intent://search?keyword=${encodeURIComponent(query)}#Intent;scheme=vipshop;package=com.achievo.vipshop;S.browser_fallback_url=${encodeURIComponent(web)};end`;
       },
     },
     "1688": {
@@ -831,10 +832,11 @@ export function getWeightedProvidersForCategory(
         ];
       case "travel":
         return [
-          { provider: "携程", weight: 0.3, tier: "mainstream" },
-          { provider: "去哪儿", weight: 0.25, tier: "mainstream" },
-          { provider: "小红书", weight: 0.2, tier: "mainstream" },
-          { provider: "马蜂窝", weight: 0.25, tier: "mainstream" },
+          { provider: "携程", weight: 0.25, tier: "mainstream" },
+          { provider: "去哪儿", weight: 0.2, tier: "mainstream" },
+          { provider: "小红书", weight: 0.15, tier: "mainstream" },
+          { provider: "马蜂窝", weight: 0.2, tier: "mainstream" },
+          { provider: "穷游", weight: 0.2, tier: "mainstream" },
         ];
       case "fitness":
         return [

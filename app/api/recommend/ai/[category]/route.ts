@@ -485,9 +485,9 @@ function selectWeightedPlatformForCategory(
               return [
                 ...(client === "app"
                   ? ([
-                      { platform: "网易云音乐", weight: 0.34 },
-                      { platform: "酷狗音乐", weight: 0.33 },
-                      { platform: "QQ音乐", weight: 0.33 },
+                      { platform: "酷狗音乐", weight: 0.40 },
+                      { platform: "网易云音乐", weight: 0.30 },
+                      { platform: "QQ音乐", weight: 0.30 },
                     ] satisfies WeightedCandidate[])
                   : ([{ platform: "酷狗音乐", weight: 1 }] satisfies WeightedCandidate[])),
               ];

@@ -11,10 +11,12 @@ import { useLanguage } from "@/components/language-provider";
 /**
  * 跳转中间页
  * 处理移动端 App 唤醒、深链跳转、下载引导、Web 兜底
- * 流程: 优先唤起 App → 未安装则引导下载 → 下载返回后自动跳转网页版
+ * 流程: 优先唤起 App → 未安装则询问是否安装 → 是则选择商店 → 否则跳转网页版
+ * 从 App 返回后自动导航回推荐结果页
  */
 
-type OpenState = "idle" | "trying" | "failed";
+type OpenState = "idle" | "trying" | "opened" | "failed";
+type InstallChoice = "none" | "asking" | "yes" | "no";
 
 /* ---- helpers ---- */
 
@@ -31,6 +33,23 @@ function detectMobileOs(): "ios" | "android" | "other" {
   if (/iphone|ipad|ipod/i.test(ua)) return "ios";
   if (/android/i.test(ua)) return "android";
   return "other";
+}
+
+/**
+ * 检测是否在 App 容器（GoNative/Median WebView）中运行
+ */
+function isInAppContainer(): boolean {
+  if (typeof window === "undefined") return false;
+  const search = new URLSearchParams(window.location.search);
+  if (search.get("app") === "1") return true;
+  const w = window as any;
+  if (typeof w.ReactNativeWebView?.postMessage === "function") return true;
+  if (typeof w.webkit?.messageHandlers?.native?.postMessage === "function") return true;
+  if (typeof w.Android?.wechatLogin === "function") return true;
+  if (typeof w.AndroidWeChatBridge?.startLogin === "function") return true;
+  const ua = navigator.userAgent || "";
+  if (ua.includes("median") || ua.includes("gonative")) return true;
+  return false;
 }
 
 /**
@@ -61,7 +80,6 @@ function getAutoTryLinks(
     if (!l.url || seen.has(l.url)) continue;
     // iOS 不支持 intent:// URL
     if (os === "ios" && l.type === "intent") continue;
-    // Android 优先 intent URL（有内建 fallback），其次 universal link
     seen.add(l.url);
     unique.push(l);
   }
@@ -85,12 +103,6 @@ function getWebLink(candidateLink: CandidateLink): OutboundLink | null {
 
 function getStoreLinks(candidateLink: CandidateLink): OutboundLink[] {
   return candidateLink.fallbacks.filter((l) => l.type === "store");
-}
-
-function getOtherFallbackLinks(candidateLink: CandidateLink): OutboundLink[] {
-  return candidateLink.fallbacks.filter(
-    (l) => l.type !== "app" && l.type !== "web" && l.type !== "store" && l.type !== "intent"
-  );
 }
 
 function filterStoreLinksByOs(
@@ -123,8 +135,41 @@ function filterStoreLinksByOs(
 }
 
 /**
- * 尝试通过隐藏 iframe 打开 App scheme（iOS 更友好，不会替换当前页面）
- * 对于 intent:// URL 和 universal link，使用 window.location.href
+ * 在 App 容器中打开外部链接
+ * 针对 GoNative/Median WebView 做兼容处理
+ */
+function openUrlInAppContainer(url: string): void {
+  // 对于 intent:// URL，直接用 location.href（Android WebView 会拦截并处理）
+  if (url.startsWith("intent://")) {
+    window.location.href = url;
+    return;
+  }
+
+  // 对于自定义 scheme (非 http/https)，创建 <a> 标签并模拟点击
+  // 这在 GoNative/Median WebView 中比 location.href 更可靠
+  if (!url.startsWith("http://") && !url.startsWith("https://")) {
+    try {
+      const a = document.createElement("a");
+      a.href = url;
+      a.style.display = "none";
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        try { document.body.removeChild(a); } catch { /* ignore */ }
+      }, 100);
+      return;
+    } catch {
+      // 回退到 location.href
+    }
+  }
+
+  // 对于 https universal links，使用 location.href
+  window.location.href = url;
+}
+
+/**
+ * 尝试打开 App URL
+ * 通过监听 visibilitychange 和 blur 事件来检测 App 是否成功打开
  */
 async function attemptOpenUrl(
   url: string,
@@ -133,6 +178,7 @@ async function attemptOpenUrl(
   return await new Promise((resolve) => {
     let completed = false;
     let timer: number | null = null;
+    const inApp = isInAppContainer();
 
     const cleanup = () => {
       if (timer) window.clearTimeout(timer);
@@ -160,30 +206,32 @@ async function attemptOpenUrl(
 
     timer = window.setTimeout(() => finish(false), timeoutMs);
 
-    // 对于 custom scheme，使用 iframe 尝试可避免页面跳转
-    // 但 intent:// 和 https:// 必须使用 location.href
-    const isCustomScheme =
-      !url.startsWith("http") && !url.startsWith("intent://");
-    if (isCustomScheme) {
-      try {
-        const iframe = document.createElement("iframe");
-        iframe.style.display = "none";
-        iframe.src = url;
-        document.body.appendChild(iframe);
-        // 清理 iframe
-        window.setTimeout(() => {
-          try {
-            document.body.removeChild(iframe);
-          } catch {
-            /* ignore */
-          }
-        }, 3000);
-      } catch {
-        // iframe 方式失败，回退到 location.href
+    if (inApp) {
+      // App 容器中：使用专用方法打开
+      openUrlInAppContainer(url);
+    } else {
+      // 普通浏览器中
+      const isCustomScheme =
+        !url.startsWith("http") && !url.startsWith("intent://");
+      if (isCustomScheme) {
+        try {
+          const iframe = document.createElement("iframe");
+          iframe.style.display = "none";
+          iframe.src = url;
+          document.body.appendChild(iframe);
+          window.setTimeout(() => {
+            try {
+              document.body.removeChild(iframe);
+            } catch {
+              /* ignore */
+            }
+          }, 3000);
+        } catch {
+          window.location.href = url;
+        }
+      } else {
         window.location.href = url;
       }
-    } else {
-      window.location.href = url;
     }
   });
 }
@@ -210,9 +258,14 @@ export default function OutboundPage() {
   const searchParams = useSearchParams();
   const { language } = useLanguage();
   const [openState, setOpenState] = useState<OpenState>("idle");
+  const [installChoice, setInstallChoice] = useState<InstallChoice>("none");
   const returnTo = searchParams.get("returnTo");
   const hasTriedRef = useRef(false);
+  const appOpenedRef = useRef(false);
 
+  /**
+   * 导航回推荐结果页
+   */
   const handleBack = useCallback(() => {
     const safeReturnTo = returnTo && returnTo.startsWith("/") ? returnTo : null;
     if (safeReturnTo) {
@@ -254,7 +307,6 @@ export default function OutboundPage() {
             language === "zh" ? "目标链接不被允许" : "Target URL is not allowed",
         };
       }
-      // 验证 fallback 链接，但对不允许的 fallback 仅跳过而非拒绝整个请求
       const validFallbacks = (parsed.fallbacks || []).filter((fallback) =>
         isAllowedOutboundUrl(fallback.url)
       );
@@ -290,36 +342,80 @@ export default function OutboundPage() {
 
     if (autoTryLinks.length === 0) {
       setOpenState("failed");
+      setInstallChoice("asking");
       return;
     }
 
-    if (os === "ios") {
-      // iOS: 优先尝试 universal links（自动），然后对 custom scheme 也自动尝试
-      // iOS 13+ 允许通过 iframe 尝试自定义 scheme 而不弹出错误
-      const universalLinks = autoTryLinks.filter(
-        (l) => l.type === "universal_link"
-      );
-      const customSchemes = autoTryLinks.filter((l) => l.type === "app");
-
-      if (universalLinks.length > 0 || customSchemes.length > 0) {
-        setOpenState("trying");
-        // 先尝试 custom scheme（优先级最高：直接打开 App 搜索），再试 universal link
-        const orderedLinks = [...customSchemes, ...universalLinks];
-        attemptOpenLinksSequential(orderedLinks, 1500).then((opened) => {
-          if (!opened) setOpenState("failed");
-        });
-      } else {
-        setOpenState("failed");
-      }
-      return;
-    }
-
-    // Android: 尝试所有 app 链接（intent URL 有内建 fallback）
     setOpenState("trying");
-    attemptOpenLinksSequential(autoTryLinks, 1500).then((opened) => {
-      if (!opened) setOpenState("failed");
+    attemptOpenLinksSequential(autoTryLinks, 2000).then((opened) => {
+      if (opened) {
+        // App 成功打开，标记状态
+        appOpenedRef.current = true;
+        setOpenState("opened");
+      } else {
+        // App 未安装，询问用户是否安装
+        setOpenState("failed");
+        setInstallChoice("asking");
+      }
     });
   }, [decoded.candidateLink]);
+
+  // 当用户从 App 返回时，自动导航回推荐结果页
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== "visible") return;
+      // 如果之前 App 已成功打开，用户返回时自动导航回推荐页
+      if (appOpenedRef.current) {
+        appOpenedRef.current = false;
+        // 短暂延迟确保页面完全可见
+        window.setTimeout(() => {
+          handleBack();
+        }, 300);
+      }
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () =>
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, [handleBack]);
+
+  /**
+   * 用户选择"否"（不安装），跳转到网页版
+   */
+  const handleInstallNo = useCallback(() => {
+    setInstallChoice("no");
+    if (webLinkUrl) {
+      window.location.href = webLinkUrl;
+    } else {
+      handleBack();
+    }
+  }, [webLinkUrl, handleBack]);
+
+  /**
+   * 用户选择"是"（安装App），显示商店选择
+   */
+  const handleInstallYes = useCallback(() => {
+    setInstallChoice("yes");
+  }, []);
+
+  /**
+   * 点击商店链接下载 App
+   */
+  const handleStoreClick = useCallback((url: string) => {
+    try {
+      sessionStorage.setItem(
+        "outbound:store-return",
+        JSON.stringify({ ts: Date.now() })
+      );
+    } catch {
+      /* ignore */
+    }
+    if (isInAppContainer()) {
+      openUrlInAppContainer(url);
+    } else {
+      window.location.href = url;
+    }
+  }, []);
 
   // 从应用商店返回后，自动跳转到网页版
   useEffect(() => {
@@ -373,7 +469,6 @@ export default function OutboundPage() {
 
   const webLink = getWebLink(link);
   const storeLinks = filterStoreLinksByOs(getStoreLinks(link), os);
-  const otherLinks = getOtherFallbackLinks(link);
   const autoTryLinks = getAutoTryLinks(link, os);
   const hasAutoTry = autoTryLinks.length > 0;
 
@@ -395,101 +490,139 @@ export default function OutboundPage() {
           </div>
         )}
 
-        {/* 未检测到 App → 引导下载 */}
-        {openState === "failed" && (
-          <div className="text-sm mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-lg">📱</span>
-              <span className="font-medium text-amber-800">
+        {/* App 已成功打开 */}
+        {openState === "opened" && (
+          <div className="text-sm text-green-700 mb-4 flex items-center gap-2">
+            <span className="text-lg">✅</span>
+            {language === "zh"
+              ? `已打开 ${providerName} App，从 App 返回后将自动回到推荐页`
+              : `${providerName} app opened, will return to recommendations when you come back`}
+          </div>
+        )}
+
+        {/* 未检测到 App → 询问是否安装 */}
+        {openState === "failed" && installChoice === "asking" && (
+          <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-2xl">📱</span>
+              <span className="font-medium text-amber-800 text-base">
                 {language === "zh"
                   ? `未检测到 ${providerName} App`
                   : `${providerName} app not detected`}
               </span>
             </div>
-            <p className="text-amber-700 text-xs">
+            <p className="text-amber-700 text-sm mb-4">
               {language === "zh"
-                ? `建议下载 ${providerName} App 获得更好体验，安装后可直接打开搜索结果。您也可以先用网页版浏览。`
-                : `Download ${providerName} for a better experience, or continue on web.`}
+                ? `是否需要安装 ${providerName} App？安装后可获得更好的使用体验。`
+                : `Would you like to install ${providerName}? It provides a better experience.`}
             </p>
+            <div className="flex gap-3">
+              <Button
+                className="flex-1 bg-gradient-to-r from-blue-500 to-cyan-500 text-white hover:from-blue-600 hover:to-cyan-600"
+                onClick={handleInstallYes}
+              >
+                {language === "zh" ? "是，去安装" : "Yes, install"}
+              </Button>
+              <Button
+                className="flex-1"
+                variant="outline"
+                onClick={handleInstallNo}
+              >
+                {language === "zh" ? "否，用网页版" : "No, use web"}
+              </Button>
+            </div>
           </div>
         )}
 
-        {/* iOS idle 状态提示（需要手动点击） */}
-        {openState === "idle" && os === "ios" && hasAutoTry && (
-          <div className="text-sm text-gray-700 mb-4">
+        {/* 用户选择安装 → 显示商店选择 */}
+        {openState === "failed" && installChoice === "yes" && storeLinks.length > 0 && (
+          <div className="mb-4">
+            <div className="flex items-center gap-2 text-sm font-medium text-gray-900 mb-3">
+              <span className="text-base">⬇️</span>
+              <span>
+                {language === "zh"
+                  ? `请选择下载 ${providerName} 的方式`
+                  : `Choose where to download ${providerName}`}
+              </span>
+            </div>
+            <div className="space-y-2">
+              {storeLinks.map((l, idx) => (
+                <Button
+                  key={`${l.type}:${l.url}`}
+                  className={`w-full ${
+                    idx === 0
+                      ? "bg-gradient-to-r from-blue-500 to-cyan-500 text-white hover:from-blue-600 hover:to-cyan-600"
+                      : ""
+                  }`}
+                  variant={idx === 0 ? "default" : "outline"}
+                  onClick={() => handleStoreClick(l.url)}
+                >
+                  {l.label || (language === "zh" ? "应用商店" : "Store")}
+                </Button>
+              ))}
+            </div>
+            <p className="text-xs text-gray-500 mt-2 text-center">
+              {language === "zh"
+                ? "安装完成后返回此页面，将自动跳转到网页版"
+                : "After installing, return here to continue on web"}
+            </p>
+
+            {/* 网页版兜底按钮 */}
+            {webLink && (
+              <Button
+                className="w-full mt-3"
+                variant="secondary"
+                onClick={() => {
+                  window.location.href = webLink.url;
+                }}
+              >
+                {language === "zh"
+                  ? `继续打开 ${providerName} 网页版`
+                  : `Continue on ${providerName} web`}
+              </Button>
+            )}
+          </div>
+        )}
+
+        {/* 用户选择安装但没有商店链接 → 降级到网页版 */}
+        {openState === "failed" && installChoice === "yes" && storeLinks.length === 0 && (
+          <div className="mb-4 text-sm text-gray-600">
             {language === "zh"
-              ? "iOS 需要手动点击按钮才能唤起 App。"
-              : "On iOS, tap the button to open the app."}
+              ? "暂无可用的下载链接，将为您打开网页版。"
+              : "No download link available, opening web version."}
           </div>
         )}
 
         <div className="space-y-3">
-          {/* 打开 App 按钮（始终显示，让用户可以手动重试） */}
-          {hasAutoTry && (
+          {/* 手动重试打开 App 按钮 */}
+          {hasAutoTry && (openState === "failed" || openState === "idle") && (
             <Button
               className="w-full bg-black text-white hover:bg-black/90"
               onClick={() => {
                 setOpenState("trying");
-                attemptOpenLinksSequential(autoTryLinks, 1500).then(
+                attemptOpenLinksSequential(autoTryLinks, 2000).then(
                   (opened) => {
-                    if (!opened) setOpenState("failed");
+                    if (opened) {
+                      appOpenedRef.current = true;
+                      setOpenState("opened");
+                    } else {
+                      setOpenState("failed");
+                      if (installChoice === "none") {
+                        setInstallChoice("asking");
+                      }
+                    }
                   }
                 );
               }}
             >
               {language === "zh"
-                ? `打开 ${providerName} App`
-                : `Open ${providerName} app`}
+                ? `重新打开 ${providerName} App`
+                : `Retry opening ${providerName}`}
             </Button>
           )}
 
-          {/* 下载 App 区域 */}
-          {storeLinks.length > 0 && (
-            <div className="pt-2">
-              <div className="flex items-center gap-2 text-sm font-medium text-gray-900 mb-2">
-                <span className="text-base">⬇️</span>
-                <span>
-                  {language === "zh"
-                    ? `下载 ${providerName} App 获得更好体验`
-                    : `Download ${providerName} for better experience`}
-                </span>
-              </div>
-              <div className="space-y-2">
-                {storeLinks.map((l, idx) => (
-                  <Button
-                    key={`${l.type}:${l.url}`}
-                    className={`w-full ${
-                      idx === 0
-                        ? "bg-gradient-to-r from-blue-500 to-cyan-500 text-white hover:from-blue-600 hover:to-cyan-600"
-                        : ""
-                    }`}
-                    variant={idx === 0 ? "default" : "outline"}
-                    onClick={() => {
-                      try {
-                        sessionStorage.setItem(
-                          "outbound:store-return",
-                          JSON.stringify({ ts: Date.now() })
-                        );
-                      } catch {
-                        /* ignore */
-                      }
-                      window.location.href = l.url;
-                    }}
-                  >
-                    {l.label || (language === "zh" ? "应用商店" : "Store")}
-                  </Button>
-                ))}
-              </div>
-              <p className="text-xs text-gray-500 mt-2 text-center">
-                {language === "zh"
-                  ? "安装完成后返回此页面，将自动跳转到网页版"
-                  : "After installing, return here to continue on web"}
-              </p>
-            </div>
-          )}
-
-          {/* 网页版兜底 */}
-          {webLink && (
+          {/* 网页版兜底（仅在非安装选择流程中显示） */}
+          {webLink && installChoice !== "yes" && installChoice !== "asking" && (
             <Button
               className="w-full"
               variant="secondary"
@@ -503,31 +636,8 @@ export default function OutboundPage() {
             </Button>
           )}
 
-          {/* 其他备选链接（地图、搜索、视频等） */}
-          {otherLinks.length > 0 && (
-            <div className="pt-1">
-              <div className="text-sm font-medium text-gray-900 mb-2">
-                {language === "zh" ? "其他方式" : "Other options"}
-              </div>
-              <div className="space-y-2">
-                {otherLinks.map((l) => (
-                  <Button
-                    key={`${l.type}:${l.url}`}
-                    className="w-full"
-                    variant="ghost"
-                    onClick={() => {
-                      window.location.href = l.url;
-                    }}
-                  >
-                    {l.label || l.type}
-                  </Button>
-                ))}
-              </div>
-            </div>
-          )}
-
           <Button className="w-full" variant="ghost" onClick={handleBack}>
-            {language === "zh" ? "返回" : "Back"}
+            {language === "zh" ? "返回推荐结果" : "Back to recommendations"}
           </Button>
         </div>
       </Card>

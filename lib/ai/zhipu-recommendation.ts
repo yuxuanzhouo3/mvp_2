@@ -561,8 +561,11 @@ export function buildExpansionSignalPrompt(params: {
 }): string {
   const { locale, topTags, positiveSamples, negativeSamples, avoidTitles, requestNonce } = params;
 
+  // 预格式化避开标题列表，强化去重效果
+  const avoidTitlesStr = avoidTitles.length > 0 ? avoidTitles.join("、") : "无";
+
   if (locale === "zh") {
-    return `\n\n【拓展信号（三段式）】\n- Top Tags（按重要性排序）：${topTags.length > 0 ? topTags.join("、") : "无"}\n- 最近正反馈样本（点击/收藏）：${positiveSamples.length > 0 ? JSON.stringify(positiveSamples, null, 2) : "无"}\n- 负反馈样本（不感兴趣/跳过/低评分，必须避开同主题）：${negativeSamples.length > 0 ? JSON.stringify(negativeSamples, null, 2) : "无"}\n- 需要避开的标题（强制避重复）：${avoidTitles.length > 0 ? avoidTitles.join("、") : "无"}\n- 本次生成种子（用于提升随机性）：${requestNonce}\n\n【拓展策略（可控）】\n- 60% 围绕 Top Tags + 正反馈样本做长尾细分：同题材不同作品/同菜系不同招牌/同目的地不同玩法。\n- 25% 做相邻探索：基于 Top Tags 的相邻概念做拓展，但仍要具体、可搜索。\n- 15% 做新鲜补充：在不触发负反馈的前提下，提供更小众/更具体的条目。\n\n【避坑规则】\n- 不得输出与负反馈样本高度相关的条目（同主题/同关键词/同意图都算）。\n- 输出内不得重复；不得与“需要避开的标题”重复或高度相似（同义/换序也算重复）。\n`;
+    return `\n\n【拓展信号（三段式）】\n- Top Tags（按重要性排序）：${topTags.length > 0 ? topTags.join("、") : "无"}\n- 最近正反馈样本（点击/收藏）：${positiveSamples.length > 0 ? JSON.stringify(positiveSamples, null, 2) : "无"}\n- 负反馈样本（不感兴趣/跳过/低评分，必须避开同主题）：${negativeSamples.length > 0 ? JSON.stringify(negativeSamples, null, 2) : "无"}\n- 需要避开的标题（强制避重复，这些是用户已经看过的，绝不能再推荐）：${avoidTitlesStr}\n- 本次生成种子（用于提升随机性）：${requestNonce}\n\n【拓展策略（可控）】\n- 50% 围绕 Top Tags + 正反馈样本做长尾细分：同题材不同作品/同菜系不同招牌/同目的地不同玩法，但必须是全新的、未出现过的具体内容。\n- 30% 做相邻探索：基于 Top Tags 的相邻概念做拓展，寻找用户可能感兴趣但尚未接触过的全新领域。\n- 20% 做新鲜补充：在不触发负反馈的前提下，提供小众/冷门/新上线的具体条目，强调新鲜感和惊喜感。\n\n【避坑规则 - 最高优先级】\n- 不得输出与负反馈样本高度相关的条目（同主题/同关键词/同意图都算）。\n- 输出内不得重复；不得与“需要避开的标题”重复或高度相似（同义/换序/续集/系列也算重复）。\n- 每次生成都要追求最大程度的新颖性，不要总是推荐最知名/最热门的内容。\n`;
   }
 
   return `\n\n[Expansion Signals (3-part)]\n- Top tags (ranked): ${topTags.length > 0 ? topTags.join(", ") : "none"}\n- Recent positive examples (clicked/saved): ${positiveSamples.length > 0 ? JSON.stringify(positiveSamples, null, 2) : "none"}\n- Negative examples (not interested/skip/low rating; must avoid): ${negativeSamples.length > 0 ? JSON.stringify(negativeSamples, null, 2) : "none"}\n- Titles to avoid (must avoid): ${avoidTitles.length > 0 ? avoidTitles.join(", ") : "none"}\n- Generation nonce (for randomness): ${requestNonce}\n\n[Expansion Strategy (controllable)]\n- 60% exploit: expand from top tags + positive examples into long-tail subtopics.\n- 25% explore: adjacent concepts, still specific and searchable.\n- 15% fresh: add novel but still relevant items, without triggering negative examples.\n\n[Anti-Patterns]\n- Do NOT output items strongly related to negative examples.\n- No duplicates; must not repeat or paraphrase avoided titles.\n`;
@@ -777,7 +780,8 @@ fitnessType 必须为 nearby_place/tutorial/equipment 之一。
     .map((h) => h.title)
     .filter((t): t is string => typeof t === "string" && t.trim().length > 0);
 
-  const requestNonce = `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+  // 使用多源随机种子提升推荐多样性
+  const requestNonce = `${Date.now()}-${Math.random().toString(16).slice(2, 10)}-${Math.random().toString(36).slice(2, 8)}`;
 
   const avoidTitlesForPrompt = [
     ...avoidTitles,
@@ -785,7 +789,7 @@ fitnessType 必须为 nearby_place/tutorial/equipment 之一。
     ...negativeSamples.map((s) => s.title),
   ]
     .filter((t): t is string => typeof t === "string" && t.trim().length > 0)
-    .slice(0, 60);
+    .slice(0, 80);
 
   const behaviorPrompt = buildExpansionSignalPrompt({
     locale: locale === "en" ? "en" : "zh",
@@ -807,6 +811,17 @@ fitnessType 必须为 nearby_place/tutorial/equipment 之一。
 `
       : "";
 
+  // 随机选择推荐风格倾向，增加多样性
+  const diversityAngles = [
+    "偏向近期热门与新上线内容",
+    "偏向小众精品与口碑佳作",
+    "偏向经典作品与长期热门",
+    "偏向新锐创新与潮流趋势",
+    "偏向高性价比与实用推荐",
+  ];
+  const angleIndex = Math.floor(Math.random() * diversityAngles.length);
+  const currentAngle = diversityAngles[angleIndex];
+
   const prompt = locale === 'zh' ? `
 生成 ${desiredCount} 个多样化推荐，严格遵守类型分布要求。
 
@@ -815,7 +830,14 @@ ${userProfilePrompt}
 ${behaviorPrompt}
 分类：${category}
 客户端：${client}${geo ? `\n位置：${geo.lat},${geo.lng}` : ''}
-【去重要求】避免推荐与用户历史中的 title 重复或高度相似（同义/换序也算重复）。
+
+【去重要求 - 最高优先级】
+1. 严禁推荐与以下"需要避开的标题"列表中任何条目相同或高度相似的内容（同义词、换序、缩写、续集均算重复）。
+2. 严禁推荐与用户历史中已有的 title 重复或高度相似的内容。
+3. 每次推荐必须是全新的、未曾推荐过的内容，强调新鲜感。
+4. ${desiredCount} 条推荐之间也不能互相重复或过于相似。
+
+【本次推荐风格倾向】${currentAngle}（请在此风格方向上寻找推荐，但不要固定模式）
 
 输出JSON数组，每项必须包含：title, description, reason(50字以内), tags(3-5个), searchQuery, platform${category === 'entertainment' ? ', entertainmentType' : ''}
 
@@ -873,15 +895,15 @@ No URLs`;
         {
           role: 'system',
           content: locale === 'zh'
-            ? '推荐分析师。返回JSON数组，无链接，无markdown。【reason核心要求】每条推荐的理由必须独特、具体、有吸引力，50字以内。从偏好匹配/时机场景/社交热点/个性发现/实用价值等角度轮换切入，禁止使用"根据你的偏好""为你推荐"等通用开头。'
-            : 'Recommendation analyst. Return JSON array with specified types, no links, no markdown. Each reason must be unique, specific, and engaging within 50 chars.'
+            ? '你是一位创意推荐分析师，每次推荐都要追求新颖和多样性。返回JSON数组，无链接，无markdown。【核心原则】：1) 每次推荐都必须是全新内容，绝不重复已推荐过的；2) 每条推荐的理由必须独特、具体、有吸引力，50字以内；3) 从偏好匹配/时机场景/社交热点/个性发现/实用价值等角度轮换切入，禁止使用"根据你的偏好""为你推荐"等通用开头。'
+            : 'You are a creative recommendation analyst. Return JSON array with specified types, no links, no markdown. Core: 1) every recommendation must be fresh and novel; 2) each reason must be unique, specific, engaging within 50 chars.'
         },
         {
           role: 'user',
           content: prompt
         }
       ],
-      0.8
+      0.92
     );
 
     if (!aiContent) {
