@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,15 +8,22 @@ import type { CandidateLink, OutboundLink } from "@/lib/types/recommendation";
 import { isAllowedOutboundUrl } from "@/lib/search/platform-validator";
 import { useLanguage } from "@/components/language-provider";
 
+/**
+ * 跳转中间页
+ * 处理移动端 App 唤醒、深链跳转、下载引导、Web 兜底
+ * 流程: 优先唤起 App → 未安装则引导下载 → 下载返回后自动跳转网页版
+ */
+
 type OpenState = "idle" | "trying" | "failed";
+
+/* ---- helpers ---- */
 
 function base64UrlDecode(input: string): string {
   const base64 = input.replace(/-/g, "+").replace(/_/g, "/");
   const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
   const binary = atob(padded);
   const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
-  const decoded = new TextDecoder().decode(bytes);
-  return decoded;
+  return new TextDecoder().decode(bytes);
 }
 
 function detectMobileOs(): "ios" | "android" | "other" {
@@ -26,27 +33,47 @@ function detectMobileOs(): "ios" | "android" | "other" {
   return "other";
 }
 
-function getAutoTryLinks(candidateLink: CandidateLink, os: "ios" | "android" | "other"): OutboundLink[] {
+/**
+ * 获取可尝试打开的 App 链接列表（按优先级排序）
+ * 包含 app scheme、universal_link、intent URL
+ */
+function getAutoTryLinks(
+  candidateLink: CandidateLink,
+  os: "ios" | "android" | "other"
+): OutboundLink[] {
   const primaryTry =
     candidateLink.primary.type === "app" ||
-      candidateLink.primary.type === "intent" ||
-      candidateLink.primary.type === "universal_link"
+    candidateLink.primary.type === "intent" ||
+    candidateLink.primary.type === "universal_link"
       ? [candidateLink.primary]
       : [];
 
   const fallbackTry = candidateLink.fallbacks.filter(
-    (l) => l.type === "app" || l.type === "intent" || l.type === "universal_link"
+    (l) =>
+      l.type === "app" || l.type === "intent" || l.type === "universal_link"
   );
 
   const ordered = [...primaryTry, ...fallbackTry];
   const seen = new Set<string>();
   const unique: OutboundLink[] = [];
+
   for (const l of ordered) {
     if (!l.url || seen.has(l.url)) continue;
-    if (os !== "other" && l.type === "intent" && os === "ios") continue;
+    // iOS 不支持 intent:// URL
+    if (os === "ios" && l.type === "intent") continue;
+    // Android 优先 intent URL（有内建 fallback），其次 universal link
     seen.add(l.url);
     unique.push(l);
   }
+
+  // Android 排序：intent > app > universal_link
+  if (os === "android") {
+    unique.sort((a, b) => {
+      const priority = { intent: 0, app: 1, universal_link: 2 } as Record<string, number>;
+      return (priority[a.type] ?? 3) - (priority[b.type] ?? 3);
+    });
+  }
+
   return unique;
 }
 
@@ -61,12 +88,19 @@ function getStoreLinks(candidateLink: CandidateLink): OutboundLink[] {
 }
 
 function getOtherFallbackLinks(candidateLink: CandidateLink): OutboundLink[] {
-  return candidateLink.fallbacks.filter((l) => l.type !== "app" && l.type !== "web" && l.type !== "store");
+  return candidateLink.fallbacks.filter(
+    (l) => l.type !== "app" && l.type !== "web" && l.type !== "store" && l.type !== "intent"
+  );
 }
 
-function filterStoreLinksByOs(storeLinks: OutboundLink[], os: "ios" | "android" | "other") {
+function filterStoreLinksByOs(
+  storeLinks: OutboundLink[],
+  os: "ios" | "android" | "other"
+) {
   if (os === "ios") {
-    const appStore = storeLinks.filter((l) => (l.label || "").toLowerCase().includes("app store"));
+    const appStore = storeLinks.filter((l) =>
+      (l.label || "").toLowerCase().includes("app store")
+    );
     const rest = storeLinks.filter((l) => !appStore.includes(l));
     return [...appStore, ...rest];
   }
@@ -77,14 +111,25 @@ function filterStoreLinksByOs(storeLinks: OutboundLink[], os: "ios" | "android" 
         (l.label || "").includes("系统应用商店") ||
         (l.label || "").toLowerCase().includes("google play")
     );
-    const yingyongbao = storeLinks.filter((l) => (l.label || "").includes("应用宝"));
-    const rest = storeLinks.filter((l) => !systemStore.includes(l) && !yingyongbao.includes(l));
+    const yingyongbao = storeLinks.filter((l) =>
+      (l.label || "").includes("应用宝")
+    );
+    const rest = storeLinks.filter(
+      (l) => !systemStore.includes(l) && !yingyongbao.includes(l)
+    );
     return [...systemStore, ...yingyongbao, ...rest];
   }
   return storeLinks;
 }
 
-async function attemptOpenUrl(url: string, timeoutMs: number): Promise<boolean> {
+/**
+ * 尝试通过隐藏 iframe 打开 App scheme（iOS 更友好，不会替换当前页面）
+ * 对于 intent:// URL 和 universal link，使用 window.location.href
+ */
+async function attemptOpenUrl(
+  url: string,
+  timeoutMs: number
+): Promise<boolean> {
   return await new Promise((resolve) => {
     let completed = false;
     let timer: number | null = null;
@@ -114,11 +159,42 @@ async function attemptOpenUrl(url: string, timeoutMs: number): Promise<boolean> 
     window.addEventListener("blur", onBlur);
 
     timer = window.setTimeout(() => finish(false), timeoutMs);
-    window.location.href = url;
+
+    // 对于 custom scheme，使用 iframe 尝试可避免页面跳转
+    // 但 intent:// 和 https:// 必须使用 location.href
+    const isCustomScheme =
+      !url.startsWith("http") && !url.startsWith("intent://");
+    if (isCustomScheme) {
+      try {
+        const iframe = document.createElement("iframe");
+        iframe.style.display = "none";
+        iframe.src = url;
+        document.body.appendChild(iframe);
+        // 清理 iframe
+        window.setTimeout(() => {
+          try {
+            document.body.removeChild(iframe);
+          } catch {
+            /* ignore */
+          }
+        }, 3000);
+      } catch {
+        // iframe 方式失败，回退到 location.href
+        window.location.href = url;
+      }
+    } else {
+      window.location.href = url;
+    }
   });
 }
 
-async function attemptOpenLinksSequential(links: OutboundLink[], timeoutMsEach: number): Promise<boolean> {
+/**
+ * 依次尝试多个链接打开 App
+ */
+async function attemptOpenLinksSequential(
+  links: OutboundLink[],
+  timeoutMsEach: number
+): Promise<boolean> {
   for (const link of links) {
     const opened = await attemptOpenUrl(link.url, timeoutMsEach);
     if (opened) return true;
@@ -127,14 +203,17 @@ async function attemptOpenLinksSequential(links: OutboundLink[], timeoutMsEach: 
   return false;
 }
 
+/* ---- Page Component ---- */
+
 export default function OutboundPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { language } = useLanguage();
   const [openState, setOpenState] = useState<OpenState>("idle");
   const returnTo = searchParams.get("returnTo");
+  const hasTriedRef = useRef(false);
 
-  const handleBack = () => {
+  const handleBack = useCallback(() => {
     const safeReturnTo = returnTo && returnTo.startsWith("/") ? returnTo : null;
     if (safeReturnTo) {
       router.replace(safeReturnTo);
@@ -145,9 +224,12 @@ export default function OutboundPage() {
       return;
     }
     router.replace("/");
-  };
+  }, [returnTo, router]);
 
-  const decoded = useMemo((): { candidateLink: CandidateLink | null; error: string | null } => {
+  const decoded = useMemo((): {
+    candidateLink: CandidateLink | null;
+    error: string | null;
+  } => {
     const raw = searchParams.get("data");
     if (!raw) {
       return {
@@ -161,28 +243,32 @@ export default function OutboundPage() {
       if (!parsed?.primary?.url || !parsed?.title) {
         return {
           candidateLink: null,
-          error: language === "zh" ? "跳转参数无效" : "Invalid redirect data",
+          error:
+            language === "zh" ? "跳转参数无效" : "Invalid redirect data",
         };
       }
       if (!isAllowedOutboundUrl(parsed.primary.url)) {
         return {
           candidateLink: null,
-          error: language === "zh" ? "目标链接不被允许" : "Target URL is not allowed",
+          error:
+            language === "zh" ? "目标链接不被允许" : "Target URL is not allowed",
         };
       }
-      for (const fallback of parsed.fallbacks || []) {
-        if (!isAllowedOutboundUrl(fallback.url)) {
-          return {
-            candidateLink: null,
-            error: language === "zh" ? "回落链接不被允许" : "Fallback URL is not allowed",
-          };
-        }
-      }
-      return { candidateLink: parsed, error: null };
+      // 验证 fallback 链接，但对不允许的 fallback 仅跳过而非拒绝整个请求
+      const validFallbacks = (parsed.fallbacks || []).filter((fallback) =>
+        isAllowedOutboundUrl(fallback.url)
+      );
+      return {
+        candidateLink: { ...parsed, fallbacks: validFallbacks },
+        error: null,
+      };
     } catch {
       return {
         candidateLink: null,
-        error: language === "zh" ? "跳转参数解析失败" : "Failed to parse redirect data",
+        error:
+          language === "zh"
+            ? "跳转参数解析失败"
+            : "Failed to parse redirect data",
       };
     }
   }, [searchParams, language]);
@@ -194,34 +280,48 @@ export default function OutboundPage() {
     return webLink?.url || null;
   }, [candidateLink]);
 
+  // 自动尝试打开 App
   useEffect(() => {
-    if (!decoded.candidateLink) return;
+    if (!decoded.candidateLink || hasTriedRef.current) return;
+    hasTriedRef.current = true;
+
     const os = detectMobileOs();
     const autoTryLinks = getAutoTryLinks(decoded.candidateLink, os);
+
     if (autoTryLinks.length === 0) {
       setOpenState("failed");
       return;
     }
-    // iOS: only auto-try Universal Links (custom schemes require user gesture)
+
     if (os === "ios") {
-      const universalLinks = autoTryLinks.filter(l => l.type === "universal_link");
-      if (universalLinks.length === 0) {
-        // No universal links - stay idle, show manual button
-        return;
+      // iOS: 优先尝试 universal links（自动），然后对 custom scheme 也自动尝试
+      // iOS 13+ 允许通过 iframe 尝试自定义 scheme 而不弹出错误
+      const universalLinks = autoTryLinks.filter(
+        (l) => l.type === "universal_link"
+      );
+      const customSchemes = autoTryLinks.filter((l) => l.type === "app");
+
+      if (universalLinks.length > 0 || customSchemes.length > 0) {
+        setOpenState("trying");
+        // 先尝试 custom scheme（优先级最高：直接打开 App 搜索），再试 universal link
+        const orderedLinks = [...customSchemes, ...universalLinks];
+        attemptOpenLinksSequential(orderedLinks, 1500).then((opened) => {
+          if (!opened) setOpenState("failed");
+        });
+      } else {
+        setOpenState("failed");
       }
-      setOpenState("trying");
-      attemptOpenLinksSequential(universalLinks, 1100).then((opened) => {
-        if (!opened) setOpenState("failed");
-      });
       return;
     }
-    // Android: try all app links
+
+    // Android: 尝试所有 app 链接（intent URL 有内建 fallback）
     setOpenState("trying");
-    attemptOpenLinksSequential(autoTryLinks, 1100).then((opened) => {
+    attemptOpenLinksSequential(autoTryLinks, 1500).then((opened) => {
       if (!opened) setOpenState("failed");
     });
   }, [decoded.candidateLink]);
 
+  // 从应用商店返回后，自动跳转到网页版
   useEffect(() => {
     if (!webLinkUrl) return;
 
@@ -243,9 +343,11 @@ export default function OutboundPage() {
     };
 
     document.addEventListener("visibilitychange", onVisibilityChange);
-    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+    return () =>
+      document.removeEventListener("visibilitychange", onVisibilityChange);
   }, [webLinkUrl]);
 
+  /* ---- Error state ---- */
   if (decoded.error) {
     return (
       <div className="min-h-screen bg-[#F7F9FC] p-4 flex items-center justify-center">
@@ -263,8 +365,11 @@ export default function OutboundPage() {
   }
 
   if (!decoded.candidateLink) return null;
+
   const os = detectMobileOs();
-  const link = decoded.candidateLink; // Non-null confirmed by check above
+  const link = decoded.candidateLink;
+  const providerName =
+    link.metadata?.providerDisplayName || link.provider || "";
 
   const webLink = getWebLink(link);
   const storeLinks = filterStoreLinksByOs(getStoreLinks(link), os);
@@ -278,34 +383,38 @@ export default function OutboundPage() {
         <div className="text-lg font-semibold text-gray-900">
           {language === "zh" ? "正在为你打开" : "Opening"}
         </div>
-        <div className="text-sm text-gray-600 mt-1 mb-4">
-          {link.title}
-        </div>
+        <div className="text-sm text-gray-600 mt-1 mb-4">{link.title}</div>
 
+        {/* 正在尝试打开 App */}
         {openState === "trying" && (
-          <div className="text-sm text-gray-700 mb-4">
+          <div className="text-sm text-gray-700 mb-4 flex items-center gap-2">
+            <span className="animate-spin inline-block w-4 h-4 border-2 border-gray-300 border-t-gray-700 rounded-full" />
             {language === "zh"
-              ? "正在尝试打开 App…"
-              : "Trying to open the app..."}
+              ? `正在尝试打开 ${providerName} App…`
+              : `Trying to open ${providerName} app...`}
           </div>
         )}
 
+        {/* 未检测到 App → 引导下载 */}
         {openState === "failed" && (
           <div className="text-sm mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
             <div className="flex items-center gap-2 mb-1">
               <span className="text-lg">📱</span>
               <span className="font-medium text-amber-800">
-                {language === "zh" ? "未检测到 App" : "App not detected"}
+                {language === "zh"
+                  ? `未检测到 ${providerName} App`
+                  : `${providerName} app not detected`}
               </span>
             </div>
             <p className="text-amber-700 text-xs">
               {language === "zh"
-                ? "建议下载 App 获得更好体验，或继续使用网页版。"
-                : "Download the app for a better experience, or continue on web."}
+                ? `建议下载 ${providerName} App 获得更好体验，安装后可直接打开搜索结果。您也可以先用网页版浏览。`
+                : `Download ${providerName} for a better experience, or continue on web.`}
             </p>
           </div>
         )}
 
+        {/* iOS idle 状态提示（需要手动点击） */}
         {openState === "idle" && os === "ios" && hasAutoTry && (
           <div className="text-sm text-gray-700 mb-4">
             {language === "zh"
@@ -315,39 +424,55 @@ export default function OutboundPage() {
         )}
 
         <div className="space-y-3">
+          {/* 打开 App 按钮（始终显示，让用户可以手动重试） */}
           {hasAutoTry && (
             <Button
               className="w-full bg-black text-white hover:bg-black/90"
               onClick={() => {
                 setOpenState("trying");
-                attemptOpenLinksSequential(autoTryLinks, 1100).then((opened) => {
-                  if (!opened) setOpenState("failed");
-                });
+                attemptOpenLinksSequential(autoTryLinks, 1500).then(
+                  (opened) => {
+                    if (!opened) setOpenState("failed");
+                  }
+                );
               }}
             >
-              {language === "zh" ? "打开 App" : "Open app"}
+              {language === "zh"
+                ? `打开 ${providerName} App`
+                : `Open ${providerName} app`}
             </Button>
           )}
 
+          {/* 下载 App 区域 */}
           {storeLinks.length > 0 && (
             <div className="pt-2">
               <div className="flex items-center gap-2 text-sm font-medium text-gray-900 mb-2">
                 <span className="text-base">⬇️</span>
-                <span>{language === "zh" ? "下载 App 获得更好体验" : "Download App for better experience"}</span>
+                <span>
+                  {language === "zh"
+                    ? `下载 ${providerName} App 获得更好体验`
+                    : `Download ${providerName} for better experience`}
+                </span>
               </div>
               <div className="space-y-2">
                 {storeLinks.map((l, idx) => (
                   <Button
                     key={`${l.type}:${l.url}`}
-                    className={`w-full ${idx === 0
-                      ? "bg-gradient-to-r from-blue-500 to-cyan-500 text-white hover:from-blue-600 hover:to-cyan-600"
-                      : ""
-                      }`}
+                    className={`w-full ${
+                      idx === 0
+                        ? "bg-gradient-to-r from-blue-500 to-cyan-500 text-white hover:from-blue-600 hover:to-cyan-600"
+                        : ""
+                    }`}
                     variant={idx === 0 ? "default" : "outline"}
                     onClick={() => {
                       try {
-                        sessionStorage.setItem("outbound:store-return", JSON.stringify({ ts: Date.now() }));
-                      } catch { }
+                        sessionStorage.setItem(
+                          "outbound:store-return",
+                          JSON.stringify({ ts: Date.now() })
+                        );
+                      } catch {
+                        /* ignore */
+                      }
                       window.location.href = l.url;
                     }}
                   >
@@ -357,12 +482,13 @@ export default function OutboundPage() {
               </div>
               <p className="text-xs text-gray-500 mt-2 text-center">
                 {language === "zh"
-                  ? "下载安装后返回此页面，将自动跳转网页版"
-                  : "After downloading, return here to continue on web"}
+                  ? "安装完成后返回此页面，将自动跳转到网页版"
+                  : "After installing, return here to continue on web"}
               </p>
             </div>
           )}
 
+          {/* 网页版兜底 */}
           {webLink && (
             <Button
               className="w-full"
@@ -371,10 +497,13 @@ export default function OutboundPage() {
                 window.location.href = webLink.url;
               }}
             >
-              {language === "zh" ? "继续打开网页版/官网" : "Continue on web"}
+              {language === "zh"
+                ? `继续打开 ${providerName} 网页版`
+                : `Continue on ${providerName} web`}
             </Button>
           )}
 
+          {/* 其他备选链接（地图、搜索、视频等） */}
           {otherLinks.length > 0 && (
             <div className="pt-1">
               <div className="text-sm font-medium text-gray-900 mb-2">

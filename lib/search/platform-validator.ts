@@ -163,27 +163,40 @@ export const OUTBOUND_ALLOWED_SCHEMES = [
   "itms-apps",
   "market",
   "tmast",
+  // 购物类
   "taobao",
-  "dianping",
-  "tenvideo",
-  "youku",
-  "iqiyi",
-  "qqmusic",
+  "openapp.jdmobile",
   "pinduoduo",
   "vipshop",
-  "xhsdiscover",
-  "openapp.jdmobile",
+  // 美食类
+  "dianping",
   "meituanwaimai",
-  "bilibili",
+  "imeituan",
+  "eleme",
+  "xhsdiscover",
+  // 地图类
   "iosamap",
   "androidamap",
   "baidumap",
   "qqmap",
-  "imeituan",
-  "eleme",
-  "keep",
+  // 视频/娱乐类
+  "tenvideo",
+  "youku",
+  "iqiyi",
+  "bilibili",
+  "taptap",
+  // 音乐类
+  "qqmusic",
   "kugouurl",
-  "orpheuswidget"
+  "orpheus",
+  "orpheuswidget",
+  // 出行类
+  "ctrip",
+  "qunarphone",
+  "mafengwo",
+  "qyertravel",
+  // 健身类
+  "keep",
 ] as const;
 
 const OUTBOUND_ALLOWED_HOSTS = [

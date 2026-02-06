@@ -172,8 +172,11 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       androidPackageId: "com.tencent.qqlive",
       universalLink: ({ query }) => `https://v.qq.com/x/search/?q=${encodeURIComponent(query)}`,
       webLink: ({ query }) => `https://v.qq.com/x/search/?q=${encodeURIComponent(query)}`,
-      iosScheme: () => `tenvideo://`,
-      androidScheme: () => `tenvideo://`,
+      iosScheme: ({ query }) => `tenvideo://search?keyword=${encodeURIComponent(query)}`,
+      androidScheme: ({ query }) => {
+        const web = `https://v.qq.com/x/search/?q=${encodeURIComponent(query)}`;
+        return `intent://search?keyword=${encodeURIComponent(query)}#Intent;scheme=tenvideo;package=com.tencent.qqlive;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      },
     },
     "爱奇艺": {
       id: "爱奇艺",
@@ -183,8 +186,11 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       androidPackageId: "com.qiyi.video",
       universalLink: ({ query }) => `https://so.iqiyi.com/so/q_${encodeURIComponent(query)}`,
       webLink: ({ query }) => `https://so.iqiyi.com/so/q_${encodeURIComponent(query)}`,
-      iosScheme: () => `iqiyi://`,
-      androidScheme: () => `iqiyi://`,
+      iosScheme: ({ query }) => `iqiyi://mobile/search?keyword=${encodeURIComponent(query)}&from=deeplink`,
+      androidScheme: ({ query }) => {
+        const web = `https://so.iqiyi.com/so/q_${encodeURIComponent(query)}`;
+        return `intent://mobile/search?keyword=${encodeURIComponent(query)}#Intent;scheme=iqiyi;package=com.qiyi.video;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      },
     },
     "优酷": {
       id: "优酷",
@@ -194,8 +200,11 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       androidPackageId: "com.youku.phone",
       universalLink: ({ query }) => `https://so.youku.com/search_video/q_${encodeURIComponent(query)}`,
       webLink: ({ query }) => `https://so.youku.com/search_video/q_${encodeURIComponent(query)}`,
-      iosScheme: () => `youku://`,
-      androidScheme: () => `youku://`,
+      iosScheme: ({ query }) => `youku://search?keyword=${encodeURIComponent(query)}`,
+      androidScheme: ({ query }) => {
+        const web = `https://so.youku.com/search_video/q_${encodeURIComponent(query)}`;
+        return `intent://search?keyword=${encodeURIComponent(query)}#Intent;scheme=youku;package=com.youku.phone;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      },
     },
     "豆瓣": {
       id: "豆瓣",
@@ -212,27 +221,38 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       hasApp: true,
       androidPackageId: "com.tencent.qqmusic",
       webLink: ({ query }) => `https://y.qq.com/n/ryqq/search?w=${encodeURIComponent(query)}`,
-      iosScheme: () => `qqmusic://`,
-      androidScheme: () => `qqmusic://`,
+      iosScheme: ({ query }) => `qqmusic://qq.com/ui/search?keyword=${encodeURIComponent(query)}`,
+      androidScheme: ({ query }) => {
+        const web = `https://y.qq.com/n/ryqq/search?w=${encodeURIComponent(query)}`;
+        return `intent://qq.com/ui/search?keyword=${encodeURIComponent(query)}#Intent;scheme=qqmusic;package=com.tencent.qqmusic;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      },
     },
     "酷狗音乐": {
       id: "酷狗音乐",
       displayName: { zh: "酷狗音乐", en: "Kugou Music" },
       domains: ["kugou.com"],
       hasApp: true,
+      androidPackageId: "com.kugou.android",
       webLink: ({ query }) =>
         `https://www.kugou.com/yy/html/search.html#searchType=song&searchKeyWord=${encodeURIComponent(query)}`,
-      iosScheme: () => `kugouURL://`,
-      androidScheme: () => `kugouURL://`,
+      iosScheme: ({ query }) => `kugouURL://kg/search?keyword=${encodeURIComponent(query)}`,
+      androidScheme: ({ query }) => {
+        const web = `https://www.kugou.com/yy/html/search.html#searchType=song&searchKeyWord=${encodeURIComponent(query)}`;
+        return `intent://kg/search?keyword=${encodeURIComponent(query)}#Intent;scheme=kugouURL;package=com.kugou.android;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      },
     },
     "网易云音乐": {
       id: "网易云音乐",
       displayName: { zh: "网易云音乐", en: "NetEase Cloud Music" },
       domains: ["music.163.com"],
       hasApp: true,
+      androidPackageId: "com.netease.cloudmusic",
       webLink: ({ query }) => `https://music.163.com/#/search/m/?s=${encodeURIComponent(query)}`,
-      iosScheme: () => `orpheuswidget://`,
-      androidScheme: () => `orpheuswidget://`,
+      iosScheme: ({ query }) => `orpheus://search?keyword=${encodeURIComponent(query)}`,
+      androidScheme: ({ query }) => {
+        const web = `https://music.163.com/#/search/m/?s=${encodeURIComponent(query)}`;
+        return `intent://search?keyword=${encodeURIComponent(query)}#Intent;scheme=orpheus;package=com.netease.cloudmusic;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      },
     },
     TapTap: {
       id: "TapTap",
@@ -241,6 +261,11 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       hasApp: true,
       androidPackageId: "com.taptap",
       webLink: ({ query }) => `https://www.taptap.cn/search/${encodeURIComponent(query)}`,
+      iosScheme: ({ query }) => `taptap://taptap.cn/search?keyword=${encodeURIComponent(query)}`,
+      androidScheme: ({ query }) => {
+        const web = `https://www.taptap.cn/search/${encodeURIComponent(query)}`;
+        return `intent://taptap.cn/search?keyword=${encodeURIComponent(query)}#Intent;scheme=taptap;package=com.taptap;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      },
     },
     "小红书": {
       id: "小红书",
@@ -394,10 +419,11 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       androidPackageId: "com.xunmeng.pinduoduo",
       webLink: ({ query }) =>
         `https://mobile.yangkeduo.com/search_result.html?search_key=${encodeURIComponent(query)}`,
-      iosScheme: () => `pinduoduo://`,
+      iosScheme: ({ query }) =>
+        `pinduoduo://com.xunmeng.pinduoduo/search_result.html?search_key=${encodeURIComponent(query)}`,
       androidScheme: ({ query }) => {
         const web = `https://mobile.yangkeduo.com/search_result.html?search_key=${encodeURIComponent(query)}`;
-        return `intent://mobile.yangkeduo.com/search_result.html?search_key=${encodeURIComponent(query)}#Intent;scheme=https;package=com.xunmeng.pinduoduo;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+        return `intent://com.xunmeng.pinduoduo/search_result.html?search_key=${encodeURIComponent(query)}#Intent;scheme=pinduoduo;package=com.xunmeng.pinduoduo;S.browser_fallback_url=${encodeURIComponent(web)};end`;
       },
     },
     "什么值得买": {
@@ -423,8 +449,11 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       androidPackageId: "com.achievo.vipshop",
       webLink: ({ query }) =>
         `https://category.vip.com/suggest.php?keyword=${encodeURIComponent(query)}`,
-      iosScheme: () => `vipshop://`,
-      androidScheme: () => `vipshop://`,
+      iosScheme: ({ query }) => `vipshop://goHome?keyword=${encodeURIComponent(query)}`,
+      androidScheme: ({ query }) => {
+        const web = `https://category.vip.com/suggest.php?keyword=${encodeURIComponent(query)}`;
+        return `intent://goHome?keyword=${encodeURIComponent(query)}#Intent;scheme=vipshop;package=com.achievo.vipshop;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      },
     },
     "1688": {
       id: "1688",
@@ -479,8 +508,10 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
         `https://www.meituan.com/s/${encodeURIComponent(query)}/`,
       iosScheme: ({ query }) =>
         `imeituan://www.meituan.com/search?q=${encodeURIComponent(query)}`,
-      androidScheme: ({ query }) =>
-        `imeituan://www.meituan.com/search?q=${encodeURIComponent(query)}`,
+      androidScheme: ({ query }) => {
+        const web = `https://www.meituan.com/s/${encodeURIComponent(query)}/`;
+        return `intent://www.meituan.com/search?q=${encodeURIComponent(query)}#Intent;scheme=imeituan;package=com.sankuai.meituan;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      },
     },
     "美团外卖": {
       id: "美团外卖",
@@ -681,8 +712,11 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       hasApp: true,
       androidPackageId: "com.gotokeep.keep",
       webLink: ({ query }) => `https://www.gotokeep.com/search?q=${encodeURIComponent(query)}`,
-      iosScheme: () => `keep://`,
-      androidScheme: () => `keep://`,
+      iosScheme: ({ query }) => `keep://search?keyword=${encodeURIComponent(query)}`,
+      androidScheme: ({ query }) => {
+        const web = `https://www.gotokeep.com/search?q=${encodeURIComponent(query)}`;
+        return `intent://search?keyword=${encodeURIComponent(query)}#Intent;scheme=keep;package=com.gotokeep.keep;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      },
     },
     MyFitnessPal: {
       id: "MyFitnessPal",
@@ -714,8 +748,12 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       androidPackageId: "ctrip.android.view",
       webLink: ({ query }) =>
         `https://you.ctrip.com/globalsearch/?keyword=${encodeURIComponent(query)}`,
-      iosScheme: () => `ctrip://`,
-      androidScheme: () => `ctrip://`,
+      iosScheme: ({ query }) =>
+        `ctrip://wireless/h5?type=search&keyword=${encodeURIComponent(query)}&from=deeplink`,
+      androidScheme: ({ query }) => {
+        const web = `https://you.ctrip.com/globalsearch/?keyword=${encodeURIComponent(query)}`;
+        return `intent://wireless/h5?type=search&keyword=${encodeURIComponent(query)}#Intent;scheme=ctrip;package=ctrip.android.view;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      },
     },
     "去哪儿": {
       id: "去哪儿",
@@ -724,8 +762,12 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       hasApp: true,
       androidPackageId: "com.qunar.atom",
       webLink: ({ query }) => `https://www.qunar.com/search?searchWord=${encodeURIComponent(query)}`,
-      iosScheme: () => `qunarphone://`,
-      androidScheme: () => `qunarphone://`,
+      iosScheme: ({ query }) =>
+        `qunarphone://hotel/hotelList?keyword=${encodeURIComponent(query)}&from=deeplink`,
+      androidScheme: ({ query }) => {
+        const web = `https://www.qunar.com/search?searchWord=${encodeURIComponent(query)}`;
+        return `intent://hotel/hotelList?keyword=${encodeURIComponent(query)}#Intent;scheme=qunarphone;package=com.qunar.atom;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      },
     },
     "马蜂窝": {
       id: "马蜂窝",
@@ -734,8 +776,12 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       hasApp: true,
       androidPackageId: "com.mfwsc.mafengwo",
       webLink: ({ query }) => `https://www.mafengwo.cn/search/q.php?t=sales&q=${encodeURIComponent(query)}`,
-      iosScheme: () => `mafengwo://`,
-      androidScheme: () => `mafengwo://`,
+      iosScheme: ({ query }) =>
+        `mafengwo://search?keyword=${encodeURIComponent(query)}&from=deeplink`,
+      androidScheme: ({ query }) => {
+        const web = `https://www.mafengwo.cn/search/q.php?t=sales&q=${encodeURIComponent(query)}`;
+        return `intent://search?keyword=${encodeURIComponent(query)}#Intent;scheme=mafengwo;package=com.mfwsc.mafengwo;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      },
     },
     "穷游": {
       id: "穷游",
@@ -744,8 +790,12 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       hasApp: true,
       androidPackageId: "com.qyer.android",
       webLink: ({ query }) => `https://search.qyer.com/qp/?keyword=${encodeURIComponent(query)}&tab=bbs`,
-      iosScheme: () => `qyertravel://`,
-      androidScheme: () => `qyertravel://`,
+      iosScheme: ({ query }) =>
+        `qyertravel://search?keyword=${encodeURIComponent(query)}&from=deeplink`,
+      androidScheme: ({ query }) => {
+        const web = `https://search.qyer.com/qp/?keyword=${encodeURIComponent(query)}&tab=bbs`;
+        return `intent://search?keyword=${encodeURIComponent(query)}#Intent;scheme=qyertravel;package=com.qyer.android;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      },
     },
   };
 }

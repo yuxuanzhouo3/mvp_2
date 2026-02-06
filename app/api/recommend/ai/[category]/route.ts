@@ -1067,7 +1067,8 @@ export async function GET(request: NextRequest, { params }: { params: { category
             }
           }
 
-          if (category === "shopping" && platform === "京东") {
+          // 购物类目：在搜索词中附加用户画像的预算范围（京东、淘宝、拼多多、唯品会）
+          if (category === "shopping" && ["京东", "淘宝", "拼多多", "唯品会"].includes(platform)) {
             const budgetHint = getShoppingBudgetHint(userPreference);
             if (budgetHint && !searchQueryForLink.includes(budgetHint)) {
               searchQueryForLink = `${searchQueryForLink} ${budgetHint}`;
@@ -1091,7 +1092,8 @@ export async function GET(request: NextRequest, { params }: { params: { category
             enhancedRec.entertainmentType
           );
 
-          if (category === "shopping" && platform === "京东" && locale === "zh" && client === "web") {
+          // 京东：在 web URL 上追加价格过滤参数（app/web 模式均适用，影响 web fallback 链接）
+          if (category === "shopping" && platform === "京东" && locale === "zh") {
             const range = getShoppingBudgetRange(userPreference);
             if (range) {
               try {

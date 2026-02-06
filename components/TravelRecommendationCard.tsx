@@ -110,17 +110,15 @@ export function TravelRecommendationCard({
     const isMobile =
       /iphone|ipad|ipod|android/i.test(ua) ||
       (typeof window !== "undefined" && window.innerWidth < 768);
-    if (inAppContainer) {
+
+    // 移动端和 App 容器内：始终走 outbound 跳转页面（确保 App 唤醒流程）
+    if (inAppContainer || isMobile) {
       const returnTo = typeof window !== "undefined" ? `${window.location.pathname}${window.location.search}` : "/";
       const candidateLink = recommendation.candidateLink ?? buildFallbackCandidateLink(recommendation);
       window.location.href = buildOutboundHref(candidateLink, returnTo);
       return;
     }
-    if (isMobile && recommendation.candidateLink) {
-      const returnTo = typeof window !== "undefined" ? `${window.location.pathname}${window.location.search}` : "/";
-      window.location.href = buildOutboundHref(recommendation.candidateLink, returnTo);
-      return;
-    }
+    // 桌面端：直接打开新标签
     window.open(link, "_blank", "noopener,noreferrer");
   };
 
