@@ -51,6 +51,12 @@ function buildStoreLinks(
         label: "应用宝（网页）",
         url: `https://sj.qq.com/myapp/detail.htm?apkName=${encodeURIComponent(provider.androidPackageId)}`,
       });
+    } else {
+      links.push({
+        type: "store",
+        label: "Google Play（网页）",
+        url: `https://play.google.com/store/apps/details?id=${provider.androidPackageId}`,
+      });
     }
   } else if (region === "CN") {
     links.push({ type: "store", label: "应用宝（网页）", url: `https://sj.qq.com/myapp/search.htm?kw=${encoded}` });
