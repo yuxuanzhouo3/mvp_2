@@ -34,6 +34,15 @@ function buildStoreLinks(
   links.push({ type: "store", label: "App Store（网页）", url: iosWebUrl });
 
   if (provider.androidPackageId) {
+    if (region !== "CN") {
+      const playStoreWebUrl = `https://play.google.com/store/apps/details?id=${provider.androidPackageId}`;
+      links.push({
+        type: "store",
+        label: "Google Play",
+        url: `intent://details?id=${provider.androidPackageId}#Intent;scheme=market;package=com.android.vending;S.browser_fallback_url=${encodeURIComponent(playStoreWebUrl)};end`,
+      });
+    }
+
     links.push({
       type: "store",
       label: region === "CN" ? "系统应用商店" : "App Store / Play",

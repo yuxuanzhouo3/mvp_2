@@ -110,29 +110,64 @@ function filterStoreLinksByOs(
   os: "ios" | "android" | "other"
 ) {
   if (os === "ios") {
-    const appStore = storeLinks.filter((l) =>
+    // Filter out Android-specific links:
+    // - URLs starting with market://
+    // - URLs starting with intent:// that contain com.android.vending
+    // - Labels containing "Google Play"
+    const filtered = storeLinks.filter((l) => {
+      const url = l.url.toLowerCase();
+      const label = (l.label || "").toLowerCase();
+      if (url.startsWith("market://")) return false;
+      if (url.startsWith("intent://") && url.includes("com.android.vending")) return false;
+      if (label.includes("google play")) return false;
+      return true;
+    });
+    const appStore = filtered.filter((l) =>
       (l.label || "").toLowerCase().includes("app store")
     );
-    const rest = storeLinks.filter((l) => !appStore.includes(l));
+    const rest = filtered.filter((l) => !appStore.includes(l));
     return [...appStore, ...rest];
   }
   if (os === "android") {
-    const systemStore = storeLinks.filter(
+    // Filter out iOS App Store links:
+    // - URLs starting with itms-apps://
+    // - Labels containing "App Store" but not "Play"
+    const filtered = storeLinks.filter((l) => {
+      const url = l.url.toLowerCase();
+      const label = (l.label || "").toLowerCase();
+      if (url.startsWith("itms-apps://")) return false;
+      if (label.includes("app store") && !label.includes("play")) return false;
+      return true;
+    });
+    // Sort: Intent URL Play Store links first, then market://, then rest
+    const intentPlayStore = filtered.filter(
       (l) =>
-        l.url.toLowerCase().startsWith("market://") ||
-        (l.label || "").includes("系统应用商店") ||
-        (l.label || "").toLowerCase().includes("google play")
+        l.url.toLowerCase().includes("intent://") &&
+        l.url.toLowerCase().includes("com.android.vending")
     );
-    const yingyongbao = storeLinks.filter((l) =>
-      (l.label || "").includes("应用宝")
+    const marketLinks = filtered.filter(
+      (l) =>
+        l.url.toLowerCase().startsWith("market://") &&
+        !intentPlayStore.includes(l)
     );
-    const rest = storeLinks.filter(
-      (l) => !systemStore.includes(l) && !yingyongbao.includes(l)
+    const yingyongbao = filtered.filter(
+      (l) =>
+        (l.label || "").includes("应用宝") &&
+        !intentPlayStore.includes(l) &&
+        !marketLinks.includes(l)
     );
-    return [...systemStore, ...yingyongbao, ...rest];
+    const rest = filtered.filter(
+      (l) =>
+        !intentPlayStore.includes(l) &&
+        !marketLinks.includes(l) &&
+        !yingyongbao.includes(l)
+    );
+    return [...intentPlayStore, ...marketLinks, ...yingyongbao, ...rest];
   }
   return storeLinks;
 }
+
+
 
 /**
  * 在 App 容器中打开外部链接

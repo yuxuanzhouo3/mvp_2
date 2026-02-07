@@ -36,7 +36,7 @@ function makeInput(
 function getFallbackLabels(category: RecommendationCategory, provider: string): string[] {
   const result = resolveCandidateLink(makeInput(category, provider));
   return result.fallbacks
-    .filter((f) => ["search", "map", "video", "web"].includes(f.type))
+    .filter((f) => ["search", "map", "video", "web", "app"].includes(f.type))
     .map((f) => f.label!)
     .filter(Boolean);
 }

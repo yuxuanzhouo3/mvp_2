@@ -619,6 +619,10 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       androidPackageId: "com.ubercab.eats",
       webLink: ({ query }) =>
         `https://www.ubereats.com/search?q=${encodeURIComponent(query)}&sc=SEARCH_BAR&searchType=GLOBAL_SEARCH&vertical=ALL`,
+      androidScheme: ({ query }) => {
+        const web = `https://www.ubereats.com/search?q=${encodeURIComponent(query)}&sc=SEARCH_BAR&searchType=GLOBAL_SEARCH&vertical=ALL`;
+        return `intent://search?q=${encodeURIComponent(query)}#Intent;scheme=ubereats;package=com.ubercab.eats;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      },
     },
     DoorDash: {
       id: "DoorDash",
@@ -628,6 +632,10 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       androidPackageId: "com.dd.doordash",
       webLink: ({ query }) =>
         `https://www.doordash.com/search/store/${encodeURIComponent(query)}/`,
+      androidScheme: ({ query }) => {
+        const web = `https://www.doordash.com/search/store/${encodeURIComponent(query)}/`;
+        return `intent://search/store/${encodeURIComponent(query)}/#Intent;scheme=doordash;package=com.dd.doordash;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      },
     },
     Yelp: {
       id: "Yelp",
@@ -636,6 +644,10 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       hasApp: true,
       androidPackageId: "com.yelp.android",
       webLink: ({ query }) => `https://www.yelp.com/search?find_desc=${encodeURIComponent(query)}`,
+      androidScheme: ({ query }) => {
+        const web = `https://www.yelp.com/search?find_desc=${encodeURIComponent(query)}`;
+        return `intent://search?find_desc=${encodeURIComponent(query)}#Intent;scheme=yelp;package=com.yelp.android;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      },
     },
     OpenTable: {
       id: "OpenTable",
@@ -651,6 +663,10 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       hasApp: true,
       androidPackageId: "com.amazon.mShop.android.shopping",
       webLink: ({ query }) => `https://www.amazon.com/s?k=${encodeURIComponent(query)}`,
+      androidScheme: ({ query }) => {
+        const web = `https://www.amazon.com/s?k=${encodeURIComponent(query)}`;
+        return `intent://s?k=${encodeURIComponent(query)}#Intent;scheme=com.amazon.mobile.shopping;package=com.amazon.mShop.android.shopping;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      },
     },
     eBay: {
       id: "eBay",
@@ -710,6 +726,10 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       hasApp: true,
       androidPackageId: "com.tripadvisor.tripadvisor",
       webLink: ({ query }) => `https://www.tripadvisor.com/Search?q=${encodeURIComponent(query)}`,
+      androidScheme: ({ query }) => {
+        const web = `https://www.tripadvisor.com/Search?q=${encodeURIComponent(query)}`;
+        return `intent://Search?q=${encodeURIComponent(query)}#Intent;scheme=tripadvisor;package=com.tripadvisor.tripadvisor;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      },
     },
     "Booking.com": {
       id: "Booking.com",
@@ -752,6 +772,10 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       hasApp: true,
       androidPackageId: "com.myfitnesspal.android",
       webLink: ({ query }) => `https://www.myfitnesspal.com/food/search?search=${encodeURIComponent(query)}`,
+      androidScheme: ({ query }) => {
+        const web = `https://www.myfitnesspal.com/food/search?search=${encodeURIComponent(query)}`;
+        return `intent://food/search?search=${encodeURIComponent(query)}#Intent;scheme=myfitnesspal;package=com.myfitnesspal.android;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      },
     },
     Peloton: {
       id: "Peloton",
@@ -793,6 +817,10 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       androidPackageId: "com.spotify.music",
       webLink: ({ query }) =>
         `https://open.spotify.com/search/${encodeURIComponent(query)}`,
+      androidScheme: ({ query }) => {
+        const web = `https://open.spotify.com/search/${encodeURIComponent(query)}`;
+        return `intent://search/${encodeURIComponent(query)}#Intent;scheme=spotify;package=com.spotify.music;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      },
     },
     // --- INTL 娱乐类目 ---
     "TikTok": {
@@ -805,6 +833,10 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
         `https://www.tiktok.com/search?q=${encodeURIComponent(query)}`,
       webLink: ({ query }) =>
         `https://www.tiktok.com/search?q=${encodeURIComponent(query)}`,
+      androidScheme: ({ query }) => {
+        const web = `https://www.tiktok.com/search?q=${encodeURIComponent(query)}`;
+        return `intent://search?q=${encodeURIComponent(query)}#Intent;scheme=snssdk1128;package=com.zhiliaoapp.musically;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      },
     },
     "JustWatch": {
       id: "JustWatch",
@@ -832,6 +864,10 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       androidPackageId: "com.etsy.android",
       webLink: ({ query }) =>
         `https://www.etsy.com/search?q=${encodeURIComponent(query)}`,
+      androidScheme: ({ query }) => {
+        const web = `https://www.etsy.com/search?q=${encodeURIComponent(query)}`;
+        return `intent://search?q=${encodeURIComponent(query)}#Intent;scheme=etsy;package=com.etsy.android;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      },
     },
     "Slickdeals": {
       id: "Slickdeals",
@@ -850,6 +886,10 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       androidPackageId: "com.pinterest",
       webLink: ({ query }) =>
         `https://www.pinterest.com/search/pins/?q=${encodeURIComponent(query)}`,
+      androidScheme: ({ query }) => {
+        const web = `https://www.pinterest.com/search/pins/?q=${encodeURIComponent(query)}`;
+        return `intent://search/pins/?q=${encodeURIComponent(query)}#Intent;scheme=pinterest;package=com.pinterest;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      },
     },
     // --- INTL 美食类目 ---
     "Fantuan Delivery": {
@@ -911,6 +951,10 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       hasApp: true,
       androidPackageId: "com.strava",
       webLink: () => `https://www.strava.com/search`,
+      androidScheme: () => {
+        const web = `https://www.strava.com/search`;
+        return `intent://search#Intent;scheme=strava;package=com.strava;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      },
     },
     "Nike Run Club": {
       id: "Nike Run Club",
