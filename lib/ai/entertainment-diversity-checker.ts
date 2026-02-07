@@ -50,7 +50,8 @@ export function analyzeEntertainmentDiversity(recommendations: RecommendationIte
  */
 export function inferEntertainmentType(rec: RecommendationItem): EntertainmentType | null {
   const { title, description, tags, platform, searchQuery } = rec;
-  const allText = `${title} ${description} ${tags.join(' ')} ${searchQuery}`.toLowerCase();
+  const tagsText = Array.isArray(tags) ? tags.join(' ') : '';
+  const allText = `${title} ${description} ${tagsText} ${searchQuery}`.toLowerCase();
 
   // 视频类关键词
   const videoKeywords = [
@@ -107,10 +108,11 @@ export function inferEntertainmentType(rec: RecommendationItem): EntertainmentTy
   });
 
   // 平台匹配
-  if (videoPlatforms.some(p => platform.includes(p))) scores.video += 2;
-  if (gamePlatforms.some(p => platform.includes(p))) scores.game += 2;
-  if (musicPlatforms.some(p => platform.includes(p))) scores.music += 2;
-  if (reviewPlatforms.some(p => platform.includes(p))) scores.review += 2;
+  const safePlatform = platform || '';
+  if (safePlatform && videoPlatforms.some(p => safePlatform.includes(p))) scores.video += 2;
+  if (safePlatform && gamePlatforms.some(p => safePlatform.includes(p))) scores.game += 2;
+  if (safePlatform && musicPlatforms.some(p => safePlatform.includes(p))) scores.music += 2;
+  if (safePlatform && reviewPlatforms.some(p => safePlatform.includes(p))) scores.review += 2;
 
   // 找出得分最高的类型
   const maxScore = Math.max(...Object.values(scores));
