@@ -735,6 +735,7 @@ export const zh = {
       free: {
         name: "免费版",
         features: [
+          "AI 超级助手免费体验总计 3 次",
           "每月30次推荐",
           "基础分类（娱乐/购物/美食/旅行/健身）",
           "简单推荐理由（1句话）",
@@ -746,6 +747,7 @@ export const zh = {
       pro: {
         name: "专业版",
         features: [
+          "AI 超级助手每日 10 次",
           "每日30次推荐",
           "包含免费版全部功能",
           "15个画像维度，更精准个性化",
@@ -759,6 +761,7 @@ export const zh = {
       enterprise: {
         name: "企业版",
         features: [
+          "AI 超级助手无限使用",
           "无限次推荐",
           "包含专业版全部功能",
           "30个高级画像维度",
@@ -1235,5 +1238,45 @@ export const zh = {
         },
       },
     },
+  },
+
+  // ==================== AI 超级助手 ====================
+  assistant: {
+    title: "AI 超级助手",
+    subtitle: "用一句话搞定地图、外卖、购物、本地生活",
+    entryButton: "超级助手",
+    loading: "加载中...",
+    thinking: "思考中...",
+    loginRequired: "需要登录",
+    loginRequiredDesc: "AI 超级助手是会员专属功能，请先登录",
+    goToLogin: "去登录",
+    inputPlaceholder: "输入你想做的事，比如「帮我找附近的 Mac 电脑店」...",
+    located: "已定位",
+    getLocation: "点击定位",
+    enableLocation: "开启定位获取更精准的结果",
+    locationSuccess: "定位成功",
+    locationSuccessDesc: "已获取您的位置",
+    locationFailed: "定位失败",
+    locationFailedDesc: "请检查位置权限设置",
+    trySaying: "试试这样说：",
+    executionPlan: "执行计划",
+    foundCandidates: "找到 {count} 个候选",
+    needMoreInfo: "需要更多信息",
+    open: "打开查看",
+    call: "拨打",
+    copyPhone: "复制电话",
+    copyAddress: "复制地址",
+    copied: "已复制",
+    unlimited: "无限次",
+    perDay: "次/日",
+    total: "次",
+    errorOccurred: "抱歉，处理请求时出错了。请稍后再试。",
+    freeLimitReached: "您的免费体验次数已用完。开通会员即可每日使用 10 次超级助手。",
+    dailyLimitReached: "今日使用次数已达上限，明天再来吧！",
+    subscribe: "开通会员",
+    example1: "帮我找 10 公里以内出售 Mac 电脑的店",
+    example2: "我今晚想吃麻辣烫，离我近点，能 30 分钟送到",
+    example3: "附近有没有评分 4.5 以上的健身房",
+    example4: "帮我把上次的筛选条件记住，下次直接用",
   },
 } as const;

@@ -473,10 +473,16 @@ export function generateSearchLink(
       'eBay': (q) => `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(q)}`,
       'Walmart': (q) => `https://www.walmart.com/search?q=${encodeURIComponent(q)}`,
       'Target': (q) => `https://www.target.com/s?searchTerm=${encodeURIComponent(q)}`,
+      'Etsy': (q) => `https://www.etsy.com/search?q=${encodeURIComponent(q)}`,
+      'Slickdeals': (q) => `https://slickdeals.net/newsearch.php?q=${encodeURIComponent(q)}`,
+      'Pinterest': (q) => `https://www.pinterest.com/search/pins/?q=${encodeURIComponent(q)}`,
 
       // Entertainment platforms
       'IMDb': (q) => `https://www.imdb.com/find?q=${encodeURIComponent(q)}`,
       'YouTube': (q) => `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`,
+      'TikTok': (q) => `https://www.tiktok.com/search?q=${encodeURIComponent(q)}`,
+      'JustWatch': (q) => `https://www.justwatch.com/us/search?q=${encodeURIComponent(q)}`,
+      'Medium': (q) => `https://medium.com/search?q=${encodeURIComponent(q)}`,
       'Spotify': (q) => `https://open.spotify.com/search/${encodeURIComponent(q)}`,
       'Rotten Tomatoes': (q) => `https://www.rottentomatoes.com/search?search=${encodeURIComponent(q)}`,
       'Metacritic': (q) => `https://www.metacritic.com/search/all/${encodeURIComponent(q)}/results`,
@@ -502,6 +508,9 @@ export function generateSearchLink(
       'Yelp': (q) => `https://www.yelp.com/search?find_desc=${encodeURIComponent(q)}`,
       'Zomato': (q) => `https://www.zomato.com/search?q=${encodeURIComponent(q)}`,
       'Allrecipes': (q) => `https://www.allrecipes.com/search?q=${encodeURIComponent(q)}`,
+      'Love and Lemons': (q) => `https://www.loveandlemons.com/?s=${encodeURIComponent(q)}`,
+      'Fantuan Delivery': () => `https://www.fantuanorder.com`,
+      'HungryPanda': () => `https://www.hungrypanda.co/`,
 
       // Travel platforms
       'TripAdvisor Travel': (q) => `https://www.tripadvisor.com/Search?q=${encodeURIComponent(q)}`,
@@ -512,10 +521,13 @@ export function generateSearchLink(
       'Airbnb': (q) => `https://www.airbnb.com/s/${encodeURIComponent(q)}/homes`,
       'Airbnb Experiences': (q) => `https://www.airbnb.com/experiences/${encodeURIComponent(q)}`,
       'Klook': (q) => `https://www.klook.com/search?keyword=${encodeURIComponent(q)}`,
-      'GetYourGuide': (q) => `https://www.getyourguide.com/search?q=${encodeURIComponent(q)}`,
+      'GetYourGuide': (q) => `https://www.getyourguide.com/s/?q=${encodeURIComponent(q)}`,
       'Viator': (q) => `https://www.viator.com/searchResults?text=${encodeURIComponent(q)}`,
       'Lonely Planet': (q) => `https://www.lonelyplanet.com/search?q=${encodeURIComponent(q)}`,
       'Culture Trip': (q) => `https://theculturetrip.com/search?q=${encodeURIComponent(q)}`,
+      'SANParks': (q) => `https://www.sanparks.org/search?q=${encodeURIComponent(q)}`,
+      'Wanderlog': (q) => `https://wanderlog.com/search?q=${encodeURIComponent(q)}`,
+      'Visit A City': (q) => `https://www.visitacity.com/en/search?q=${encodeURIComponent(q)}`,
 
       // Fitness platforms
       'YouTube Fitness': (q) => `https://www.youtube.com/results?search_query=${encodeURIComponent(q)} fitness`,
@@ -525,6 +537,12 @@ export function generateSearchLink(
       'GarageGymReviews': (q) => `https://www.garagegymreviews.com/?s=${encodeURIComponent(q)}`,
       'Muscle & Strength': (q) => `https://www.muscleandstrength.com/store/search/articles?q=${encodeURIComponent(q)}`,
       'Best Buy': (q) => `https://www.bestbuy.com/site/searchpage.jsp?st=${encodeURIComponent(q)}`,
+      'Nike Training Club': () => `https://www.nike.com/ntc-app`,
+      'Strava': () => `https://www.strava.com/search`,
+      'Nike Run Club': () => `https://www.nike.com/nrc-app`,
+      'Hevy': () => `https://www.hevyapp.com`,
+      'Strong': () => `https://www.strong.app`,
+      'Down Dog': () => `https://www.downdogapp.com`,
 
       // General search (fallback)
       'Google': (q) => `https://www.google.com/search?q=${encodeURIComponent(q)}`
@@ -748,9 +766,10 @@ export function selectBestPlatform(
       review: ['笔趣阁', '豆瓣', '百度']
     },
     en: {
-      video: ['IMDb', 'YouTube', 'Netflix', 'Rotten Tomatoes'],
-      music: ['Spotify', 'YouTube', 'IMDb'],
-      review: ['IMDb', 'Rotten Tomatoes', 'YouTube', 'Metacritic']
+      video: ['YouTube', 'IMDb', 'Netflix', 'Rotten Tomatoes'],
+      game: ['Steam', 'Metacritic', 'Epic Games'],
+      music: ['Spotify', 'YouTube'],
+      review: ['IMDb', 'Rotten Tomatoes', 'Metacritic']
     }
   };
 
@@ -764,10 +783,10 @@ export function selectBestPlatform(
     },
     en: {
       entertainment: entertainmentPlatformMap.en[entertainmentType || 'video'] || ['IMDb', 'YouTube', 'Netflix'],
-      shopping: ['Amazon', 'eBay', 'Walmart'],
-      food: ['Allrecipes', 'Google Maps', 'OpenTable'],
-      travel: ['Booking.com', 'Agoda', 'TripAdvisor', 'Expedia', 'Klook', 'Airbnb'],
-      fitness: ['YouTube', 'GarageGymReviews', 'FitnessVolt']
+      shopping: ['Amazon', 'eBay', 'Walmart', 'Google Maps'],
+      food: ['Uber Eats', 'Love and Lemons', 'Google Maps', 'Yelp'],
+      travel: ['Booking.com', 'TripAdvisor', 'SANParks', 'YouTube'],
+      fitness: ['YouTube Fitness', 'Muscle & Strength', 'Google Maps']
     }
   };
 
@@ -802,7 +821,7 @@ export function selectFoodPlatformWithRotation(
   }
 
   // 英文环境的食物平台轮换
-  const enFoodPlatforms = ['Allrecipes', 'Google Maps', 'OpenTable'];
+  const enFoodPlatforms = ['Uber Eats', 'Love and Lemons', 'Google Maps', 'Yelp'];
 
   // 如果 AI 建议的平台在可用列表中，使用它
   if (suggestedPlatform && enFoodPlatforms.includes(suggestedPlatform)) {

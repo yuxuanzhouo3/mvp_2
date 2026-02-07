@@ -301,47 +301,6 @@ function getTypeSpecificKeywords(recommendation: any, locale: string): string {
 }
 
 /**
- * 获取地点的英文名称
- */
-function getEnglishLocationName(name: string): string | null {
-  const nameMappings: Record<string, string> = {
-    '巴厘岛': 'Bali Indonesia',
-    '普吉岛': 'Phuket Thailand',
-    '东京': 'Tokyo Japan',
-    '京都': 'Kyoto Japan',
-    '大阪': 'Osaka Japan',
-    '首尔': 'Seoul South Korea',
-    '新加坡': 'Singapore',
-    '迪拜': 'Dubai UAE',
-    '巴黎': 'Paris France',
-    '伦敦': 'London UK',
-    '纽约': 'New York USA',
-    '洛杉矶': 'Los Angeles USA',
-    '悉尼': 'Sydney Australia',
-    '巴塞罗那': 'Barcelona Spain',
-    '罗马': 'Rome Italy',
-    '阿姆斯特丹': 'Amsterdam Netherlands',
-    '故宫博物院': 'Forbidden City Beijing',
-    '长城': 'Great Wall of China',
-    '富士山': 'Mount Fuji Japan'
-  };
-
-  // 尝试精确匹配
-  if (nameMappings[name]) {
-    return nameMappings[name];
-  }
-
-  // 尝试包含匹配
-  for (const [zh, en] of Object.entries(nameMappings)) {
-    if (name.includes(zh)) {
-      return en;
-    }
-  }
-
-  return null;
-}
-
-/**
  * 从推荐内容中提取目的地信息
  */
 function extractDestinationInfo(title: string, description: string): TravelRecommendation['destination'] {

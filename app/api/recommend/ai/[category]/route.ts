@@ -523,52 +523,48 @@ function selectWeightedPlatformForCategory(
     switch (category) {
       case "food":
         return [
-          { platform: "Uber Eats", weight: 0.2 },
-          { platform: "DoorDash", weight: 0.2 },
-          { platform: "Yelp", weight: 0.2 },
-          { platform: "Google Maps", weight: 0.1 },
-          { platform: "OpenTable", weight: 0.1 },
-          { platform: "Google", weight: 0.1 },
-          { platform: "YouTube", weight: 0.1 },
+          { platform: "Uber Eats", weight: 0.25 },
+          { platform: "Google Maps", weight: 0.20 },
+          { platform: "Yelp", weight: 0.20 },
+          { platform: "Love and Lemons", weight: 0.15 },
+          { platform: "YouTube", weight: 0.10 },
+          { platform: "Google", weight: 0.10 },
         ];
       case "shopping":
         return [
-          { platform: "Amazon", weight: 0.2 },
-          { platform: "eBay", weight: 0.2 },
-          { platform: "Walmart", weight: 0.2 },
-          { platform: "Target", weight: 0.1 },
-          { platform: "Google", weight: 0.1 },
-          { platform: "YouTube", weight: 0.1 },
-          { platform: "Google Maps", weight: 0.1 },
+          { platform: "Amazon", weight: 0.25 },
+          { platform: "eBay", weight: 0.25 },
+          { platform: "Walmart", weight: 0.25 },
+          { platform: "Google Maps", weight: 0.15 },
+          { platform: "Google", weight: 0.10 },
         ];
       case "entertainment":
         return [
-          { platform: "YouTube", weight: 0.3 },
-          { platform: "Netflix", weight: 0.3 },
-          { platform: "IMDb", weight: 0.1 },
-          { platform: "Google", weight: 0.1 },
-          { platform: "Rotten Tomatoes", weight: 0.1 },
-          { platform: "Metacritic", weight: 0.1 },
+          { platform: "YouTube", weight: 0.25 },
+          { platform: "IMDb", weight: 0.20 },
+          { platform: "Spotify", weight: 0.15 },
+          { platform: "Steam", weight: 0.15 },
+          { platform: "Metacritic", weight: 0.10 },
+          { platform: "Netflix", weight: 0.10 },
+          { platform: "Google", weight: 0.05 },
         ];
       case "travel":
         return [
-          { platform: "Google Maps", weight: 0.2 },
-          { platform: "Booking.com", weight: 0.2 },
-          { platform: "TripAdvisor", weight: 0.2 },
-          { platform: "Agoda", weight: 0.1 },
-          { platform: "Airbnb", weight: 0.1 },
-          { platform: "Google", weight: 0.1 },
-          { platform: "YouTube", weight: 0.1 },
+          { platform: "Booking.com", weight: 0.25 },
+          { platform: "TripAdvisor", weight: 0.25 },
+          { platform: "YouTube", weight: 0.15 },
+          { platform: "Google Maps", weight: 0.15 },
+          { platform: "SANParks", weight: 0.10 },
+          { platform: "Airbnb", weight: 0.10 },
         ];
       case "fitness":
         return [
-          { platform: "YouTube Fitness", weight: 0.2 },
-          { platform: "MyFitnessPal", weight: 0.2 },
-          { platform: "Peloton", weight: 0.2 },
-          { platform: "Google", weight: 0.1 },
-          { platform: "YouTube", weight: 0.1 },
-          { platform: "Google Maps", weight: 0.1 },
-          { platform: "Muscle & Strength", weight: 0.1 },
+          { platform: "YouTube Fitness", weight: 0.30 },
+          { platform: "Muscle & Strength", weight: 0.25 },
+          { platform: "Google Maps", weight: 0.15 },
+          { platform: "MyFitnessPal", weight: 0.10 },
+          { platform: "Peloton", weight: 0.10 },
+          { platform: "Google", weight: 0.10 },
         ];
       default:
         return null;
@@ -615,6 +611,8 @@ export async function GET(request: NextRequest, { params }: { params: { category
         ? { lat: Number(latRaw), lng: Number(lngRaw) }
         : null;
     const isCnWeb = isChinaDeployment() && locale === "zh" && client === "web";
+    const userAgent = request.headers.get("user-agent") || "";
+    const isMobile = /iphone|ipad|ipod|android/i.test(userAgent);
 
     const excludeTitlesRaw = searchParams.get("excludeTitles");
     let excludeTitles: string[] = [];
@@ -833,6 +831,7 @@ export async function GET(request: NextRequest, { params }: { params: { category
         userHistory,
         userPreference,
         excludeTitles,
+        isMobile,
       });
 
       return NextResponse.json({
@@ -850,6 +849,7 @@ export async function GET(request: NextRequest, { params }: { params: { category
           geo,
           avoidTitles: excludeTitles,
           signals: recommendationSignals,
+          isMobile,
         });
 
         const shouldEnsureEntertainmentTypes = category === "entertainment" && locale === "zh" && client === "web" && isChinaDeployment();
@@ -903,6 +903,7 @@ export async function GET(request: NextRequest, { params }: { params: { category
             geo,
             avoidTitles: avoidTitlesForTopUp,
             signals: recommendationSignals,
+            isMobile,
           });
 
           processedRecommendations = dedupeRecommendations([...(processedRecommendations as any[]), ...(topUps as any[])], {
@@ -1272,6 +1273,7 @@ export async function GET(request: NextRequest, { params }: { params: { category
             locale,
             region,
             provider: providerForCandidateLink,
+            isMobile,
           });
 
           const reasonOverride =
@@ -1352,6 +1354,7 @@ export async function GET(request: NextRequest, { params }: { params: { category
                 userHistory,
                 userPreference,
                 excludeTitles,
+                isMobile,
               });
 
               send("recommend", {
@@ -1426,6 +1429,7 @@ export async function GET(request: NextRequest, { params }: { params: { category
                 userHistory,
                 userPreference,
                 excludeTitles,
+                isMobile,
               });
 
               send("error", {
@@ -1505,6 +1509,7 @@ export async function GET(request: NextRequest, { params }: { params: { category
         userHistory,
         userPreference,
         excludeTitles,
+        isMobile,
       });
 
       return NextResponse.json({
@@ -1714,8 +1719,9 @@ async function generateFallbackRecommendations(params: {
   userHistory: Awaited<ReturnType<typeof getUserRecommendationHistory>>;
   userPreference: Awaited<ReturnType<typeof getUserCategoryPreference>> | null;
   excludeTitles: string[];
+  isMobile?: boolean;
 }) {
-  const { category, client, count, excludeTitles, geo, locale, userHistory, userPreference } = params;
+  const { category, client, count, excludeTitles, geo, locale, userHistory, userPreference, isMobile } = params;
   const isCnWeb = isChinaDeployment() && locale === "zh" && client === "web";
   const limitedRecs = generateFallbackCandidates({
     category,
@@ -1893,6 +1899,7 @@ async function generateFallbackRecommendations(params: {
       locale,
       region,
       provider: providerForCandidateLink,
+      isMobile,
     });
 
     const reasonOverride =

@@ -63,7 +63,27 @@ export type ProviderId =
   | "MyFitnessPal"
   | "Peloton"
   | "Muscle & Strength"
-  | "YouTube Fitness";
+  | "YouTube Fitness"
+  | "Love and Lemons"
+  | "SANParks"
+  | "Spotify"
+  | "TikTok"
+  | "JustWatch"
+  | "Medium"
+  | "Etsy"
+  | "Slickdeals"
+  | "Pinterest"
+  | "Fantuan Delivery"
+  | "HungryPanda"
+  | "Wanderlog"
+  | "Visit A City"
+  | "GetYourGuide"
+  | "Nike Training Club"
+  | "Strava"
+  | "Nike Run Club"
+  | "Hevy"
+  | "Strong"
+  | "Down Dog";
 
 export type ProviderTier = "mainstream" | "longtail";
 
@@ -145,6 +165,7 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       displayName: { zh: "Google Maps", en: "Google Maps" },
       domains: ["google.com"],
       hasApp: true,
+      androidPackageId: "com.google.android.apps.maps",
       universalLink: ({ query }) => googleMapsSearchUrl(query),
       webLink: ({ query }) => googleMapsSearchUrl(query),
     },
@@ -595,14 +616,16 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       displayName: { zh: "Uber Eats", en: "Uber Eats" },
       domains: ["ubereats.com", "uber.com"],
       hasApp: true,
+      androidPackageId: "com.ubercab.eats",
       webLink: ({ query }) =>
-        `https://www.ubereats.com/search?diningMode=DELIVERY&q=${encodeURIComponent(query)}`,
+        `https://www.ubereats.com/search?q=${encodeURIComponent(query)}&sc=SEARCH_BAR&searchType=GLOBAL_SEARCH&vertical=ALL`,
     },
     DoorDash: {
       id: "DoorDash",
       displayName: { zh: "DoorDash", en: "DoorDash" },
       domains: ["doordash.com"],
       hasApp: true,
+      androidPackageId: "com.dd.doordash",
       webLink: ({ query }) =>
         `https://www.doordash.com/search/store/${encodeURIComponent(query)}/`,
     },
@@ -611,6 +634,7 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       displayName: { zh: "Yelp", en: "Yelp" },
       domains: ["yelp.com"],
       hasApp: true,
+      androidPackageId: "com.yelp.android",
       webLink: ({ query }) => `https://www.yelp.com/search?find_desc=${encodeURIComponent(query)}`,
     },
     OpenTable: {
@@ -625,6 +649,7 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       displayName: { zh: "Amazon", en: "Amazon" },
       domains: ["amazon.com"],
       hasApp: true,
+      androidPackageId: "com.amazon.mShop.android.shopping",
       webLink: ({ query }) => `https://www.amazon.com/s?k=${encodeURIComponent(query)}`,
     },
     eBay: {
@@ -676,13 +701,14 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       domains: ["metacritic.com"],
       hasApp: false,
       webLink: ({ query }) =>
-        `https://www.metacritic.com/search/all/${encodeURIComponent(query)}/results`,
+        `https://www.metacritic.com/search/${encodeURIComponent(query)}`,
     },
     TripAdvisor: {
       id: "TripAdvisor",
       displayName: { zh: "TripAdvisor", en: "TripAdvisor" },
       domains: ["tripadvisor.com"],
       hasApp: true,
+      androidPackageId: "com.tripadvisor.tripadvisor",
       webLink: ({ query }) => `https://www.tripadvisor.com/Search?q=${encodeURIComponent(query)}`,
     },
     "Booking.com": {
@@ -724,6 +750,7 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       displayName: { zh: "MyFitnessPal", en: "MyFitnessPal" },
       domains: ["myfitnesspal.com"],
       hasApp: true,
+      androidPackageId: "com.myfitnesspal.android",
       webLink: ({ query }) => `https://www.myfitnesspal.com/food/search?search=${encodeURIComponent(query)}`,
     },
     Peloton: {
@@ -731,6 +758,7 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       displayName: { zh: "Peloton", en: "Peloton" },
       domains: ["onepeloton.com"],
       hasApp: true,
+      androidPackageId: "com.onepeloton.callisto",
       webLink: ({ query }) => `https://www.onepeloton.com/search?q=${encodeURIComponent(query)}`,
     },
     "Muscle & Strength": {
@@ -739,7 +767,182 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       domains: ["muscleandstrength.com"],
       hasApp: false,
       webLink: ({ query }) =>
-        `https://www.muscleandstrength.com/store/search/articles?q=${encodeURIComponent(query)}`,
+        `https://www.muscleandstrength.com/store/search?q=${encodeURIComponent(query)}`,
+    },
+    "Love and Lemons": {
+      id: "Love and Lemons",
+      displayName: { zh: "Love and Lemons", en: "Love and Lemons" },
+      domains: ["loveandlemons.com"],
+      hasApp: false,
+      webLink: ({ query }) =>
+        `https://www.loveandlemons.com/?s=${encodeURIComponent(query)}`,
+    },
+    "SANParks": {
+      id: "SANParks",
+      displayName: { zh: "SANParks", en: "SANParks" },
+      domains: ["sanparks.org"],
+      hasApp: false,
+      webLink: ({ query }) =>
+        `https://www.sanparks.org/search?q=${encodeURIComponent(query)}`,
+    },
+    "Spotify": {
+      id: "Spotify",
+      displayName: { zh: "Spotify", en: "Spotify" },
+      domains: ["spotify.com", "open.spotify.com"],
+      hasApp: true,
+      androidPackageId: "com.spotify.music",
+      webLink: ({ query }) =>
+        `https://open.spotify.com/search/${encodeURIComponent(query)}`,
+    },
+    // --- INTL 娱乐类目 ---
+    "TikTok": {
+      id: "TikTok",
+      displayName: { zh: "TikTok", en: "TikTok" },
+      domains: ["tiktok.com"],
+      hasApp: true,
+      androidPackageId: "com.zhiliaoapp.musically",
+      universalLink: ({ query }) =>
+        `https://www.tiktok.com/search?q=${encodeURIComponent(query)}`,
+      webLink: ({ query }) =>
+        `https://www.tiktok.com/search?q=${encodeURIComponent(query)}`,
+    },
+    "JustWatch": {
+      id: "JustWatch",
+      displayName: { zh: "JustWatch", en: "JustWatch" },
+      domains: ["justwatch.com"],
+      hasApp: true,
+      androidPackageId: "com.justwatch.justwatch",
+      webLink: ({ query }) =>
+        `https://www.justwatch.com/us/search?q=${encodeURIComponent(query)}`,
+    },
+    "Medium": {
+      id: "Medium",
+      displayName: { zh: "Medium", en: "Medium" },
+      domains: ["medium.com"],
+      hasApp: false,
+      webLink: ({ query }) =>
+        `https://medium.com/search?q=${encodeURIComponent(query)}`,
+    },
+    // --- INTL 购物类目 ---
+    "Etsy": {
+      id: "Etsy",
+      displayName: { zh: "Etsy", en: "Etsy" },
+      domains: ["etsy.com"],
+      hasApp: true,
+      androidPackageId: "com.etsy.android",
+      webLink: ({ query }) =>
+        `https://www.etsy.com/search?q=${encodeURIComponent(query)}`,
+    },
+    "Slickdeals": {
+      id: "Slickdeals",
+      displayName: { zh: "Slickdeals", en: "Slickdeals" },
+      domains: ["slickdeals.net"],
+      hasApp: true,
+      androidPackageId: "net.slickdeals.android",
+      webLink: ({ query }) =>
+        `https://slickdeals.net/newsearch.php?q=${encodeURIComponent(query)}`,
+    },
+    "Pinterest": {
+      id: "Pinterest",
+      displayName: { zh: "Pinterest", en: "Pinterest" },
+      domains: ["pinterest.com"],
+      hasApp: true,
+      androidPackageId: "com.pinterest",
+      webLink: ({ query }) =>
+        `https://www.pinterest.com/search/pins/?q=${encodeURIComponent(query)}`,
+    },
+    // --- INTL 美食类目 ---
+    "Fantuan Delivery": {
+      id: "Fantuan Delivery",
+      displayName: { zh: "饭团外卖", en: "Fantuan Delivery" },
+      domains: ["fantuanorder.com"],
+      hasApp: true,
+      androidPackageId: "com.AmazingTech.FanTuanDelivery",
+      webLink: () => `https://www.fantuanorder.com`,
+    },
+    "HungryPanda": {
+      id: "HungryPanda",
+      displayName: { zh: "HungryPanda", en: "HungryPanda" },
+      domains: ["hungrypanda.co"],
+      hasApp: true,
+      androidPackageId: "com.nicetomeetyou.hungrypanda",
+      webLink: () => `https://www.hungrypanda.co/`,
+    },
+    // --- INTL 旅行类目 ---
+    "Wanderlog": {
+      id: "Wanderlog",
+      displayName: { zh: "Wanderlog", en: "Wanderlog" },
+      domains: ["wanderlog.com"],
+      hasApp: true,
+      androidPackageId: "com.wanderlog.android",
+      webLink: ({ query }) =>
+        `https://wanderlog.com/search?q=${encodeURIComponent(query)}`,
+    },
+    "Visit A City": {
+      id: "Visit A City",
+      displayName: { zh: "Visit A City", en: "Visit A City" },
+      domains: ["visitacity.com"],
+      hasApp: false,
+      webLink: ({ query }) =>
+        `https://www.visitacity.com/en/search?q=${encodeURIComponent(query)}`,
+    },
+    "GetYourGuide": {
+      id: "GetYourGuide",
+      displayName: { zh: "GetYourGuide", en: "GetYourGuide" },
+      domains: ["getyourguide.com"],
+      hasApp: true,
+      androidPackageId: "com.getyourguide.android",
+      webLink: ({ query }) =>
+        `https://www.getyourguide.com/s/?q=${encodeURIComponent(query)}`,
+    },
+    // --- INTL 健身类目 ---
+    "Nike Training Club": {
+      id: "Nike Training Club",
+      displayName: { zh: "Nike Training Club", en: "Nike Training Club" },
+      domains: ["nike.com"],
+      hasApp: true,
+      androidPackageId: "com.nike.ntc",
+      webLink: () => `https://www.nike.com/ntc-app`,
+    },
+    "Strava": {
+      id: "Strava",
+      displayName: { zh: "Strava", en: "Strava" },
+      domains: ["strava.com"],
+      hasApp: true,
+      androidPackageId: "com.strava",
+      webLink: () => `https://www.strava.com/search`,
+    },
+    "Nike Run Club": {
+      id: "Nike Run Club",
+      displayName: { zh: "Nike Run Club", en: "Nike Run Club" },
+      domains: ["nike.com"],
+      hasApp: true,
+      androidPackageId: "com.nike.plusgps",
+      webLink: () => `https://www.nike.com/nrc-app`,
+    },
+    "Hevy": {
+      id: "Hevy",
+      displayName: { zh: "Hevy", en: "Hevy" },
+      domains: ["hevyapp.com"],
+      hasApp: true,
+      androidPackageId: "com.hevy.tracker",
+      webLink: () => `https://www.hevyapp.com`,
+    },
+    "Strong": {
+      id: "Strong",
+      displayName: { zh: "Strong", en: "Strong" },
+      domains: ["strong.app"],
+      hasApp: true,
+      androidPackageId: "io.strongapp.strong",
+      webLink: () => `https://www.strong.app`,
+    },
+    "Down Dog": {
+      id: "Down Dog",
+      displayName: { zh: "Down Dog", en: "Down Dog" },
+      domains: ["downdogapp.com"],
+      hasApp: true,
+      androidPackageId: "com.downdogapp",
+      webLink: () => `https://www.downdogapp.com`,
     },
     "携程": {
       id: "携程",
@@ -803,7 +1006,8 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
 
 export function getWeightedProvidersForCategory(
   category: RecommendationCategory,
-  region: DeploymentRegion
+  region: DeploymentRegion,
+  isMobile?: boolean
 ): WeightedProvider[] {
   if (region === "CN") {
     switch (category) {
@@ -854,56 +1058,108 @@ export function getWeightedProvidersForCategory(
     }
   }
 
+  // INTL mobile branch — must come before the INTL web branch
+  if (region === "INTL" && isMobile) {
+    switch (category) {
+      case "entertainment":
+        return [
+          { provider: "YouTube", weight: 0.20, tier: "mainstream" },
+          { provider: "TikTok", weight: 0.20, tier: "mainstream" },
+          { provider: "Spotify", weight: 0.20, tier: "mainstream" },
+          { provider: "JustWatch", weight: 0.15, tier: "mainstream" },
+          { provider: "Medium", weight: 0.10, tier: "longtail" },
+          { provider: "Google", weight: 0.15, tier: "longtail" },
+        ];
+      case "shopping":
+        return [
+          { provider: "Amazon", weight: 0.25, tier: "mainstream" },
+          { provider: "Etsy", weight: 0.20, tier: "mainstream" },
+          { provider: "Slickdeals", weight: 0.20, tier: "mainstream" },
+          { provider: "Pinterest", weight: 0.20, tier: "mainstream" },
+          { provider: "Google", weight: 0.15, tier: "longtail" },
+        ];
+      case "food":
+        return [
+          { provider: "DoorDash", weight: 0.25, tier: "mainstream" },
+          { provider: "Uber Eats", weight: 0.25, tier: "mainstream" },
+          { provider: "Fantuan Delivery", weight: 0.15, tier: "mainstream" },
+          { provider: "HungryPanda", weight: 0.15, tier: "mainstream" },
+          { provider: "Google Maps", weight: 0.10, tier: "longtail" },
+          { provider: "Google", weight: 0.10, tier: "longtail" },
+        ];
+      case "travel":
+        return [
+          { provider: "TripAdvisor", weight: 0.15, tier: "mainstream" },
+          { provider: "Yelp", weight: 0.15, tier: "mainstream" },
+          { provider: "Wanderlog", weight: 0.15, tier: "mainstream" },
+          { provider: "Visit A City", weight: 0.10, tier: "longtail" },
+          { provider: "GetYourGuide", weight: 0.15, tier: "mainstream" },
+          { provider: "Google Maps", weight: 0.20, tier: "mainstream" },
+          { provider: "Google", weight: 0.10, tier: "longtail" },
+        ];
+      case "fitness":
+        return [
+          { provider: "Nike Training Club", weight: 0.12, tier: "mainstream" },
+          { provider: "Peloton", weight: 0.12, tier: "mainstream" },
+          { provider: "Strava", weight: 0.12, tier: "mainstream" },
+          { provider: "Nike Run Club", weight: 0.10, tier: "mainstream" },
+          { provider: "Hevy", weight: 0.10, tier: "mainstream" },
+          { provider: "Strong", weight: 0.10, tier: "mainstream" },
+          { provider: "Down Dog", weight: 0.12, tier: "mainstream" },
+          { provider: "MyFitnessPal", weight: 0.12, tier: "mainstream" },
+          { provider: "Google", weight: 0.10, tier: "longtail" },
+        ];
+      default:
+        return [];
+    }
+  }
+
+  // INTL web branch
   switch (category) {
     case "food":
       return [
-        { provider: "Uber Eats", weight: 0.2, tier: "mainstream" },
-        { provider: "DoorDash", weight: 0.2, tier: "mainstream" },
-        { provider: "Yelp", weight: 0.2, tier: "mainstream" },
-        { provider: "Google Maps", weight: 0.1, tier: "longtail" },
-        { provider: "Google", weight: 0.1, tier: "longtail" },
-        { provider: "YouTube", weight: 0.1, tier: "longtail" },
-        { provider: "TripAdvisor", weight: 0.1, tier: "longtail" },
+        { provider: "Uber Eats", weight: 0.25, tier: "mainstream" },
+        { provider: "Google Maps", weight: 0.20, tier: "mainstream" },
+        { provider: "Yelp", weight: 0.20, tier: "mainstream" },
+        { provider: "Love and Lemons", weight: 0.15, tier: "longtail" },
+        { provider: "YouTube", weight: 0.10, tier: "longtail" },
+        { provider: "Google", weight: 0.10, tier: "longtail" },
       ];
     case "shopping":
       return [
-        { provider: "Amazon", weight: 0.2, tier: "mainstream" },
-        { provider: "eBay", weight: 0.2, tier: "mainstream" },
-        { provider: "Walmart", weight: 0.2, tier: "mainstream" },
-        { provider: "Target", weight: 0.1, tier: "longtail" },
-        { provider: "Google", weight: 0.1, tier: "longtail" },
-        { provider: "YouTube", weight: 0.1, tier: "longtail" },
-        { provider: "Google Maps", weight: 0.1, tier: "longtail" },
+        { provider: "Amazon", weight: 0.25, tier: "mainstream" },
+        { provider: "eBay", weight: 0.25, tier: "mainstream" },
+        { provider: "Walmart", weight: 0.25, tier: "mainstream" },
+        { provider: "Google Maps", weight: 0.15, tier: "longtail" },
+        { provider: "Google", weight: 0.10, tier: "longtail" },
       ];
     case "entertainment":
       return [
-        { provider: "YouTube", weight: 0.2, tier: "mainstream" },
-        { provider: "Netflix", weight: 0.2, tier: "mainstream" },
-        { provider: "Google", weight: 0.2, tier: "mainstream" },
-        { provider: "IMDb", weight: 0.1, tier: "longtail" },
-        { provider: "Google Maps", weight: 0.1, tier: "longtail" },
-        { provider: "YouTube", weight: 0.1, tier: "longtail" },
-        { provider: "TripAdvisor", weight: 0.1, tier: "longtail" },
+        { provider: "YouTube", weight: 0.25, tier: "mainstream" },
+        { provider: "IMDb", weight: 0.20, tier: "mainstream" },
+        { provider: "Spotify", weight: 0.15, tier: "mainstream" },
+        { provider: "Steam", weight: 0.15, tier: "mainstream" },
+        { provider: "Metacritic", weight: 0.10, tier: "longtail" },
+        { provider: "Netflix", weight: 0.10, tier: "longtail" },
+        { provider: "Google", weight: 0.05, tier: "longtail" },
       ];
     case "travel":
       return [
-        { provider: "Google Maps", weight: 0.2, tier: "mainstream" },
-        { provider: "Booking.com", weight: 0.2, tier: "mainstream" },
-        { provider: "TripAdvisor", weight: 0.2, tier: "mainstream" },
-        { provider: "Agoda", weight: 0.1, tier: "longtail" },
-        { provider: "Airbnb", weight: 0.1, tier: "longtail" },
-        { provider: "Google", weight: 0.1, tier: "longtail" },
-        { provider: "YouTube", weight: 0.1, tier: "longtail" },
+        { provider: "Booking.com", weight: 0.25, tier: "mainstream" },
+        { provider: "TripAdvisor", weight: 0.25, tier: "mainstream" },
+        { provider: "YouTube", weight: 0.15, tier: "mainstream" },
+        { provider: "Google Maps", weight: 0.15, tier: "longtail" },
+        { provider: "SANParks", weight: 0.10, tier: "longtail" },
+        { provider: "Airbnb", weight: 0.10, tier: "longtail" },
       ];
     case "fitness":
       return [
-        { provider: "YouTube Fitness", weight: 0.2, tier: "mainstream" },
-        { provider: "MyFitnessPal", weight: 0.2, tier: "mainstream" },
-        { provider: "Peloton", weight: 0.2, tier: "mainstream" },
-        { provider: "Google", weight: 0.1, tier: "longtail" },
-        { provider: "YouTube", weight: 0.1, tier: "longtail" },
-        { provider: "Google Maps", weight: 0.1, tier: "longtail" },
-        { provider: "TripAdvisor", weight: 0.1, tier: "longtail" },
+        { provider: "YouTube Fitness", weight: 0.30, tier: "mainstream" },
+        { provider: "Muscle & Strength", weight: 0.25, tier: "mainstream" },
+        { provider: "Google Maps", weight: 0.15, tier: "longtail" },
+        { provider: "MyFitnessPal", weight: 0.10, tier: "longtail" },
+        { provider: "Peloton", weight: 0.10, tier: "longtail" },
+        { provider: "Google", weight: 0.10, tier: "longtail" },
       ];
     default:
       return [];

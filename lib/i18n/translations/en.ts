@@ -752,6 +752,7 @@ export const en = {
       free: {
         name: "Free",
         features: [
+          "AI Super Assistant: 3 total free trials",
           "30 recommendations per month",
           "Basic categories (Entertainment, Shopping, Food, Travel, Fitness)",
           "Simple recommendation reasons (1 sentence)",
@@ -763,6 +764,7 @@ export const en = {
       pro: {
         name: "Pro",
         features: [
+          "AI Super Assistant: 10 uses per day",
           "30 recommendations per day",
           "All Free features included",
           "15 profile dimensions for better personalization",
@@ -776,6 +778,7 @@ export const en = {
       enterprise: {
         name: "Enterprise",
         features: [
+          "AI Super Assistant: Unlimited",
           "Unlimited recommendations",
           "All Pro features included",
           "30 advanced profile dimensions",
@@ -1252,5 +1255,45 @@ export const en = {
         },
       },
     },
+  },
+
+  // ==================== AI Super Assistant ====================
+  assistant: {
+    title: "AI Super Assistant",
+    subtitle: "Maps, delivery, shopping, local life - in one sentence",
+    entryButton: "Super Assistant",
+    loading: "Loading...",
+    thinking: "Thinking...",
+    loginRequired: "Login Required",
+    loginRequiredDesc: "AI Super Assistant is a member-exclusive feature. Please log in first.",
+    goToLogin: "Go to Login",
+    inputPlaceholder: "Tell me what you need, like 'Find Mac computer stores nearby'...",
+    located: "Located",
+    getLocation: "Get location",
+    enableLocation: "Enable location for better results",
+    locationSuccess: "Location obtained",
+    locationSuccessDesc: "Your location has been obtained",
+    locationFailed: "Location failed",
+    locationFailedDesc: "Please check location permissions",
+    trySaying: "Try saying:",
+    executionPlan: "Execution Plan",
+    foundCandidates: "Found {count} candidates",
+    needMoreInfo: "Need more information",
+    open: "Open",
+    call: "Call",
+    copyPhone: "Copy phone",
+    copyAddress: "Copy address",
+    copied: "Copied",
+    unlimited: "Unlimited",
+    perDay: "/day",
+    total: " total",
+    errorOccurred: "Sorry, an error occurred. Please try again later.",
+    freeLimitReached: "Your free trial has been used up. Subscribe to Pro for 10 daily uses.",
+    dailyLimitReached: "Daily limit reached. Come back tomorrow!",
+    subscribe: "Subscribe Now",
+    example1: "Find Mac computer stores within 10km",
+    example2: "I want spicy hotpot tonight, close by, delivered in 30 min",
+    example3: "Any gyms nearby rated 4.5+?",
+    example4: "Save my last filter preferences for next time",
   },
 } as const;

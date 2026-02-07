@@ -85,7 +85,8 @@ type HistoryItem = AIRecommendation & { historyId?: string }
 function mapHistoryRecordToRecommendation(
   record: RecommendationHistory,
   locale: "zh" | "en",
-  region: "CN" | "INTL"
+  region: "CN" | "INTL",
+  isMobile?: boolean
 ): HistoryItem {
   const storedCandidateLink = (record.metadata as any)?.candidateLink as AIRecommendation["candidateLink"] | undefined
   const searchQuery = (record.metadata as any)?.searchQuery as string | undefined
@@ -100,6 +101,7 @@ function mapHistoryRecordToRecommendation(
       locale,
       region,
       provider: originalPlatform ? mapSearchPlatformToProvider(originalPlatform, locale) : undefined,
+      isMobile,
     })
 
   return {
@@ -480,9 +482,11 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
           throw new Error(result.error || "Failed to load history")
         }
 
+        const ua = typeof navigator !== "undefined" ? navigator.userAgent : ""
+        const isMobile = isIPhone || /android/i.test(ua)
         const mappedHistory: HistoryItem[] = dedupeHistory(
           (result.data || []).map((record: RecommendationHistory) =>
-            mapHistoryRecordToRecommendation(record, locale, region)
+            mapHistoryRecordToRecommendation(record, locale, region, isMobile)
           )
         )
         setHistory(mappedHistory)
@@ -496,7 +500,7 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
         setIsHistoryLoading(false)
       }
     },
-    [categoryId, historyProvider, loadLocalHistory, locale, params.id, region]
+    [categoryId, historyProvider, isIPhone, loadLocalHistory, locale, params.id, region]
   )
 
   // 初始化加载本地历史缓存（仅对已登录用户）

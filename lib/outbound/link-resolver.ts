@@ -18,6 +18,7 @@ export type ResolveCandidateLinkInput = {
   locale: "zh" | "en";
   region: DeploymentRegion;
   provider?: string;
+  isMobile?: boolean;
 };
 
 function buildStoreLinks(
@@ -95,7 +96,8 @@ function normalizeProviderId(provider: string | undefined, region: DeploymentReg
 
 function getFallbackProviders(
   category: RecommendationCategory,
-  region: DeploymentRegion
+  region: DeploymentRegion,
+  isMobile?: boolean
 ): ProviderId[] {
   if (region === "CN") {
     switch (category) {
@@ -124,17 +126,34 @@ function getFallbackProviders(
     }
   }
 
+  if (region === "INTL" && isMobile) {
+    switch (category) {
+      case "entertainment":
+        return ["YouTube", "TikTok", "Spotify", "JustWatch", "Medium", "Google"];
+      case "shopping":
+        return ["Amazon", "Etsy", "Slickdeals", "Pinterest", "Google Maps", "Google"];
+      case "food":
+        return ["DoorDash", "Uber Eats", "Fantuan Delivery", "HungryPanda", "Google Maps", "Google"];
+      case "travel":
+        return ["TripAdvisor", "Yelp", "Wanderlog", "Visit A City", "GetYourGuide", "Google Maps", "Google"];
+      case "fitness":
+        return ["Nike Training Club", "Peloton", "Strava", "Nike Run Club", "Hevy", "Strong", "Down Dog", "MyFitnessPal", "Google Maps", "Google"];
+      default:
+        return ["Google"];
+    }
+  }
+
   switch (category) {
     case "food":
-      return ["Google Maps", "Google", "YouTube"];
+      return ["Uber Eats", "Google Maps", "Yelp", "Love and Lemons", "YouTube", "Google"];
     case "shopping":
-      return ["Google", "YouTube", "Google Maps"];
+      return ["Amazon", "eBay", "Walmart", "Google Maps", "Google"];
     case "entertainment":
-      return ["YouTube", "Google"];
+      return ["YouTube", "IMDb", "Spotify", "Metacritic", "Steam", "Google"];
     case "travel":
-      return ["Google Maps", "Google", "YouTube"];
+      return ["Booking.com", "TripAdvisor", "YouTube", "Google Maps", "SANParks", "Google"];
     case "fitness":
-      return ["YouTube Fitness", "Google", "Google Maps"];
+      return ["YouTube Fitness", "Muscle & Strength", "Google Maps", "Google"];
     default:
       return ["Google"];
   }
@@ -178,7 +197,7 @@ export function resolveCandidateLink(input: ResolveCandidateLinkInput): Candidat
   const webLink: OutboundLink = { type: "web", url: provider.webLink(ctx), label: "Web" };
   const storeLinks = provider.hasApp ? buildStoreLinks(provider, input.locale, input.region) : [];
 
-  const fallbackProviderIds = getFallbackProviders(input.category, input.region);
+  const fallbackProviderIds = getFallbackProviders(input.category, input.region, input.isMobile);
   const fallbackLinks: OutboundLink[] = [];
   for (const fallbackId of fallbackProviderIds) {
     if (fallbackId === providerId) continue;

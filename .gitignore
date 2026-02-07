@@ -47,3 +47,10 @@ prisma/dev.db-journal
 Thumbs.db
 Claude.md
 .trae
+.kiro
+
+# 忽略所有 __tests__ 文件夹
+**/__tests__/
+
+# 或者只忽略特定路径的 __tests__
+# lib/search/__tests__/

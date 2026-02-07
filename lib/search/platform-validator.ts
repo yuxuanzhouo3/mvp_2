@@ -153,7 +153,24 @@ export const PLATFORM_DOMAINS = {
   'Walmart': 'walmart.com',
   'Target': 'target.com',
   'FitnessVolt': 'fitnessvolt.com',
-  'GarageGymReviews': 'garagegymreviews.com'
+  'GarageGymReviews': 'garagegymreviews.com',
+  // INTL 移动端平台
+  'TikTok': 'tiktok.com',
+  'JustWatch': 'justwatch.com',
+  'Medium': 'medium.com',
+  'Etsy': 'etsy.com',
+  'Slickdeals': 'slickdeals.net',
+  'Pinterest': 'pinterest.com',
+  'Fantuan Delivery': 'fantuanorder.com',
+  'HungryPanda': 'hungrypanda.co',
+  'Wanderlog': 'wanderlog.com',
+  'Visit A City': 'visitacity.com',
+  'GetYourGuide': 'getyourguide.com',
+  'Nike Training Club': 'nike.com',
+  'Strava': 'strava.com',
+  'Hevy': 'hevyapp.com',
+  'Strong': 'strong.app',
+  'Down Dog': 'downdogapp.com'
 };
 
 export const OUTBOUND_ALLOWED_SCHEMES = [

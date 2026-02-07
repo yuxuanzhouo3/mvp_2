@@ -509,7 +509,6 @@ export function RecommendationList({
       {recommendations.map((rec, index) => {
         // Staggered animation delay for streaming effect
         const animationDelay = index * 0.1;
-        const itemStyle = { animationDelay: `${animationDelay}s` };
 
         // 如果是旅游类别且不是紧凑模式，使用专门的旅游卡片
         if (category === 'travel' && !compact) {

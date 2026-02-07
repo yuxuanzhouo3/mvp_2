@@ -532,6 +532,7 @@ export type GenerateRecommendationsOptions = {
   client?: "app" | "web";
   geo?: { lat: number; lng: number } | null;
   avoidTitles?: string[] | null;
+  isMobile?: boolean;
   signals?:
   | {
     topTags?: string[] | null;
@@ -572,6 +573,43 @@ export function buildExpansionSignalPrompt(params: {
 }
 
 /**
+ * Returns the INTL (English) platform list for a given recommendation category.
+ * Extracted for testability.
+ */
+export function getIntlCategoryPlatforms(category: string): string[] {
+  const platformMap: Record<string, string[]> = {
+    entertainment: ['IMDb', 'YouTube', 'Spotify', 'Metacritic', 'Steam', 'Netflix', 'Rotten Tomatoes'],
+    shopping: ['Amazon', 'eBay', 'Walmart', 'Google Maps'],
+    food: ['Uber Eats', 'Love and Lemons', 'Google Maps', 'Yelp'],
+    travel: ['Booking.com', 'TripAdvisor', 'SANParks', 'YouTube'],
+    fitness: ['YouTube Fitness', 'Muscle & Strength', 'Google Maps'],
+  };
+  return platformMap[category] ?? [];
+}
+
+/**
+ * Returns the INTL mobile App platform list for a given recommendation category.
+ * Used when isMobile=true to prioritize platforms with native apps.
+ */
+export function getMobilePlatforms(category: string): string[] {
+  switch (category) {
+    case "entertainment":
+      return ["YouTube", "TikTok", "JustWatch", "Spotify", "Medium"];
+    case "shopping":
+      return ["Amazon Shopping", "Etsy", "Slickdeals", "Pinterest"];
+    case "food":
+      return ["DoorDash", "Uber Eats", "Fantuan Delivery", "HungryPanda"];
+    case "travel":
+      return ["TripAdvisor", "Yelp", "Wanderlog", "Visit A City", "GetYourGuide", "Google Maps"];
+    case "fitness":
+      return ["Nike Training Club", "Peloton", "Strava", "Nike Run Club", "Hevy", "Strong", "Down Dog", "MyFitnessPal"];
+    default:
+      return [];
+  }
+}
+
+
+/**
  * 使用智谱 AI 分析用户偏好并生成推荐
  * 注意：AI 只生成推荐内容，不生成链接
  */
@@ -585,7 +623,9 @@ export async function generateRecommendations(
 ): Promise<RecommendationItem[]> {
   const client = options?.client ?? "web";
   const geo = options?.geo ?? null;
+  const isMobile = options?.isMobile ?? false;
   const isCnWeb = isChinaDeployment() && locale === "zh" && client === "web";
+  const isIntlMobile = !isChinaDeployment() && locale === "en" && isMobile;
   const avoidTitles = Array.isArray(options?.avoidTitles)
     ? options!.avoidTitles!.filter((t) => typeof t === "string" && t.trim().length > 0)
     : [];
@@ -637,7 +677,7 @@ export async function generateRecommendations(
         ? (client === 'app'
           ? ['腾讯视频', '优酷', '爱奇艺', 'TapTap', '网易云音乐', '酷狗音乐', 'QQ音乐', '百度']
           : ['腾讯视频', 'TapTap', 'Steam', '酷狗音乐', '笔趣阁', '豆瓣'])
-        : ['IMDb', 'YouTube', 'Spotify', 'Netflix', 'Rotten Tomatoes', 'Steam', 'Epic Games', 'GOG', 'PlayStation Store', 'Xbox Store', 'Nintendo eShop', 'Humble Bundle', 'itch.io'],
+        : isIntlMobile ? getMobilePlatforms('entertainment') : getIntlCategoryPlatforms('entertainment'),
       examples: locale === 'zh'
         ? '电影、电视剧、游戏、音乐、综艺、动漫、小说'
         : 'movies, TV shows, games, music, variety shows, anime',
@@ -656,7 +696,7 @@ export async function generateRecommendations(
     shopping: {
       platforms: locale === 'zh'
         ? ['京东', '淘宝', '拼多多', '唯品会', '什么值得买', '慢慢买']
-        : ['Amazon', 'eBay', 'Walmart', 'Target'],
+        : isIntlMobile ? getMobilePlatforms('shopping') : getIntlCategoryPlatforms('shopping'),
       examples: locale === 'zh'
         ? '数码产品、服装、家居用品'
         : 'electronics, clothing, home goods'
@@ -666,7 +706,7 @@ export async function generateRecommendations(
         ? client === "app"
           ? ['大众点评', '美团', '腾讯地图美食', '百度地图美食', '高德地图美食', '京东秒送', '淘宝闪购', '美团外卖', '小红书']
           : ['下厨房', '高德地图美食', '大众点评']
-        : ['Allrecipes', 'Google Maps', 'OpenTable'],
+        : isIntlMobile ? getMobilePlatforms('food') : getIntlCategoryPlatforms('food'),
       examples: locale === 'zh'
         ? '食谱、附近好去处、菜系'
         : 'restaurants, recipes, food'
@@ -674,7 +714,7 @@ export async function generateRecommendations(
     travel: {
       platforms: locale === 'zh'
         ? ['携程', '去哪儿', '马蜂窝', '穷游', '小红书']
-        : ['Booking.com', 'Agoda', 'TripAdvisor', 'Expedia', 'Klook', 'Airbnb'],
+        : isIntlMobile ? getMobilePlatforms('travel') : getIntlCategoryPlatforms('travel'),
       examples: locale === 'zh'
         ? '景点、酒店、旅游攻略、目的地体验'
         : 'attractions, hotels, travel guides, destination experiences'
@@ -684,7 +724,7 @@ export async function generateRecommendations(
         ? (isCnWeb
           ? ['B站健身', '知乎', '什么值得买']
           : ['B站健身', '优酷健身', 'Keep', '大众点评', '美团', '百度地图健身', '高德地图健身', '腾讯地图健身', '知乎', '什么值得买'])
-        : ['YouTube Fitness', 'MyFitnessPal', 'Peloton', 'Google Maps', 'Amazon', 'Yelp'],
+        : isIntlMobile ? getMobilePlatforms('fitness') : getIntlCategoryPlatforms('fitness'),
       examples: locale === 'zh'
         ? (isCnWeb ? '健身视频、健身原理文章、健身器材推荐' : '健身课程、健身房、健身器材、运动装备')
         : 'fitness classes, gyms, fitness equipment, workout gear'
@@ -886,6 +926,78 @@ Game searchQuery: game name only` : ''}${category === 'food' ? `3 types: recipe,
 - tutorial: workout tutorial video
 - equipment: equipment how-to (not pure shopping)
 fitnessType must be nearby_place/tutorial/equipment` : ''}
+
+[Platform-Content Alignment Rules]
+- Game recommendations: use Metacritic or Steam as platform, searchQuery = game title only
+- Video recommendations: use YouTube as platform
+- Music recommendations: use Spotify as platform, searchQuery = "Artist - Song" format
+- Movie/TV recommendations: use IMDb as platform, searchQuery = title only
+
+[Shopping Platform Rules]
+- Online shopping: use Amazon, eBay, or Walmart
+- Offline/nearby shopping: use Google Maps, searchQuery includes product + "near me"
+
+[Food Platform Rules]
+- Food delivery: use Uber Eats, searchQuery = cuisine or dish name
+- Recipes: use Love and Lemons, searchQuery = dish name or ingredient
+- Nearby restaurants: use Google Maps, searchQuery = cuisine + "restaurants near me"
+- Picnic/outdoor dining: use Yelp, searchQuery = activity + location
+
+[Travel Platform Rules]
+- Accommodation: use Booking.com, searchQuery = destination + "hotel" or "beach"
+- Attractions: use TripAdvisor or SANParks, searchQuery = destination + "attractions things to do"
+- Attraction videos: use YouTube, searchQuery = destination + "park attraction"
+
+[Fitness Platform Rules]
+- Fitness videos/tutorials: use YouTube Fitness, searchQuery includes workout type + "guide tutorial"
+- Fitness food & equipment: use Muscle & Strength, searchQuery = product/topic
+${isIntlMobile ? `
+[Mobile App Platform Rules - INTL]
+You are generating recommendations for a MOBILE user. Prioritize platforms with native apps.
+
+Entertainment:
+- Short videos: use YouTube or TikTok, searchQuery = topic or trend keyword
+- Movies/TV: use JustWatch, searchQuery = movie/show title
+- Music: use Spotify, searchQuery = "Artist - Song" format
+- Articles/News: use Medium, searchQuery = topic keyword
+
+Shopping:
+- General shopping: use Amazon Shopping, searchQuery = product name
+- Handmade/unique items: use Etsy, searchQuery = product description
+- Deals/discounts: use Slickdeals, searchQuery = product or deal keyword
+- Inspiration/ideas: use Pinterest, searchQuery = style or product idea
+
+Food:
+- US mainstream delivery: use DoorDash or Uber Eats, searchQuery = cuisine or dish
+- Chinese food delivery: use Fantuan Delivery or HungryPanda, searchQuery = dish name in Chinese or English
+
+Travel:
+- Reviews/guides: use TripAdvisor or Yelp, searchQuery = destination + "things to do"
+- Trip planning: use Wanderlog or Visit A City, searchQuery = destination
+- Local experiences/tours: use GetYourGuide, searchQuery = destination + activity
+- Navigation: use Google Maps, searchQuery = place name
+
+Fitness:
+- Home/general training: use Nike Training Club or Peloton, searchQuery = workout type
+- Running/cycling: use Strava or Nike Run Club, searchQuery = activity type
+- Strength training: use Hevy or Strong, searchQuery = exercise name
+- Yoga: use Down Dog, searchQuery = yoga style
+- Diet tracking: use MyFitnessPal, searchQuery = food or meal name
+` : ''}
+[Reason Diversity Rules]
+Each recommendation's reason must be unique and specific. Rotate among these angles:
+1. Preference match: "Matches your interest in X, highly rated"
+2. Timing/occasion: "Perfect for weekend relaxation" / "Great date night pick"
+3. Social buzz: "Trending this week" / "Highly recommended by community"
+4. Discovery: "Hidden gem worth trying" / "Under-the-radar quality pick"
+5. Practical value: "Great value for money" / "Conveniently located nearby"
+Do NOT repeat the same reason pattern across recommendations.
+
+[De-duplication Rules]
+- Do NOT output items that repeat or closely paraphrase titles from the avoid list
+- Each recommendation must be fresh and novel
+- No duplicates within the output set
+
 Platform choices: ${config.platforms.slice(0, 6).join(', ')}
 No URLs`;
 

@@ -42,6 +42,11 @@ export interface PlanFeatures {
   // 响应优先级 (1=最高, 3=最低)
   responsePriority: number;
   responseTimeHours: number;
+
+  // AI 超级助手使用次数限制（-1 无限）
+  assistantLimit: number;
+  // AI 超级助手计数周期
+  assistantPeriod: "total" | "daily";
 }
 
 /**
@@ -62,6 +67,8 @@ export const PLAN_FEATURES: Record<PlanType, PlanFeatures> = {
     viewDecisionProcess: false,
     responsePriority: 3,
     responseTimeHours: 72,
+    assistantLimit: 3,
+    assistantPeriod: "total",
   },
   pro: {
     recommendationLimit: 30,
@@ -77,6 +84,8 @@ export const PLAN_FEATURES: Record<PlanType, PlanFeatures> = {
     viewDecisionProcess: false,
     responsePriority: 2,
     responseTimeHours: 24,
+    assistantLimit: 10,
+    assistantPeriod: "daily",
   },
   enterprise: {
     recommendationLimit: -1, // 无限
@@ -92,6 +101,8 @@ export const PLAN_FEATURES: Record<PlanType, PlanFeatures> = {
     viewDecisionProcess: true,
     responsePriority: 1,
     responseTimeHours: 4,
+    assistantLimit: -1,
+    assistantPeriod: "daily",
   },
 };
 

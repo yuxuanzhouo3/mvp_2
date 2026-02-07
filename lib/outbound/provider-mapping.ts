@@ -22,6 +22,30 @@ export function mapSearchPlatformToProvider(platform: string, locale: "zh" | "en
 
   const intlMap: Record<string, string> = {
     "TripAdvisor Travel": "TripAdvisor",
+    "Love and Lemons": "Love and Lemons",
+    "SANParks": "SANParks",
+    "YouTube Fitness": "YouTube Fitness",
+    "TikTok": "TikTok",
+    "JustWatch": "JustWatch",
+    "Medium": "Medium",
+    "Etsy": "Etsy",
+    "Slickdeals": "Slickdeals",
+    "Pinterest": "Pinterest",
+    "Fantuan Delivery": "Fantuan Delivery",
+    "饭团外卖": "Fantuan Delivery",
+    "HungryPanda": "HungryPanda",
+    "Wanderlog": "Wanderlog",
+    "Visit A City": "Visit A City",
+    "GetYourGuide": "GetYourGuide",
+    "Nike Training Club": "Nike Training Club",
+    "NTC": "Nike Training Club",
+    "Strava": "Strava",
+    "Nike Run Club": "Nike Run Club",
+    "NRC": "Nike Run Club",
+    "Hevy": "Hevy",
+    "Strong": "Strong",
+    "Down Dog": "Down Dog",
+    "Amazon Shopping": "Amazon",
   };
 
   if (locale === "zh") return cnMap[platform] || platform;
