@@ -214,6 +214,37 @@ export const OUTBOUND_ALLOWED_SCHEMES = [
   "qyertravel",
   // 健身类
   "keep",
+  // INTL 移动端 App scheme - 娱乐类
+  "snssdk1128",    // TikTok
+  "spotify",       // Spotify
+  "youtube",       // YouTube
+  "nflx",          // Netflix
+  "justwatch",     // JustWatch
+  // INTL 移动端 App scheme - 购物类
+  "com.amazon.mobile.shopping", // Amazon iOS
+  "etsy",          // Etsy
+  "slickdeals",    // Slickdeals
+  "pinterest",     // Pinterest
+  // INTL 移动端 App scheme - 美食类
+  "doordash",      // DoorDash
+  "ubereats",      // Uber Eats
+  "fantuandelivery", // Fantuan Delivery
+  "hungrypanda",   // HungryPanda
+  // INTL 移动端 App scheme - 旅行类
+  "tripadvisor",   // TripAdvisor
+  "yelp",          // Yelp
+  "wanderlog",     // Wanderlog
+  "getyourguide",  // GetYourGuide
+  "comgooglemaps", // Google Maps iOS
+  // INTL 移动端 App scheme - 健身类
+  "strava",        // Strava
+  "ntc",           // Nike Training Club
+  "nikerunclub",   // Nike Run Club
+  "hevy",          // Hevy
+  "strong",        // Strong
+  "downdog",       // Down Dog
+  "onepeloton",    // Peloton
+  "myfitnesspal",  // MyFitnessPal
 ] as const;
 
 const OUTBOUND_ALLOWED_HOSTS = [

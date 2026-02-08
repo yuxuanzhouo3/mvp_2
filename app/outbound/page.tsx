@@ -5,8 +5,16 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import type { CandidateLink, OutboundLink } from "@/lib/types/recommendation";
-import { isAllowedOutboundUrl } from "@/lib/search/platform-validator";
 import { useLanguage } from "@/components/language-provider";
+import {
+  decodeCandidateLink,
+  validateReturnTo,
+  detectMobileOs,
+  getAutoTryLinks,
+  getWebLink,
+  getStoreLinks,
+  filterStoreLinksByOs,
+} from "@/lib/outbound/deep-link-helpers";
 
 /**
  * 跳转中间页
@@ -19,21 +27,6 @@ type OpenState = "idle" | "trying" | "opened" | "failed";
 type InstallChoice = "none" | "asking" | "yes" | "no";
 
 /* ---- helpers ---- */
-
-function base64UrlDecode(input: string): string {
-  const base64 = input.replace(/-/g, "+").replace(/_/g, "/");
-  const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
-  const binary = atob(padded);
-  const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
-  return new TextDecoder().decode(bytes);
-}
-
-function detectMobileOs(): "ios" | "android" | "other" {
-  const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
-  if (/iphone|ipad|ipod/i.test(ua)) return "ios";
-  if (/android/i.test(ua)) return "android";
-  return "other";
-}
 
 /**
  * 检测是否在 App 容器（GoNative/Median WebView）中运行
@@ -50,121 +43,6 @@ function isInAppContainer(): boolean {
   const ua = navigator.userAgent || "";
   if (ua.includes("median") || ua.includes("gonative")) return true;
   return false;
-}
-
-/**
- * 获取可尝试打开的 App 链接列表（按优先级排序）
- * 包含 app scheme、universal_link、intent URL
- */
-function getAutoTryLinks(
-  candidateLink: CandidateLink,
-  os: "ios" | "android" | "other"
-): OutboundLink[] {
-  const primaryTry =
-    candidateLink.primary.type === "app" ||
-    candidateLink.primary.type === "intent" ||
-    candidateLink.primary.type === "universal_link"
-      ? [candidateLink.primary]
-      : [];
-
-  const fallbackTry = candidateLink.fallbacks.filter(
-    (l) =>
-      l.type === "app" || l.type === "intent" || l.type === "universal_link"
-  );
-
-  const ordered = [...primaryTry, ...fallbackTry];
-  const seen = new Set<string>();
-  const unique: OutboundLink[] = [];
-
-  for (const l of ordered) {
-    if (!l.url || seen.has(l.url)) continue;
-    // iOS 不支持 intent:// URL
-    if (os === "ios" && l.type === "intent") continue;
-    seen.add(l.url);
-    unique.push(l);
-  }
-
-  // Android 排序：intent > app > universal_link
-  if (os === "android") {
-    unique.sort((a, b) => {
-      const priority = { intent: 0, app: 1, universal_link: 2 } as Record<string, number>;
-      return (priority[a.type] ?? 3) - (priority[b.type] ?? 3);
-    });
-  }
-
-  return unique;
-}
-
-function getWebLink(candidateLink: CandidateLink): OutboundLink | null {
-  if (candidateLink.primary.type === "web") return candidateLink.primary;
-  const web = candidateLink.fallbacks.find((l) => l.type === "web");
-  return web || null;
-}
-
-function getStoreLinks(candidateLink: CandidateLink): OutboundLink[] {
-  return candidateLink.fallbacks.filter((l) => l.type === "store");
-}
-
-function filterStoreLinksByOs(
-  storeLinks: OutboundLink[],
-  os: "ios" | "android" | "other"
-) {
-  if (os === "ios") {
-    // Filter out Android-specific links:
-    // - URLs starting with market://
-    // - URLs starting with intent:// that contain com.android.vending
-    // - Labels containing "Google Play"
-    const filtered = storeLinks.filter((l) => {
-      const url = l.url.toLowerCase();
-      const label = (l.label || "").toLowerCase();
-      if (url.startsWith("market://")) return false;
-      if (url.startsWith("intent://") && url.includes("com.android.vending")) return false;
-      if (label.includes("google play")) return false;
-      return true;
-    });
-    const appStore = filtered.filter((l) =>
-      (l.label || "").toLowerCase().includes("app store")
-    );
-    const rest = filtered.filter((l) => !appStore.includes(l));
-    return [...appStore, ...rest];
-  }
-  if (os === "android") {
-    // Filter out iOS App Store links:
-    // - URLs starting with itms-apps://
-    // - Labels containing "App Store" but not "Play"
-    const filtered = storeLinks.filter((l) => {
-      const url = l.url.toLowerCase();
-      const label = (l.label || "").toLowerCase();
-      if (url.startsWith("itms-apps://")) return false;
-      if (label.includes("app store") && !label.includes("play")) return false;
-      return true;
-    });
-    // Sort: Intent URL Play Store links first, then market://, then rest
-    const intentPlayStore = filtered.filter(
-      (l) =>
-        l.url.toLowerCase().includes("intent://") &&
-        l.url.toLowerCase().includes("com.android.vending")
-    );
-    const marketLinks = filtered.filter(
-      (l) =>
-        l.url.toLowerCase().startsWith("market://") &&
-        !intentPlayStore.includes(l)
-    );
-    const yingyongbao = filtered.filter(
-      (l) =>
-        (l.label || "").includes("应用宝") &&
-        !intentPlayStore.includes(l) &&
-        !marketLinks.includes(l)
-    );
-    const rest = filtered.filter(
-      (l) =>
-        !intentPlayStore.includes(l) &&
-        !marketLinks.includes(l) &&
-        !yingyongbao.includes(l)
-    );
-    return [...intentPlayStore, ...marketLinks, ...yingyongbao, ...rest];
-  }
-  return storeLinks;
 }
 
 
@@ -302,7 +180,7 @@ export default function OutboundPage() {
    * 导航回推荐结果页
    */
   const handleBack = useCallback(() => {
-    const safeReturnTo = returnTo && returnTo.startsWith("/") ? returnTo : null;
+    const safeReturnTo = validateReturnTo(returnTo);
     if (safeReturnTo) {
       router.replace(safeReturnTo);
       return;
@@ -314,50 +192,9 @@ export default function OutboundPage() {
     router.replace("/");
   }, [returnTo, router]);
 
-  const decoded = useMemo((): {
-    candidateLink: CandidateLink | null;
-    error: string | null;
-  } => {
+  const decoded = useMemo(() => {
     const raw = searchParams.get("data");
-    if (!raw) {
-      return {
-        candidateLink: null,
-        error: language === "zh" ? "缺少跳转参数" : "Missing redirect data",
-      };
-    }
-    try {
-      const json = base64UrlDecode(raw);
-      const parsed = JSON.parse(json) as CandidateLink;
-      if (!parsed?.primary?.url || !parsed?.title) {
-        return {
-          candidateLink: null,
-          error:
-            language === "zh" ? "跳转参数无效" : "Invalid redirect data",
-        };
-      }
-      if (!isAllowedOutboundUrl(parsed.primary.url)) {
-        return {
-          candidateLink: null,
-          error:
-            language === "zh" ? "目标链接不被允许" : "Target URL is not allowed",
-        };
-      }
-      const validFallbacks = (parsed.fallbacks || []).filter((fallback) =>
-        isAllowedOutboundUrl(fallback.url)
-      );
-      return {
-        candidateLink: { ...parsed, fallbacks: validFallbacks },
-        error: null,
-      };
-    } catch {
-      return {
-        candidateLink: null,
-        error:
-          language === "zh"
-            ? "跳转参数解析失败"
-            : "Failed to parse redirect data",
-      };
-    }
+    return decodeCandidateLink(raw ?? "", language);
   }, [searchParams, language]);
 
   const candidateLink = decoded.candidateLink;
