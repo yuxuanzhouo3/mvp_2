@@ -299,9 +299,7 @@ export default function OutboundPage() {
 
     if (autoTryLinks.length === 0) {
       setOpenState("failed");
-      if (!redirectIntlAndroidToGooglePlay()) {
-        setInstallChoice("asking");
-      }
+      setInstallChoice("asking");
       return;
     }
 
@@ -314,12 +312,10 @@ export default function OutboundPage() {
       } else {
         // App 未安装，询问用户是否安装
         setOpenState("failed");
-        if (!redirectIntlAndroidToGooglePlay()) {
-          setInstallChoice("asking");
-        }
+        setInstallChoice("asking");
       }
     });
-  }, [decoded.candidateLink, isIntlAndroidContext, redirectIntlAndroidToGooglePlay]);
+  }, [decoded.candidateLink, isIntlAndroidContext]);
 
   // 当用户从 App 返回时，自动导航回推荐结果页
   useEffect(() => {
@@ -486,6 +482,10 @@ export default function OutboundPage() {
     ? sanitizeAutoTryLinksForIntlAndroid(autoTryLinksRaw)
     : autoTryLinksRaw;
   const hasAutoTry = autoTryLinks.length > 0;
+  const shouldShowInstallPrompt =
+    openState === "failed" &&
+    (installChoice === "asking" ||
+      (isIntlAndroid && installChoice === "none"));
 
   return (
     <div className="min-h-screen bg-[#F7F9FC] p-4 flex items-center justify-center">
@@ -516,7 +516,7 @@ export default function OutboundPage() {
         )}
 
         {/* 未检测到 App -> 询问是否安装 */}
-        {openState === "failed" && installChoice === "asking" && (
+        {shouldShowInstallPrompt && (
           <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
             <div className="flex items-center gap-2 mb-3">
               <span className="text-2xl">📱</span>
