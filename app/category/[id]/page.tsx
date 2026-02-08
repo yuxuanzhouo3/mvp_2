@@ -918,7 +918,7 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
         setIsLoading(false)
       }
     },
-    [categoryId, currentRecommendations, fetchRemoteHistory, history, locale, params.id, router, userId]
+    [categoryId, currentRecommendations, fetchRemoteHistory, history, locale, normalizeRecommendationsForUI, params.id, router, userId]
   )
 
   const fetchRecommendations = useCallback(async () => {

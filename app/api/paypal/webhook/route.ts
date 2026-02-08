@@ -183,7 +183,7 @@ export async function POST(request: NextRequest) {
   const webhookData = {
     type: body.event_type,
     data: body.resource,
-    paymentMethod: "paypal",
+    paymentMethod: "paypal" as const,
   };
 
   try {

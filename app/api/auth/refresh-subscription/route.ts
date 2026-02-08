@@ -22,8 +22,21 @@ function resolvePlanFromMetadata(meta?: Record<string, any> | null) {
   );
 }
 
+type SubscriptionStatus = "active" | "expired" | "cancelled";
+
+function normalizeSubscriptionStatus(status?: string | null): SubscriptionStatus {
+  const value = (status || "").toLowerCase();
+  if (value === "active") return "active";
+  if (value === "cancelled" || value === "canceled") return "cancelled";
+  return "expired";
+}
+
 // Supabase 版本的同步配置表
-async function syncProfileTablesSupabase(userId: string, plan: "enterprise" | "pro" | "free", status: string) {
+async function syncProfileTablesSupabase(
+  userId: string,
+  plan: "enterprise" | "pro" | "free",
+  status: "active" | "expired" | "cancelled"
+) {
   const now = new Date().toISOString();
   const updates = {
     subscription_tier: plan,
@@ -66,13 +79,15 @@ async function refreshSubscriptionCN(userId: string, user: any) {
 
   // 以用户当前元数据为回退
   let subscriptionPlan = normalizePlan(user.user_metadata?.subscription_plan as string);
-  let subscriptionStatus = (user.user_metadata?.subscription_status as string) || "inactive";
+  let subscriptionStatus: SubscriptionStatus = normalizeSubscriptionStatus(
+    user.user_metadata?.subscription_status as string | undefined
+  );
   let subscriptionEnd: string | null = (user.user_metadata?.subscription_end as string) || null;
   let billingCycle: string | null = (user.user_metadata?.subscription_billing_cycle as string) || null;
 
   if (subscription) {
     subscriptionPlan = normalizePlan(subscription.plan_type || "pro");
-    subscriptionStatus = subscription.status;
+    subscriptionStatus = normalizeSubscriptionStatus(subscription.status);
     subscriptionEnd = subscription.subscription_end;
   }
 
@@ -81,9 +96,7 @@ async function refreshSubscriptionCN(userId: string, user: any) {
     const paymentPlanType = resolvePlanFromMetadata(latestPayment.metadata);
     if (paymentPlanType !== "free" && paymentPlanType !== subscriptionPlan) {
       subscriptionPlan = paymentPlanType;
-      if (!subscriptionStatus || subscriptionStatus === "inactive") {
-        subscriptionStatus = "active";
-      }
+      subscriptionStatus = "active";
     }
     if (!billingCycle && latestPayment.metadata?.billingCycle) {
       billingCycle = latestPayment.metadata.billingCycle;
@@ -153,13 +166,15 @@ async function refreshSubscriptionINTL(userId: string, user: any) {
 
   // 以用户当前元数据为回退
   let subscriptionPlan = normalizePlan(user.user_metadata?.subscription_plan as string);
-  let subscriptionStatus = (user.user_metadata?.subscription_status as string) || "inactive";
+  let subscriptionStatus: SubscriptionStatus = normalizeSubscriptionStatus(
+    user.user_metadata?.subscription_status as string | undefined
+  );
   let subscriptionEnd: string | null = (user.user_metadata?.subscription_end as string) || null;
   let billingCycle: string | null = (user.user_metadata?.subscription_billing_cycle as string) || null;
 
   if (subscription) {
     subscriptionPlan = normalizePlan(subscription.plan_type || "pro");
-    subscriptionStatus = subscription.status;
+    subscriptionStatus = normalizeSubscriptionStatus(subscription.status);
     subscriptionEnd = subscription.subscription_end;
     billingCycle = subscription.billing_cycle || null;
   }
@@ -168,9 +183,7 @@ async function refreshSubscriptionINTL(userId: string, user: any) {
   const paymentPlanType = resolvePlanFromMetadata(latestPayment?.metadata || null);
   if (paymentPlanType !== "free" && paymentPlanType !== subscriptionPlan) {
     subscriptionPlan = paymentPlanType;
-    if (!subscriptionStatus || subscriptionStatus === "inactive") {
-      subscriptionStatus = "active";
-    }
+    subscriptionStatus = "active";
   }
 
   // 如果数据库中的 plan_type 异常，则纠正

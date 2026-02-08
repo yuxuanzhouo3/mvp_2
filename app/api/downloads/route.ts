@@ -80,6 +80,13 @@ function normalizeDbRow(raw: any): DbReleaseRow {
   return { platform, arch, fileName, storageRef };
 }
 
+function toArrayBuffer(buffer: Buffer): ArrayBuffer {
+  return buffer.buffer.slice(
+    buffer.byteOffset,
+    buffer.byteOffset + buffer.byteLength
+  ) as ArrayBuffer;
+}
+
 async function findActiveReleaseFromDb(params: {
   region: "CN" | "INTL";
   platform: PlatformType;
@@ -233,7 +240,7 @@ async function handleChinaDownload(
       const fileContent = await downloadFileFromCloudBase(fileID);
       const fileName = active.fileName || `download-${platform}`;
       const mimeType = getMimeType(fileName);
-      return new NextResponse(fileContent, {
+      return new NextResponse(toArrayBuffer(fileContent), {
         status: 200,
         headers: {
           "Content-Type": mimeType,
@@ -299,7 +306,7 @@ async function handleChinaDownload(
     const fileName = download.fileName || `download-${platform}`;
     const mimeType = getMimeType(fileName);
 
-    return new NextResponse(fileContent, {
+    return new NextResponse(toArrayBuffer(fileContent), {
       status: 200,
       headers: {
         "Content-Type": mimeType,
@@ -342,7 +349,7 @@ async function handleIntlDownload(
         const filePath = urlParts.slice(1).join("/");
         const fileContent = await downloadFileFromSupabase(bucketName, filePath);
         const mimeType = getMimeType(fileName);
-        return new NextResponse(fileContent, {
+        return new NextResponse(toArrayBuffer(fileContent), {
           status: 200,
           headers: {
             "Content-Type": mimeType,
@@ -418,7 +425,7 @@ async function handleIntlDownload(
       const fileName = download.fileName || filePath.split("/").pop() || `download-${platform}`;
       const mimeType = getMimeType(fileName);
 
-      return new NextResponse(fileContent, {
+      return new NextResponse(toArrayBuffer(fileContent), {
         status: 200,
         headers: {
           "Content-Type": mimeType,

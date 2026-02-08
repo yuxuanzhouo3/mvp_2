@@ -160,7 +160,7 @@ export async function GET(request: NextRequest) {
     const hasPreferences = result.data && result.data.length > 0;
     
     // 优先检查 onboarding_completed 字段，然后检查 preferences 是否有内容
-    const hasCompletedOnboarding = hasPreferences && result.data.some(
+    const hasCompletedOnboarding = hasPreferences && (result.data ?? []).some(
       (pref: any) => pref.onboarding_completed === true || 
         (pref.preferences && Object.keys(pref.preferences).length > 0)
     );

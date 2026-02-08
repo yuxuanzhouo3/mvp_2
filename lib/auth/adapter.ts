@@ -76,7 +76,7 @@ class SupabaseAuthAdapter implements AuthAdapter {
     return {
       user: {
         id: data.user.id,
-        email: data.user.email,
+        email: data.user.email || undefined,
         name: data.user.user_metadata?.name,
         avatar: data.user.user_metadata?.avatar_url,
         createdAt: new Date(data.user.created_at),
@@ -107,7 +107,7 @@ class SupabaseAuthAdapter implements AuthAdapter {
       user: data.user
         ? {
             id: data.user.id,
-            email: data.user.email,
+            email: data.user.email || undefined,
             name: data.user.user_metadata?.name,
             avatar: data.user.user_metadata?.avatar_url,
             createdAt: new Date(data.user.created_at),
@@ -216,8 +216,8 @@ class CloudBaseAuthAdapter implements AuthAdapter {
           return {
             user: {
               id: result.user._id || "",
-              email: result.user.email,
-              name: result.user.name,
+              email: result.user.email || undefined,
+              name: result.user.name || undefined,
               avatar: undefined,
               phone: undefined,
               createdAt: result.user.createdAt
@@ -240,7 +240,7 @@ class CloudBaseAuthAdapter implements AuthAdapter {
           return {
             user: {
               id: data.user.id || data.user.userId || "",
-              email: data.user.email,
+        email: data.user.email || undefined,
               name: data.user.name,
               avatar: data.user.avatar,
               phone: undefined,
@@ -273,8 +273,8 @@ class CloudBaseAuthAdapter implements AuthAdapter {
           return {
             user: {
               id: result.user._id || "",
-              email: result.user.email,
-              name: result.user.name,
+              email: result.user.email || undefined,
+              name: result.user.name || undefined,
               avatar: undefined,
               phone: undefined,
               createdAt: result.user.createdAt
@@ -360,7 +360,7 @@ class CloudBaseAuthAdapter implements AuthAdapter {
         if (data.user) {
           return {
             id: data.user.id || data.user.userId || "",
-            email: data.user.email,
+            email: data.user.email || undefined,
             name: data.user.name,
             avatar: data.user.avatar,
             phone: undefined,

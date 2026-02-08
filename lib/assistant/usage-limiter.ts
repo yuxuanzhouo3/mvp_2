@@ -9,7 +9,7 @@
  * 支持双环境：INTL (Supabase) / CN (CloudBase)
  */
 
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { isChinaDeployment } from "@/lib/config/deployment.config";
 import { ASSISTANT_USAGE_LIMITS } from "./types";
 import type { AssistantUsageStats } from "./types";
@@ -18,7 +18,7 @@ import type { AssistantUsageStats } from "./types";
 // 数据库客户端
 // ==========================================
 
-let supabaseAdminInstance: ReturnType<typeof createClient> | null = null;
+let supabaseAdminInstance: SupabaseClient | null = null;
 
 /**
  * 获取 Supabase Admin 客户端（单例）
@@ -72,10 +72,11 @@ async function getUserPlanTypeINTL(userId: string): Promise<"free" | "pro" | "en
     .gt("subscription_end", new Date().toISOString())
     .order("created_at", { ascending: false })
     .limit(1)
-    .single();
+    .maybeSingle();
 
   if (!data) return "free";
-  const pt = (data.plan_type as string || "").toLowerCase();
+  const row = data as { plan_type?: string } | null;
+  const pt = (row?.plan_type || "").toLowerCase();
   if (pt.includes("enterprise")) return "enterprise";
   if (pt.includes("pro")) return "pro";
   return "free";

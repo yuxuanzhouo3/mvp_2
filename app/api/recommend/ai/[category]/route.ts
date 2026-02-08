@@ -1802,15 +1802,16 @@ async function generateFallbackRecommendations(params: {
       }
     }
     const selectionSeed = `fallback:${category}:${index}:${enhancedRec.title}`;
-    const weightedPlatform = selectWeightedPlatformForCategory(
-      category as RecommendationCategory,
-      locale,
-      selectionSeed,
-      client,
-      enhancedRec.platform,
-      enhancedRec.entertainmentType,
-      isMobile
-    );
+      const fallbackRec = enhancedRec as any;
+      const weightedPlatform = selectWeightedPlatformForCategory(
+        category as RecommendationCategory,
+        locale,
+        selectionSeed,
+        client,
+        enhancedRec.platform,
+        fallbackRec.entertainmentType,
+        isMobile
+      );
 
     const forcedPlatform = getShoppingPlatformOverride({
       category: category as RecommendationCategory,
@@ -1837,8 +1838,8 @@ async function generateFallbackRecommendations(params: {
       platform = weightedPlatform;
     } else if (category === "food") {
       platform = selectFoodPlatformWithRotation(index, enhancedRec.platform, locale);
-    } else if (category === "fitness") {
-      const fitnessType = enhancedRec.fitnessType || "tutorial";
+      } else if (category === "fitness") {
+        const fitnessType = fallbackRec.fitnessType || "tutorial";
       if (isCnWeb) {
         if (fitnessType === "theory_article") {
           platform = "知乎";
@@ -1871,7 +1872,7 @@ async function generateFallbackRecommendations(params: {
         }
       }
     } else {
-      platform = selectBestPlatform(category, enhancedRec.platform, locale, enhancedRec.entertainmentType, isMobile);
+      platform = selectBestPlatform(category, enhancedRec.platform, locale, fallbackRec.entertainmentType, isMobile);
     }
 
     if (category === "food" && locale === "zh" && client === "web") {
@@ -1905,14 +1906,21 @@ async function generateFallbackRecommendations(params: {
 
     searchQueryForLink = sanitizeSearchQueryForLink({
       category,
-      entertainmentType: enhancedRec.entertainmentType,
+      entertainmentType: fallbackRec.entertainmentType,
       platform,
       locale,
       title: String(enhancedRec.title || ""),
       searchQuery: searchQueryForLink as string,
     });
 
-    let searchLink = generateSearchLink(enhancedRec.title, searchQueryForLink, platform, locale, category, enhancedRec.entertainmentType);
+    let searchLink = generateSearchLink(
+      enhancedRec.title,
+      searchQueryForLink,
+      platform,
+      locale,
+      category,
+      fallbackRec.entertainmentType
+    );
     if (geo && locale === "zh") {
       const baseQuery = searchQueryForLink || ((enhancedRec.searchQuery || enhancedRec.title) as string);
       const mapQuery =
@@ -1961,7 +1969,7 @@ async function generateFallbackRecommendations(params: {
 
     let linkType: LinkType = "search";
     if (category === "fitness") {
-      const fitnessType = enhancedRec.fitnessType || "tutorial";
+      const fitnessType = fallbackRec.fitnessType || "tutorial";
 
       switch (fitnessType) {
         case "tutorial":
@@ -2016,8 +2024,8 @@ async function generateFallbackRecommendations(params: {
       },
     };
 
-    if (category === "fitness" && enhancedRec.fitnessType) {
-      const fitnessType = enhancedRec.fitnessType;
+    if (category === "fitness" && fallbackRec.fitnessType) {
+      const fitnessType = fallbackRec.fitnessType;
       (result.metadata as any).fitnessType = fitnessType;
       const label = getFitnessTypeLabel(fitnessType, locale, isCnWeb);
       if (label) {

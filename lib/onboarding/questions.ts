@@ -26,7 +26,7 @@ export interface CategoryQuestions {
 }
 
 // 问题图标配置（与语言无关）
-const questionIcons: Record<string, Record<string, string>> = {
+const questionIcons: Record<string, Record<string, Record<string, string>>> = {
   entertainment: {
     movie_genre: {
       action: '💥', comedy: '😂', drama: '🎭', scifi: '🚀',
@@ -175,7 +175,7 @@ export function getLocalizedQuestions(translations: any): CategoryQuestions[] {
       const questionTranslation = categoryTranslation[q.id];
       if (!questionTranslation) return null;
 
-      const icons = questionIcons[category]?.[q.id] || {};
+      const icons: Record<string, string> = questionIcons[category]?.[q.id] || {};
 
       return {
         id: q.id,

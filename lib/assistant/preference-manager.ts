@@ -6,7 +6,7 @@
  * 双环境支持：INTL (Supabase) / CN (CloudBase)
  */
 
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { isChinaDeployment } from "@/lib/config/deployment.config";
 import type { AssistantPreference } from "./types";
 
@@ -14,7 +14,7 @@ import type { AssistantPreference } from "./types";
 // 数据库客户端
 // ==========================================
 
-let supabaseAdminInstance: ReturnType<typeof createClient> | null = null;
+let supabaseAdminInstance: SupabaseClient | null = null;
 
 /**
  * 获取 Supabase Admin 客户端

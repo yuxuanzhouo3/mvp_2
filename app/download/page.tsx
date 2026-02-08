@@ -158,7 +158,7 @@ export default function DownloadPage() {
                       ${isUserPlatform ? "text-blue-600" : "text-gray-700"}
                     `}
                     >
-                      {getPlatformIcon(download.platform, download.arch)}
+                      {getPlatformIcon(download.platform)}
                     </div>
 
                     {/* 平台名称 */}
@@ -190,7 +190,7 @@ export default function DownloadPage() {
                   >
                     {/* 图标 */}
                     <div className="flex items-center justify-center mb-4 text-gray-400">
-                      {getPlatformIcon(download.platform, download.arch)}
+                      {getPlatformIcon(download.platform)}
                     </div>
 
                     {/* 平台名称 */}

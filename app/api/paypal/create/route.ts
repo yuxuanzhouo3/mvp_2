@@ -1,5 +1,6 @@
 // app/api/paypal/create/route.ts - 创建 PayPal 订单
 import { NextRequest, NextResponse } from "next/server";
+import paypal from "@paypal/checkout-server-sdk";
 import { paypalClient } from "@/lib/paypal";
 import { requireAuth } from "@/lib/auth/auth";
 import { supabaseAdmin } from "@/lib/integrations/supabase-admin";
@@ -36,7 +37,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 创建 PayPal 订单
-    const requestBody = {
+    const requestBody: any = {
       intent: "CAPTURE",
       purchase_units: [
         {
@@ -54,7 +55,7 @@ export async function POST(request: NextRequest) {
     };
 
     const order = await paypalClient.execute(
-      new paypal.orders.OrdersCreateRequest().requestBody(requestBody)
+      new paypal.orders.OrdersCreateRequest().requestBody(requestBody as any)
     );
 
     const orderId = order.result.id;

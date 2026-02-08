@@ -81,13 +81,14 @@ export default function RegisterPage() {
       })
 
       if (result.error) {
+        const authError = result.error as Error & { code?: string }
         // Check for email already exists error
-        const errorMessage = result.error.message || '';
+        const errorMessage = authError.message || '';
         if (
           errorMessage.includes('already registered') ||
           errorMessage.includes('already exists') ||
           errorMessage.includes('User already registered') ||
-          result.error.code === 'user_already_exists'
+          authError.code === 'user_already_exists'
         ) {
           setError(isChineseLanguage
             ? '该邮箱已被注册，请直接登录或使用其他邮箱'

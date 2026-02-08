@@ -174,7 +174,7 @@ export class CloudBaseRecommendationAdapter implements RecommendationDatabaseAda
         };
 
         const result = await collection.add(doc);
-        ids.push(result.id);
+        ids.push(result.id || "");
       }
 
       return { success: true, ids };

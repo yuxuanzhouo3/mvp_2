@@ -164,7 +164,7 @@ async function generatePDF(history: { data: any[]; total: number; retentionDays:
   const pdfDoc = await PDFDocument.create();
 
   // 注册 fontkit 以支持自定义字体
-  pdfDoc.registerFontkit(fontkit.default || fontkit);
+  pdfDoc.registerFontkit(fontkit as any);
 
   // 中文环境：必须加载中文字体
   let chineseFont: any = null;

@@ -1,10 +1,10 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 // Server-side Supabase client with service role for RLS-protected operations
 // IMPORTANT: Do NOT import this file in client components. Server-only usage.
 
 // 延迟初始化 Supabase 管理员客户端
-let supabaseAdminInstance: ReturnType<typeof createClient> | null = null;
+let supabaseAdminInstance: SupabaseClient | null = null;
 
 export function getSupabaseAdmin() {
   if (supabaseAdminInstance) {
@@ -59,8 +59,8 @@ export function getSupabaseAdmin() {
 }
 
 // 向后兼容：导出默认的 supabaseAdmin 客户端（使用 getter）
-export const supabaseAdmin = new Proxy({} as any, {
-  get: (target, prop) => {
+export const supabaseAdmin = new Proxy({} as SupabaseClient, {
+  get: (_target, prop) => {
     const admin = getSupabaseAdmin();
     return admin[prop as keyof typeof admin];
   },

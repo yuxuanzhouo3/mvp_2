@@ -1,6 +1,7 @@
 // app/api/payment/create/route.ts - 创建支付订单API
 import { NextRequest, NextResponse } from "next/server";
 import { getPayment } from "@/lib/payment/adapter";
+import { getDaysByBillingCycle, type BillingCycle } from "@/lib/payment/payment-config";
 import { requireAuth } from "@/lib/auth/auth";
 import { supabaseAdmin } from "@/lib/integrations/supabase-admin";
 import { z } from "zod";
@@ -137,7 +138,7 @@ export async function POST(request: NextRequest) {
     });
 
     // 记录支付到数据库
-    const days = billingCycle ? getDaysByBillingCycle(billingCycle) : 30;
+    const days = billingCycle ? getDaysByBillingCycle(billingCycle as BillingCycle) : 30;
     const metadataObj = {
       days,
       billingCycle: billingCycle || "monthly",

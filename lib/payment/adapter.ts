@@ -111,7 +111,7 @@ class PayPalAdapter implements PaymentAdapter {
     const { paypalClient } = await import("@/lib/paypal");
     const paypal = await import("@paypal/checkout-server-sdk");
 
-    const requestBody = {
+    const requestBody: any = {
       intent: "CAPTURE",
       purchase_units: [
         {
@@ -233,8 +233,8 @@ class StripeAdapter implements PaymentAdapter {
       description: options.description || `${options.billingCycle === "monthly" ? "1 Month" : "1 Year"} Premium Membership`,
       metadata: {
         userId,
-        billingCycle: options.billingCycle,
-        planType: options.planType,
+        billingCycle: options.billingCycle || "",
+        planType: options.planType || "",
       },
       automatic_payment_methods: {
         enabled: true,

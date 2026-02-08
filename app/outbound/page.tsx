@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import type { CandidateLink, OutboundLink } from "@/lib/types/recommendation";
+import type { OutboundLink } from "@/lib/types/recommendation";
 import { useLanguage } from "@/components/language-provider";
 import {
   decodeCandidateLink,
@@ -265,6 +265,25 @@ export default function OutboundPage() {
   }, [webLinkUrl, handleBack]);
 
   /**
+   * 点击商店链接下载 App
+   */
+  const handleStoreClick = useCallback((url: string) => {
+    try {
+      sessionStorage.setItem(
+        "outbound:store-return",
+        JSON.stringify({ ts: Date.now() })
+      );
+    } catch {
+      /* ignore */
+    }
+    if (isInAppContainer()) {
+      openUrlInAppContainer(url);
+    } else {
+      window.location.href = url;
+    }
+  }, []);
+
+  /**
    * 用户选择"是"（安装App）
    * INTL + Android：直接跳转 Google Play，跳过商店选择
    * 其他情况：显示商店选择列表
@@ -289,25 +308,6 @@ export default function OutboundPage() {
     }
     setInstallChoice("yes");
   }, [decoded.candidateLink, handleStoreClick]);
-
-  /**
-   * 点击商店链接下载 App
-   */
-  const handleStoreClick = useCallback((url: string) => {
-    try {
-      sessionStorage.setItem(
-        "outbound:store-return",
-        JSON.stringify({ ts: Date.now() })
-      );
-    } catch {
-      /* ignore */
-    }
-    if (isInAppContainer()) {
-      openUrlInAppContainer(url);
-    } else {
-      window.location.href = url;
-    }
-  }, []);
 
   // 从应用商店返回后：先尝试重新打开 App，失败则跳转网页版
   useEffect(() => {

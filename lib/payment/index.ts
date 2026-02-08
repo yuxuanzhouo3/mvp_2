@@ -15,8 +15,29 @@ export type { PaymentOrder, PaymentResult, PaymentAdapter } from "./adapter";
 export type { PaymentOrderCN, PaymentResultCN, PaymentAdapterCN } from "./adapter-cn";
 
 // 根据区域导出对应的配置
-export * from "./payment-config";
-export * from "./payment-config-cn";
+export {
+  PRICING_TABLE,
+  PLAN_PRIORITY,
+  getPricingByMethod,
+  getAmountByCurrency,
+  getDaysByBillingCycle,
+  checkPlanTransition,
+  formatPrice,
+  getYearlyDiscount,
+} from "./payment-config";
+
+export {
+  PRICING_TABLE_CN,
+  PLAN_PRIORITY_CN,
+  getPricingByMethodCN,
+  getAmountByCurrencyCN,
+  getDaysByBillingCycleCN,
+  checkPlanTransitionCN,
+  formatPriceCN,
+  getYearlyDiscountCN,
+  PAYMENT_METHOD_NAMES_CN,
+  PAYMENT_METHOD_ICONS_CN,
+} from "./payment-config-cn";
 
 // ==========================================
 // 统一支付接口

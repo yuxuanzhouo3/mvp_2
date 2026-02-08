@@ -41,14 +41,22 @@ function base64UrlDecodeToBytes(value: string): Uint8Array {
 }
 
 async function hmacSha256(message: string, secret: string): Promise<Uint8Array> {
-  const key = await crypto.subtle.importKey(
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) {
+    throw new Error("Web Crypto API is not available in current runtime");
+  }
+  const key = await subtle.importKey(
     "raw",
-    utf8Encode(secret),
+    utf8Encode(secret) as unknown as BufferSource,
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign", "verify"]
   );
-  const sig = await crypto.subtle.sign("HMAC", key, utf8Encode(message));
+  const sig = await subtle.sign(
+    "HMAC",
+    key,
+    utf8Encode(message) as unknown as BufferSource
+  );
   return new Uint8Array(sig);
 }
 

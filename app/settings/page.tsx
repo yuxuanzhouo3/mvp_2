@@ -39,7 +39,7 @@ export default function SettingsPage() {
   const router = useRouter()
   const { toast } = useToast()
   const { language } = useLanguage()
-  const t = useTranslations(language)
+  const t = useTranslations(language as "zh" | "en") as any
 
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [overridePlan, setOverridePlan] = useState<"free" | "pro" | "enterprise" | null>(null)

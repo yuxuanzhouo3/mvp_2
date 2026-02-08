@@ -1,5 +1,5 @@
 import { getServerSession } from 'next-auth'
-import { authOptions } from '@/app/api/auth/[...nextauth]/route'
+import { authOptions } from '@/lib/auth/nextauth-options'
 import { isChinaRegion } from '@/lib/config/region'
 import { supabase } from '@/lib/integrations/supabase'
 import cloudbase from '@cloudbase/node-sdk'
@@ -70,5 +70,4 @@ export async function POST() {
     return new Response(JSON.stringify({ error: err.message || 'Upgrade failed' }), { status: 500 })
   }
 }
-
 

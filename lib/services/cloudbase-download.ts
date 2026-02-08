@@ -88,7 +88,11 @@ export async function downloadFileFromCloudBase(
       throw new Error("下载的文件内容为空");
     }
 
-    return result.fileContent;
+    const content = result.fileContent;
+    if (typeof content === "string") {
+      return Buffer.from(content);
+    }
+    return content;
   } catch (error: any) {
     console.error(`[CloudBase Download] 下载失败: ${fileID}`, error);
 

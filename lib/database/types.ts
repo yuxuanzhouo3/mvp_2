@@ -120,6 +120,8 @@ export interface AIRecommendation {
   linkType?: LinkType;
   metadata?: Record<string, any>;
   reason?: string;
+  tags?: string[];
+  candidateLink?: Record<string, any>;
 }
 
 // =============================================

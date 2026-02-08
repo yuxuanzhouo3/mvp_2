@@ -1,7 +1,7 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 // 延迟初始化 Supabase 客户端，避免在构建时访问环境变量
-let supabaseInstance: ReturnType<typeof createClient> | null = null;
+let supabaseInstance: SupabaseClient | null = null;
 
 export function getSupabaseClient() {
   if (supabaseInstance) {
@@ -44,8 +44,8 @@ export function getSupabaseClient() {
 }
 
 // 导出默认的 supabase 客户端（保持向后兼容）
-export const supabase = new Proxy({} as any, {
-  get: (target, prop) => {
+export const supabase = new Proxy({} as SupabaseClient, {
+  get: (_target, prop) => {
     const client = getSupabaseClient();
     return client[prop as keyof typeof client];
   },
