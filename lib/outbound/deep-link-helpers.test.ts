@@ -367,6 +367,20 @@ describe("sanitizeAutoTryLinksForIntlAndroid", () => {
     expect(result[0].url).not.toContain("S.browser_fallback_url=");
   });
 
+  it("keeps universal_link when no app/intent deep link exists", () => {
+    const links = [
+      {
+        type: "universal_link" as const,
+        url: "https://store.steampowered.com/search/?term=test",
+      },
+    ];
+
+    const result = sanitizeAutoTryLinksForIntlAndroid(links);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].type).toBe("universal_link");
+  });
+
   it("deduplicates links after sanitization", () => {
     const links = [
       {

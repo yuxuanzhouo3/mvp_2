@@ -191,6 +191,17 @@ function resolveAppSchemes(provider: ProviderDefinition, ctx: LinkContext): Outb
   const links: OutboundLink[] = [];
   if (provider.iosScheme) links.push({ type: "app", url: provider.iosScheme(ctx), label: "iOS" });
   if (provider.androidScheme) links.push({ type: "app", url: provider.androidScheme(ctx), label: "Android" });
+
+  // Android 兜底：若平台有 packageId 但未提供 androidScheme，生成可直接唤起已安装 App 的 intent
+  if (provider.androidPackageId && !provider.androidScheme) {
+    const web = provider.webLink(ctx);
+    links.push({
+      type: "intent",
+      url: `intent://#Intent;package=${provider.androidPackageId};S.browser_fallback_url=${encodeURIComponent(web)};end`,
+      label: "Android",
+    });
+  }
+
   return links;
 }
 

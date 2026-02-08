@@ -274,11 +274,18 @@ export function stripIntentBrowserFallbackUrl(url: string): string {
 export function sanitizeAutoTryLinksForIntlAndroid(
   links: OutboundLink[]
 ): OutboundLink[] {
+  const hasExplicitDeepLink = links.some(
+    (link) => link.type === "app" || link.type === "intent"
+  );
+
   const seen = new Set<string>();
   const result: OutboundLink[] = [];
 
   for (const link of links) {
-    if (link.type === "universal_link") {
+    // 在 INTL Android 下：
+    // - 若已有 app/intent 深链，移除 universal_link，避免回落到网页
+    // - 若仅有 universal_link，保留它（已安装 App 时仍可能通过 App Links 拉起）
+    if (link.type === "universal_link" && hasExplicitDeepLink) {
       continue;
     }
 
