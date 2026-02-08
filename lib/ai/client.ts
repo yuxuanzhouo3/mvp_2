@@ -1,7 +1,5 @@
-/**
- * AI 客户端 - 多模型支持
- * 优先级: 通义千问 (qwen-flash → qwen-turbo → qwen-plus → qwen-max) → 智谱 (glm-4.5-flash)
- */
+import OpenAI from "openai";
+import { isChinaDeployment } from "@/lib/config/deployment.config";
 
 interface AIRequest {
   messages: Array<{
@@ -17,265 +15,299 @@ interface AIResponse {
   model: string;
 }
 
-// 模型配置 - flash 优先（速度快、成本低）
-const QWEN_MODELS = ["qwen-flash", "qwen-turbo", "qwen-plus", "qwen-max"] as const;
-const ZHIPU_MODEL = "glm-4.5-flash";
+const CN_QWEN_MODELS = ["qwen-flash", "qwen-turbo", "qwen-plus", "qwen-max"] as const;
+const CN_ZHIPU_MODEL = "glm-4.5-flash";
 
-// API 端点
+const INTL_MODELS = {
+  mistral: process.env.MISTRAL_MODEL || "mistral-small-latest",
+  openai: process.env.OPENAI_MODEL || "gpt-4o-mini",
+};
+
 const QWEN_API_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
 const ZHIPU_API_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions";
+const MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions";
 
-/**
- * 检查通义千问 API 是否配置
- */
+function hasValidKey(value?: string | null): value is string {
+  return Boolean(value && value.trim() && !value.includes("your_"));
+}
+
+function shouldRetry(statusCode?: number): boolean {
+  return statusCode === 429 || (typeof statusCode === "number" && statusCode >= 500);
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export function isQwenConfigured(): boolean {
-  const apiKey = process.env.QWEN_API_KEY;
-  return !!(apiKey && !apiKey.includes("your_"));
+  return hasValidKey(process.env.QWEN_API_KEY);
 }
 
-/**
- * 检查智谱 API 是否配置
- */
 export function isZhipuConfigured(): boolean {
-  const apiKey = process.env.ZHIPU_API_KEY;
-  return !!(apiKey && !apiKey.includes("your_"));
+  return hasValidKey(process.env.ZHIPU_API_KEY);
 }
 
-/**
- * 调用通义千问 API
- */
+export function isMistralConfigured(): boolean {
+  return hasValidKey(process.env.MISTRAL_API_KEY);
+}
+
+export function isOpenAIConfigured(): boolean {
+  return hasValidKey(process.env.OPENAI_API_KEY);
+}
+
 async function callQwenAPI(
   request: AIRequest,
-  model: (typeof QWEN_MODELS)[number],
-  retryCount: number = 0
+  model: (typeof CN_QWEN_MODELS)[number],
+  retryCount = 0
 ): Promise<string> {
   const apiKey = process.env.QWEN_API_KEY;
-  const MAX_RETRIES = 2;
+  const maxRetries = 2;
 
-  if (!apiKey) {
+  if (!hasValidKey(apiKey)) {
     throw new Error("QWEN_API_KEY is not configured");
   }
 
-  try {
-    console.log(`Calling Qwen API with model: ${model}...`);
+  const response = await fetch(QWEN_API_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      messages: request.messages,
+      temperature: request.temperature ?? 0.7,
+      max_tokens: request.maxTokens ?? 2000,
+    }),
+  });
 
-    const response = await fetch(QWEN_API_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        messages: request.messages,
-        temperature: request.temperature ?? 0.7,
-        max_tokens: request.maxTokens ?? 2000,
-      }),
-    });
+  if (!response.ok) {
+    const errorText = await response.text();
+    let errorMessage = errorText;
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      const statusCode = response.status;
-
-      let errorMessage = errorText;
-      try {
-        const errorJson = JSON.parse(errorText);
-        errorMessage = errorJson.error?.message || errorJson.message || errorText;
-      } catch {
-        // 使用原始错误文本
-      }
-
-      console.error(`Qwen API Error (${model}, Status ${statusCode}):`, errorMessage);
-
-      // 429 限流或 5xx 服务器错误，可以重试
-      if ((statusCode === 429 || statusCode >= 500) && retryCount < MAX_RETRIES) {
-        console.warn(`${model} error (${statusCode}), retrying... (${retryCount + 1}/${MAX_RETRIES})`);
-        await new Promise((resolve) => setTimeout(resolve, 1000 * (retryCount + 1)));
-        return callQwenAPI(request, model, retryCount + 1);
-      }
-
-      throw new Error(`Qwen API (${model}) error: ${statusCode} - ${errorMessage}`);
+    try {
+      const errorJson = JSON.parse(errorText);
+      errorMessage = errorJson.error?.message || errorJson.message || errorText;
+    } catch {
+      // noop
     }
 
-    const data = await response.json();
-
-    if (data.choices && data.choices.length > 0) {
-      const content = data.choices[0].message?.content;
-      if (content) {
-        console.log(`✅ Successfully called Qwen API (${model})`);
-        return content;
-      }
+    if (shouldRetry(response.status) && retryCount < maxRetries) {
+      await new Promise((resolve) => setTimeout(resolve, 1000 * (retryCount + 1)));
+      return callQwenAPI(request, model, retryCount + 1);
     }
 
-    throw new Error(`Qwen API (${model}) returned no valid content`);
-  } catch (error) {
-    if (error instanceof Error) {
-      throw error;
-    }
-    throw new Error(`Unexpected error calling Qwen API (${model}): ${error}`);
+    throw new Error(`Qwen API (${model}) error: ${response.status} - ${errorMessage}`);
   }
+
+  const data = await response.json();
+  const content = data?.choices?.[0]?.message?.content;
+
+  if (!content || typeof content !== "string") {
+    throw new Error(`Qwen API (${model}) returned no valid content`);
+  }
+
+  return content;
 }
 
-/**
- * 调用智谱 API
- */
-async function callZhipuAPI(request: AIRequest, retryCount: number = 0): Promise<string> {
+async function callZhipuAPI(request: AIRequest, retryCount = 0): Promise<string> {
   const apiKey = process.env.ZHIPU_API_KEY;
-  const MAX_RETRIES = 2;
+  const maxRetries = 2;
 
-  if (!apiKey) {
+  if (!hasValidKey(apiKey)) {
     throw new Error("ZHIPU_API_KEY is not configured");
   }
 
-  if (apiKey.includes("your_")) {
-    throw new Error("ZHIPU_API_KEY is not properly configured (contains placeholder)");
+  const response = await fetch(ZHIPU_API_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: CN_ZHIPU_MODEL,
+      messages: request.messages,
+      temperature: request.temperature ?? 0.7,
+      max_tokens: request.maxTokens ?? 2000,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    let errorMessage = errorText;
+
+    try {
+      const errorJson = JSON.parse(errorText);
+      errorMessage = errorJson.error?.message || errorJson.msg || errorText;
+    } catch {
+      // noop
+    }
+
+    if (shouldRetry(response.status) && retryCount < maxRetries) {
+      await new Promise((resolve) => setTimeout(resolve, 1000 * (retryCount + 1)));
+      return callZhipuAPI(request, retryCount + 1);
+    }
+
+    throw new Error(`Zhipu API error: ${response.status} - ${errorMessage}`);
+  }
+
+  const data = await response.json();
+
+  if (data?.code !== undefined && data.code !== 0) {
+    throw new Error(`Zhipu API returned error code ${data.code}: ${data.msg}`);
+  }
+
+  const content =
+    data?.choices?.[0]?.message?.content || data?.data?.choices?.[0]?.message?.content;
+  if (!content || typeof content !== "string") {
+    throw new Error("Zhipu API returned no valid content");
+  }
+
+  return content;
+}
+
+async function callMistralAPI(request: AIRequest, retryCount = 0): Promise<string> {
+  const apiKey = process.env.MISTRAL_API_KEY;
+  const maxRetries = 2;
+
+  if (!hasValidKey(apiKey)) {
+    throw new Error("MISTRAL_API_KEY is not configured");
+  }
+
+  const response = await fetch(MISTRAL_API_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: INTL_MODELS.mistral,
+      messages: request.messages,
+      temperature: request.temperature ?? 0.7,
+      max_tokens: request.maxTokens ?? 2000,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    if (shouldRetry(response.status) && retryCount < maxRetries) {
+      await new Promise((resolve) => setTimeout(resolve, 1000 * (retryCount + 1)));
+      return callMistralAPI(request, retryCount + 1);
+    }
+    throw new Error(`Mistral API error ${response.status}: ${errorText}`);
+  }
+
+  const data = await response.json();
+  const content = data?.choices?.[0]?.message?.content;
+
+  if (!content || typeof content !== "string") {
+    throw new Error("Mistral API returned no valid content");
+  }
+
+  return content;
+}
+
+async function callOpenAIAPI(request: AIRequest, retryCount = 0): Promise<string> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  const maxRetries = 2;
+
+  if (!hasValidKey(apiKey)) {
+    throw new Error("OPENAI_API_KEY is not configured");
   }
 
   try {
-    console.log("Calling Zhipu API...");
-
-    const response = await fetch(ZHIPU_API_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: ZHIPU_MODEL,
-        messages: request.messages,
-        temperature: request.temperature ?? 0.7,
-        max_tokens: request.maxTokens ?? 2000,
-      }),
+    const client = new OpenAI({ apiKey });
+    const response = await client.chat.completions.create({
+      model: INTL_MODELS.openai,
+      messages: request.messages,
+      temperature: request.temperature ?? 0.7,
+      max_tokens: request.maxTokens ?? 2000,
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      const statusCode = response.status;
-
-      let errorMessage = errorText;
-      try {
-        const errorJson = JSON.parse(errorText);
-        errorMessage = errorJson.error?.message || errorJson.msg || errorText;
-      } catch {
-        // 使用原始错误文本
-      }
-
-      console.error(`Zhipu API Error (Status ${statusCode}):`, errorMessage);
-
-      if (statusCode === 403) {
-        throw new Error(`Zhipu API access denied (403): ${errorMessage}`);
-      }
-
-      if ((statusCode === 429 || statusCode >= 500) && retryCount < MAX_RETRIES) {
-        console.warn(`Zhipu error (${statusCode}), retrying... (${retryCount + 1}/${MAX_RETRIES})`);
-        await new Promise((resolve) => setTimeout(resolve, 1000 * (retryCount + 1)));
-        return callZhipuAPI(request, retryCount + 1);
-      }
-
-      throw new Error(`Zhipu API error: ${statusCode} - ${errorMessage}`);
+    const content = response.choices?.[0]?.message?.content?.trim();
+    if (!content) {
+      throw new Error("OpenAI API returned no valid content");
     }
 
-    interface ZhipuResponse {
-      choices?: Array<{
-        message: {
-          content: string;
-        };
-      }>;
-      code?: number;
-      msg?: string;
-      data?: {
-        choices: Array<{
-          message: {
-            content: string;
-          };
-        }>;
-      };
+    return content;
+  } catch (error: any) {
+    const statusCode = typeof error?.status === "number" ? error.status : undefined;
+    if (shouldRetry(statusCode) && retryCount < maxRetries) {
+      await new Promise((resolve) => setTimeout(resolve, 1000 * (retryCount + 1)));
+      return callOpenAIAPI(request, retryCount + 1);
     }
-
-    const data: ZhipuResponse = await response.json();
-
-    if (data.code !== undefined && data.code !== 0) {
-      throw new Error(`Zhipu API returned error code ${data.code}: ${data.msg}`);
-    }
-
-    if (data.choices && data.choices.length > 0) {
-      const content = data.choices[0].message?.content;
-      if (content) {
-        console.log("✅ Successfully called Zhipu API");
-        return content;
-      }
-    }
-
-    if (data.data?.choices && data.data.choices.length > 0) {
-      return data.data.choices[0].message.content;
-    }
-
-    throw new Error("Zhipu API returned no valid content");
-  } catch (error) {
-    if (error instanceof Error) {
-      throw error;
-    }
-    throw new Error(`Unexpected error calling Zhipu API: ${error}`);
+    throw error;
   }
 }
 
-/**
- * 通用 AI 调用函数 - 多模型容错策略
- * 优先级: qwen-flash → qwen-turbo → qwen-plus → qwen-max → glm-4.5-flash
- */
 export async function callAI(request: AIRequest): Promise<AIResponse> {
   const errors: string[] = [];
 
-  // 1. 尝试通义千问模型 (按优先级)
-  if (isQwenConfigured()) {
-    for (const model of QWEN_MODELS) {
-      try {
-        const content = await callQwenAPI(request, model);
-        return { content, model };
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-        console.warn(`❌ ${model} failed: ${msg}`);
-        errors.push(`${model}: ${msg}`);
-        // 继续尝试下一个模型
+  if (isChinaDeployment()) {
+    if (isQwenConfigured()) {
+      for (const model of CN_QWEN_MODELS) {
+        try {
+          const content = await callQwenAPI(request, model);
+          return { content, model };
+        } catch (error) {
+          errors.push(`${model}: ${getErrorMessage(error)}`);
+        }
       }
     }
-  } else {
-    console.warn("⚠️ Qwen API not configured, skipping Qwen models");
-  }
 
-  // 2. 尝试智谱模型作为最终备用
-  if (isZhipuConfigured()) {
-    try {
-      const content = await callZhipuAPI(request);
-      return { content, model: ZHIPU_MODEL };
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      console.error(`❌ ${ZHIPU_MODEL} failed: ${msg}`);
-      errors.push(`${ZHIPU_MODEL}: ${msg}`);
+    if (isZhipuConfigured()) {
+      try {
+        const content = await callZhipuAPI(request);
+        return { content, model: CN_ZHIPU_MODEL };
+      } catch (error) {
+        errors.push(`${CN_ZHIPU_MODEL}: ${getErrorMessage(error)}`);
+      }
     }
-  } else {
-    console.warn("⚠️ Zhipu API not configured");
+
+    throw new Error(`All CN AI models failed:\n${errors.join("\n")}`);
   }
 
-  // 所有模型都失败
-  throw new Error(
-    `All AI models failed:\n${errors.join("\n")}`
-  );
+  if (isMistralConfigured()) {
+    try {
+      const content = await callMistralAPI(request);
+      return { content, model: INTL_MODELS.mistral };
+    } catch (error) {
+      errors.push(`${INTL_MODELS.mistral}: ${getErrorMessage(error)}`);
+    }
+  }
+
+  if (isOpenAIConfigured()) {
+    try {
+      const content = await callOpenAIAPI(request);
+      return { content, model: INTL_MODELS.openai };
+    } catch (error) {
+      errors.push(`${INTL_MODELS.openai}: ${getErrorMessage(error)}`);
+    }
+  }
+
+  throw new Error(`All INTL AI models failed:\n${errors.join("\n")}`);
 }
 
-/**
- * 获取可用的模型列表
- */
 export function getAvailableModels(): string[] {
   const models: string[] = [];
 
-  if (isQwenConfigured()) {
-    models.push(...QWEN_MODELS);
+  if (isChinaDeployment()) {
+    if (isQwenConfigured()) {
+      models.push(...CN_QWEN_MODELS);
+    }
+    if (isZhipuConfigured()) {
+      models.push(CN_ZHIPU_MODEL);
+    }
+    return models;
   }
 
-  if (isZhipuConfigured()) {
-    models.push(ZHIPU_MODEL);
+  if (isMistralConfigured()) {
+    models.push(INTL_MODELS.mistral);
+  }
+  if (isOpenAIConfigured()) {
+    models.push(INTL_MODELS.openai);
   }
 
   return models;
 }
+
