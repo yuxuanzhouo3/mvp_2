@@ -4,6 +4,8 @@ import {
   base64UrlEncode,
   validateReturnTo,
   getGooglePlayLink,
+  sanitizeAutoTryLinksForIntlAndroid,
+  stripIntentBrowserFallbackUrl,
 } from "./deep-link-helpers";
 import type { CandidateLink } from "@/lib/types/recommendation";
 
@@ -324,5 +326,60 @@ describe("getGooglePlayLink", () => {
     ]);
 
     expect(result).toBeNull();
+  });
+});
+
+describe("stripIntentBrowserFallbackUrl", () => {
+  it("removes browser fallback parameter from intent URL", () => {
+    const input =
+      "intent://search?q=test#Intent;scheme=youtube;package=com.google.android.youtube;S.browser_fallback_url=https%3A%2F%2Fm.youtube.com%2Fresults%3Fsearch_query%3Dtest;end";
+
+    const output = stripIntentBrowserFallbackUrl(input);
+
+    expect(output).toContain("intent://search?q=test#Intent;");
+    expect(output).toContain("scheme=youtube");
+    expect(output).toContain("package=com.google.android.youtube");
+    expect(output).not.toContain("S.browser_fallback_url=");
+  });
+
+  it("returns non-intent URL unchanged", () => {
+    const input = "https://play.google.com/store/apps/details?id=com.example.app";
+    expect(stripIntentBrowserFallbackUrl(input)).toBe(input);
+  });
+});
+
+describe("sanitizeAutoTryLinksForIntlAndroid", () => {
+  it("removes universal_link and strips intent browser fallback", () => {
+    const links = [
+      {
+        type: "intent" as const,
+        url: "intent://search?q=test#Intent;scheme=youtube;package=com.google.android.youtube;S.browser_fallback_url=https%3A%2F%2Fm.youtube.com%2Fresults%3Fsearch_query%3Dtest;end",
+      },
+      { type: "app" as const, url: "youtube://results?search_query=test" },
+      { type: "universal_link" as const, url: "https://www.youtube.com/results?search_query=test" },
+    ];
+
+    const result = sanitizeAutoTryLinksForIntlAndroid(links);
+
+    expect(result).toHaveLength(2);
+    expect(result.some((item) => item.type === "universal_link")).toBe(false);
+    expect(result[0].type).toBe("intent");
+    expect(result[0].url).not.toContain("S.browser_fallback_url=");
+  });
+
+  it("deduplicates links after sanitization", () => {
+    const links = [
+      {
+        type: "intent" as const,
+        url: "intent://search?q=test#Intent;scheme=youtube;package=com.google.android.youtube;S.browser_fallback_url=https%3A%2F%2Fm.youtube.com%2Fresults%3Fsearch_query%3Dtest;end",
+      },
+      {
+        type: "intent" as const,
+        url: "intent://search?q=test#Intent;scheme=youtube;package=com.google.android.youtube;end",
+      },
+    ];
+
+    const result = sanitizeAutoTryLinksForIntlAndroid(links);
+    expect(result).toHaveLength(1);
   });
 });

@@ -4,8 +4,9 @@ import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import type { OutboundLink } from "@/lib/types/recommendation";
+import type { CandidateLink, OutboundLink } from "@/lib/types/recommendation";
 import { useLanguage } from "@/components/language-provider";
+import { RegionConfig } from "@/lib/config/region";
 import {
   decodeCandidateLink,
   validateReturnTo,
@@ -15,22 +16,24 @@ import {
   getStoreLinks,
   filterStoreLinksByOs,
   getGooglePlayLink,
+  sanitizeAutoTryLinksForIntlAndroid,
 } from "@/lib/outbound/deep-link-helpers";
 
 /**
- * 璺宠浆涓棿椤?
- * 澶勭悊绉诲姩绔?App 鍞ら啋銆佹繁閾捐烦杞€佷笅杞藉紩瀵笺€乄eb 鍏滃簳
- * 娴佺▼: 浼樺厛鍞よ捣 App 鈫?鏈畨瑁呭垯璇㈤棶鏄惁瀹夎 鈫?鏄垯閫夋嫨鍟嗗簵 鈫?鍚﹀垯璺宠浆缃戦〉鐗?
- * 浠?App 杩斿洖鍚庤嚜鍔ㄥ鑸洖鎺ㄨ崘缁撴灉椤?
+ * 出站跳转中间页
+ * 处理移动端 App 唤醒、深链跳转、下载引导与 Web 兜底
+ * 流程：优先唤起 App → 未安装则引导安装 → 商店返回后重试打开 App → 失败再跳转网页版
+ * 从推荐 App 返回后自动回到推荐结果页
  */
 
 type OpenState = "idle" | "trying" | "opened" | "failed";
 type InstallChoice = "none" | "asking" | "yes" | "no";
+const STORE_RETURN_SESSION_KEY = "outbound:store-return";
 
 /* ---- helpers ---- */
 
 /**
- * 妫€娴嬫槸鍚﹀湪 App 瀹瑰櫒锛圙oNative/Median WebView锛変腑杩愯
+ * 检测是否在 App 容器（GoNative/Median WebView）中运行
  */
 function isInAppContainer(): boolean {
   if (typeof window === "undefined") return false;
@@ -49,18 +52,18 @@ function isInAppContainer(): boolean {
 
 
 /**
- * 鍦?App 瀹瑰櫒涓墦寮€澶栭儴閾炬帴
- * 閽堝 GoNative/Median WebView 鍋氬吋瀹瑰鐞?
+ * 在 App 容器中打开外部链接
+ * 针对 GoNative/Median WebView 做兼容处理
  */
 function openUrlInAppContainer(url: string): void {
-  // 瀵逛簬 intent:// URL锛岀洿鎺ョ敤 location.href锛圓ndroid WebView 浼氭嫤鎴苟澶勭悊锛?
+  // 对于 intent:// URL，直接使用 location.href（Android WebView 会拦截并处理）
   if (url.startsWith("intent://")) {
     window.location.href = url;
     return;
   }
 
-  // 瀵逛簬鑷畾涔?scheme (闈?http/https)锛屽垱寤?<a> 鏍囩骞舵ā鎷熺偣鍑?
-  // 杩欏湪 GoNative/Median WebView 涓瘮 location.href 鏇村彲闈?
+  // 对于自定义 scheme（非 http/https），创建 <a> 标签并模拟点击
+  // 这在 GoNative/Median WebView 中比 location.href 更可靠
   if (!url.startsWith("http://") && !url.startsWith("https://")) {
     try {
       const a = document.createElement("a");
@@ -73,17 +76,17 @@ function openUrlInAppContainer(url: string): void {
       }, 100);
       return;
     } catch {
-      // 鍥為€€鍒?location.href
+      // 回退到 location.href
     }
   }
 
-  // 瀵逛簬 https universal links锛屼娇鐢?location.href
+  // 对于 https universal links，使用 location.href
   window.location.href = url;
 }
 
 /**
- * 灏濊瘯鎵撳紑 App URL
- * 閫氳繃鐩戝惉 visibilitychange 鍜?blur 浜嬩欢鏉ユ娴?App 鏄惁鎴愬姛鎵撳紑
+ * 尝试打开 App URL
+ * 通过监听 visibilitychange 和 blur 事件检测 App 是否成功打开
  */
 async function attemptOpenUrl(
   url: string,
@@ -121,10 +124,10 @@ async function attemptOpenUrl(
     timer = window.setTimeout(() => finish(false), timeoutMs);
 
     if (inApp) {
-      // App 瀹瑰櫒涓細浣跨敤涓撶敤鏂规硶鎵撳紑
+      // App 容器中：使用专用方法打开
       openUrlInAppContainer(url);
     } else {
-      // 鏅€氭祻瑙堝櫒涓?
+      // 普通浏览器中
       const isCustomScheme =
         !url.startsWith("http") && !url.startsWith("intent://");
       if (isCustomScheme) {
@@ -151,7 +154,7 @@ async function attemptOpenUrl(
 }
 
 /**
- * 渚濇灏濊瘯澶氫釜閾炬帴鎵撳紑 App
+ * 依次尝试多个链接打开 App
  */
 async function attemptOpenLinksSequential(
   links: OutboundLink[],
@@ -176,9 +179,11 @@ export default function OutboundPage() {
   const returnTo = searchParams.get("returnTo");
   const hasTriedRef = useRef(false);
   const appOpenedRef = useRef(false);
+  const isHandlingStoreReturnRef = useRef(false);
+  const isNavigatingBackRef = useRef(false);
 
   /**
-   * 瀵艰埅鍥炴帹鑽愮粨鏋滈〉
+   * 导航回推荐结果页
    */
   const handleBack = useCallback(() => {
     const safeReturnTo = validateReturnTo(returnTo);
@@ -205,15 +210,20 @@ export default function OutboundPage() {
     return webLink?.url || null;
   }, [candidateLink]);
 
+  const navigateToWebFallback = useCallback(() => {
+    if (webLinkUrl) {
+      window.location.href = webLinkUrl;
+      return;
+    }
+    handleBack();
+  }, [handleBack, webLinkUrl]);
+
   /**
-   * 鐐瑰嚮鍟嗗簵閾炬帴涓嬭浇 App
+   * 点击商店链接下载 App
    */
   const handleStoreClick = useCallback((url: string) => {
     try {
-      sessionStorage.setItem(
-        "outbound:store-return",
-        JSON.stringify({ ts: Date.now() })
-      );
+      sessionStorage.setItem(STORE_RETURN_SESSION_KEY, JSON.stringify({ ts: Date.now() }));
     } catch {
       /* ignore */
     }
@@ -239,10 +249,28 @@ export default function OutboundPage() {
     )}&c=apps`;
   }, [decoded.candidateLink]);
 
+  const isIntlAndroidContext = useCallback(
+    (candidate: CandidateLink | null | undefined) => {
+      if (!candidate || detectMobileOs() !== "android") {
+        return false;
+      }
+
+      const region =
+        typeof candidate.metadata?.region === "string"
+          ? candidate.metadata.region.toUpperCase()
+          : null;
+
+      if (region === "INTL") return true;
+      if (region === "CN") return false;
+
+      return RegionConfig.database.provider !== "cloudbase";
+    },
+    []
+  );
+
   const redirectIntlAndroidToGooglePlay = useCallback(() => {
     const os = detectMobileOs();
-    const region = decoded.candidateLink?.metadata?.region;
-    const isIntlAndroid = region === "INTL" && os === "android";
+    const isIntlAndroid = isIntlAndroidContext(decoded.candidateLink);
 
     if (!isIntlAndroid || !decoded.candidateLink) {
       return false;
@@ -256,15 +284,18 @@ export default function OutboundPage() {
     setInstallChoice("yes");
     handleStoreClick(playLink?.url || getFallbackGooglePlayUrl());
     return true;
-  }, [decoded.candidateLink, getFallbackGooglePlayUrl, handleStoreClick]);
+  }, [decoded.candidateLink, getFallbackGooglePlayUrl, handleStoreClick, isIntlAndroidContext]);
 
-  // 鑷姩灏濊瘯鎵撳紑 App
+  // 自动尝试打开 App
   useEffect(() => {
     if (!decoded.candidateLink || hasTriedRef.current) return;
     hasTriedRef.current = true;
 
     const os = detectMobileOs();
-    const autoTryLinks = getAutoTryLinks(decoded.candidateLink, os);
+    const autoTryLinksRaw = getAutoTryLinks(decoded.candidateLink, os);
+    const autoTryLinks = isIntlAndroidContext(decoded.candidateLink)
+      ? sanitizeAutoTryLinksForIntlAndroid(autoTryLinksRaw)
+      : autoTryLinksRaw;
 
     if (autoTryLinks.length === 0) {
       setOpenState("failed");
@@ -277,40 +308,54 @@ export default function OutboundPage() {
     setOpenState("trying");
     attemptOpenLinksSequential(autoTryLinks, 2000).then((opened) => {
       if (opened) {
-        // App 鎴愬姛鎵撳紑锛屾爣璁扮姸鎬?
+        // App 成功打开，标记状态
         appOpenedRef.current = true;
         setOpenState("opened");
       } else {
-        // App 鏈畨瑁咃紝璇㈤棶鐢ㄦ埛鏄惁瀹夎
+        // App 未安装，询问用户是否安装
         setOpenState("failed");
         if (!redirectIntlAndroidToGooglePlay()) {
           setInstallChoice("asking");
         }
       }
     });
-  }, [decoded.candidateLink, redirectIntlAndroidToGooglePlay]);
+  }, [decoded.candidateLink, isIntlAndroidContext, redirectIntlAndroidToGooglePlay]);
 
-  // 褰撶敤鎴蜂粠 App 杩斿洖鏃讹紝鑷姩瀵艰埅鍥炴帹鑽愮粨鏋滈〉
+  // 当用户从 App 返回时，自动导航回推荐结果页
   useEffect(() => {
-    const onVisibilityChange = () => {
-      if (document.visibilityState !== "visible") return;
-      // 濡傛灉涔嬪墠 App 宸叉垚鍔熸墦寮€锛岀敤鎴疯繑鍥炴椂鑷姩瀵艰埅鍥炴帹鑽愰〉
+    const tryBackToRecommendation = () => {
+      if (isNavigatingBackRef.current) return;
+      // 如果此前 App 已成功打开，用户返回时自动回推荐页
       if (appOpenedRef.current) {
         appOpenedRef.current = false;
-        // 鐭殏寤惰繜纭繚椤甸潰瀹屽叏鍙
+        isNavigatingBackRef.current = true;
+        // 短暂延迟，确保页面完全可见
         window.setTimeout(() => {
           handleBack();
         }, 300);
       }
     };
 
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== "visible") return;
+      tryBackToRecommendation();
+    };
+
+    const onWindowFocus = () => {
+      if (document.visibilityState !== "visible") return;
+      tryBackToRecommendation();
+    };
+
     document.addEventListener("visibilitychange", onVisibilityChange);
-    return () =>
+    window.addEventListener("focus", onWindowFocus);
+    return () => {
       document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("focus", onWindowFocus);
+    };
   }, [handleBack]);
 
   /**
-   * 鐢ㄦ埛閫夋嫨"鍚?锛堜笉瀹夎锛夛紝璺宠浆鍒扮綉椤电増
+   * 用户选择“否（不安装）”时，跳转到网页版
    */
   const handleInstallNo = useCallback(() => {
     setInstallChoice("no");
@@ -322,67 +367,92 @@ export default function OutboundPage() {
   }, [webLinkUrl, handleBack]);
 
   /**
-   * 鐐瑰嚮鍟嗗簵閾炬帴涓嬭浇 App
+   * 点击商店链接下载 App
    */
   
 
   /**
-   * 鐢ㄦ埛閫夋嫨"鏄?锛堝畨瑁匒pp锛?   * INTL + Android锛氱洿鎺ヨ烦杞?Google Play锛岃烦杩囧晢搴楅€夋嫨
-   * 鍏朵粬鎯呭喌锛氭樉绀哄晢搴楅€夋嫨鍒楄〃
+   * 用户选择“是（安装 App）”
+   * INTL + Android：直接跳转 Google Play，跳过商店选择
+   * 其他场景：展示商店选择列表
    */
   const handleInstallYes = useCallback(() => {
     if (redirectIntlAndroidToGooglePlay()) return;
     setInstallChoice("yes");
   }, [redirectIntlAndroidToGooglePlay]);
 
-  // 浠庡簲鐢ㄥ晢搴楄繑鍥炲悗锛氬厛灏濊瘯閲嶆柊鎵撳紑 App锛屽け璐ュ垯璺宠浆缃戦〉鐗?
+  // 从应用商店返回后：先尝试重新打开 App，失败则跳转网页版
   useEffect(() => {
     if (!decoded.candidateLink) return;
 
-    const key = "outbound:store-return";
-    const onVisibilityChange = () => {
-      if (document.visibilityState !== "visible") return;
+    const shouldHandleStoreReturn = (): boolean => {
       try {
-        const raw = sessionStorage.getItem(key);
-        if (!raw) return;
+        const raw = sessionStorage.getItem(STORE_RETURN_SESSION_KEY);
+        if (!raw) return false;
         const parsed = JSON.parse(raw) as { ts?: number };
         const ts = typeof parsed?.ts === "number" ? parsed.ts : 0;
-        sessionStorage.removeItem(key);
-        if (!ts) return;
-        if (Date.now() - ts > 10 * 60 * 1000) return;
+        sessionStorage.removeItem(STORE_RETURN_SESSION_KEY);
+        if (!ts) return false;
+        if (Date.now() - ts > 10 * 60 * 1000) return false;
+        return true;
       } catch {
-        return;
+        return false;
       }
+    };
 
-      // 浠庡晢搴楄繑鍥炲悗锛屽厛灏濊瘯閲嶆柊鎵撳紑 App
+    const processStoreReturn = () => {
+      if (document.visibilityState !== "visible") return;
+      if (isHandlingStoreReturnRef.current) return;
+      if (!shouldHandleStoreReturn()) return;
+
+      isHandlingStoreReturnRef.current = true;
+
+      // 从商店返回后，优先重试打开 App
       const os = detectMobileOs();
-      const retryLinks = getAutoTryLinks(decoded.candidateLink!, os);
+      const retryLinksRaw = getAutoTryLinks(decoded.candidateLink!, os);
+      const retryLinks = isIntlAndroidContext(decoded.candidateLink)
+        ? sanitizeAutoTryLinksForIntlAndroid(retryLinksRaw)
+        : retryLinksRaw;
 
       if (retryLinks.length > 0) {
         setOpenState("trying");
         attemptOpenLinksSequential(retryLinks, 2500).then((opened) => {
           if (opened) {
-            // App 宸插畨瑁呭苟鎴愬姛鎵撳紑 鈫?鏍囪鐘舵€侊紝鐢ㄦ埛浠?App 杩斿洖鏃朵細鑷姩鍥炲埌鎺ㄨ崘椤?
+            // App 已安装且打开成功 -> 标记状态，用户从 App 返回时自动回推荐页
             appOpenedRef.current = true;
             setOpenState("opened");
+            isHandlingStoreReturnRef.current = false;
           } else {
-            // App 浠嶆湭瀹夎 鈫?璺宠浆缃戦〉鐗?
+            // App 仍未安装 -> 跳转网页版
             setOpenState("failed");
-            if (webLinkUrl) {
-              window.location.href = webLinkUrl;
-            }
+            isHandlingStoreReturnRef.current = false;
+            navigateToWebFallback();
           }
         });
-      } else if (webLinkUrl) {
-        // 娌℃湁鍙皾璇曠殑 App 閾炬帴锛岀洿鎺ヨ烦杞綉椤电増
-        window.location.href = webLinkUrl;
+      } else {
+        // 没有可重试的 App 链接，直接跳转网页版
+        isHandlingStoreReturnRef.current = false;
+        navigateToWebFallback();
       }
     };
 
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== "visible") return;
+      processStoreReturn();
+    };
+
+    const onWindowFocus = () => {
+      if (document.visibilityState !== "visible") return;
+      processStoreReturn();
+    };
+
     document.addEventListener("visibilitychange", onVisibilityChange);
-    return () =>
+    window.addEventListener("focus", onWindowFocus);
+    return () => {
       document.removeEventListener("visibilitychange", onVisibilityChange);
-  }, [decoded.candidateLink, webLinkUrl]);
+      window.removeEventListener("focus", onWindowFocus);
+    };
+  }, [decoded.candidateLink, isIntlAndroidContext, navigateToWebFallback]);
 
   /* ---- Error state ---- */
   if (decoded.error) {
@@ -390,11 +460,11 @@ export default function OutboundPage() {
       <div className="min-h-screen bg-[#F7F9FC] p-4 flex items-center justify-center">
         <Card className="p-6 w-full max-w-md">
           <div className="text-base font-semibold text-gray-900 mb-2">
-            {language === "zh" ? "鏃犳硶璺宠浆" : "Unable to redirect"}
+            {language === "zh" ? "无法跳转" : "Unable to redirect"}
           </div>
           <div className="text-sm text-gray-600 mb-4">{decoded.error}</div>
           <Button className="w-full" onClick={handleBack}>
-            {language === "zh" ? "杩斿洖" : "Back"}
+            {language === "zh" ? "返回" : "Back"}
           </Button>
         </Card>
       </div>
@@ -407,23 +477,25 @@ export default function OutboundPage() {
   const link = decoded.candidateLink;
   const providerName =
     link.metadata?.providerDisplayName || link.provider || "";
-  const isIntlAndroid =
-    link.metadata?.region === "INTL" && os === "android";
+  const isIntlAndroid = isIntlAndroidContext(link);
 
   const webLink = getWebLink(link);
   const storeLinks = filterStoreLinksByOs(getStoreLinks(link), os);
-  const autoTryLinks = getAutoTryLinks(link, os);
+  const autoTryLinksRaw = getAutoTryLinks(link, os);
+  const autoTryLinks = isIntlAndroid
+    ? sanitizeAutoTryLinksForIntlAndroid(autoTryLinksRaw)
+    : autoTryLinksRaw;
   const hasAutoTry = autoTryLinks.length > 0;
 
   return (
     <div className="min-h-screen bg-[#F7F9FC] p-4 flex items-center justify-center">
       <Card className="p-6 w-full max-w-md">
         <div className="text-lg font-semibold text-gray-900">
-          {language === "zh" ? "姝ｅ湪涓轰綘鎵撳紑" : "Opening"}
+          {language === "zh" ? "正在为你打开" : "Opening"}
         </div>
         <div className="text-sm text-gray-600 mt-1 mb-4">{link.title}</div>
 
-        {/* 姝ｅ湪灏濊瘯鎵撳紑 App */}
+        {/* 正在尝试打开 App */}
         {openState === "trying" && (
           <div className="text-sm text-gray-700 mb-4 flex items-center gap-2">
             <span className="animate-spin inline-block w-4 h-4 border-2 border-gray-300 border-t-gray-700 rounded-full" />
@@ -433,7 +505,7 @@ export default function OutboundPage() {
           </div>
         )}
 
-        {/* App 宸叉垚鍔熸墦寮€ */}
+        {/* App 已成功打开 */}
         {openState === "opened" && (
           <div className="text-sm text-green-700 mb-4 flex items-center gap-2">
             <span className="text-lg">✅</span>
@@ -443,14 +515,14 @@ export default function OutboundPage() {
           </div>
         )}
 
-        {/* 鏈娴嬪埌 App 鈫?璇㈤棶鏄惁瀹夎 */}
+        {/* 未检测到 App -> 询问是否安装 */}
         {openState === "failed" && installChoice === "asking" && (
           <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
             <div className="flex items-center gap-2 mb-3">
-              <span className="text-2xl">馃摫</span>
+              <span className="text-2xl">📱</span>
               <span className="font-medium text-amber-800 text-base">
                 {language === "zh"
-                  ? `鏈娴嬪埌 ${providerName} App`
+                  ? `未检测到 ${providerName} App`
                   : `${providerName} app not detected`}
               </span>
             </div>
@@ -471,37 +543,37 @@ export default function OutboundPage() {
                 variant="outline"
                 onClick={handleInstallNo}
               >
-                {language === "zh" ? "鍚︼紝鐢ㄧ綉椤电増" : "No, use web"}
+                {language === "zh" ? "否，用网页版" : "No, use web"}
               </Button>
             </div>
           </div>
         )}
 
-        {/* 鐢ㄦ埛閫夋嫨瀹夎 鈫?鏄剧ず鍟嗗簵閫夋嫨锛圛NTL Android 宸茬洿鎺ヨ烦杞?Google Play锛?*/}
+        {/* 用户选择安装 -> 显示商店选择（INTL Android 已直跳 Google Play） */}
         {openState === "failed" && installChoice === "yes" && storeLinks.length > 0 && (
           <div className="mb-4">
             {isIntlAndroid ? (
-              /* INTL Android: 宸茬洿鎺ヨ烦杞?Google Play锛屾樉绀虹瓑寰呮彁绀?*/
+              /* INTL Android：已直接跳转 Google Play，显示等待提示 */
               <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="text-base">馃彧</span>
+                  <span className="text-base">📲</span>
                   <span className="font-medium text-blue-800 text-sm">
                     {language === "zh"
-                      ? `姝ｅ湪鍓嶅線 Google Play 涓嬭浇 ${providerName}`
+                      ? `正在前往 Google Play 下载 ${providerName}`
                       : `Going to Google Play to install ${providerName}`}
                   </span>
                 </div>
                 <p className="text-blue-700 text-xs">
                   {language === "zh"
-                    ? "瀹夎瀹屾垚鍚庤繑鍥炴椤甸潰锛屽皢鑷姩鎵撳紑 App"
+                    ? "安装完成后返回此页面，将自动打开 App"
                     : "After installing, return here to auto-open the app"}
                 </p>
               </div>
             ) : (
-              /* 闈?INTL Android锛氭樉绀哄晢搴楅€夋嫨鍒楄〃 */
+              /* 非 INTL Android：显示商店选择列表 */
               <>
                 <div className="flex items-center gap-2 text-sm font-medium text-gray-900 mb-3">
-                  <span className="text-base">猬囷笍</span>
+                  <span className="text-base">👇</span>
                   <span>
                     {language === "zh"
                       ? `请选择下载 ${providerName} 的方式`
@@ -520,19 +592,19 @@ export default function OutboundPage() {
                       variant={idx === 0 ? "default" : "outline"}
                       onClick={() => handleStoreClick(l.url)}
                     >
-                      {l.label || (language === "zh" ? "搴旂敤鍟嗗簵" : "Store")}
+                      {l.label || (language === "zh" ? "应用商店" : "Store")}
                     </Button>
                   ))}
                 </div>
                 <p className="text-xs text-gray-500 mt-2 text-center">
                   {language === "zh"
-                    ? "瀹夎瀹屾垚鍚庤繑鍥炴椤甸潰锛屽皢鑷姩灏濊瘯鎵撳紑 App"
+                    ? "安装完成后返回此页面，将自动尝试打开 App"
                     : "After installing, return here to auto-open the app"}
                 </p>
               </>
             )}
 
-            {/* 缃戦〉鐗堝厹搴曟寜閽?*/}
+            {/* 网页版兜底按钮 */}
             {webLink && (
               <Button
                 className="w-full mt-3"
@@ -549,7 +621,7 @@ export default function OutboundPage() {
           </div>
         )}
 
-        {/* 鐢ㄦ埛閫夋嫨瀹夎浣嗘病鏈夊晢搴楅摼鎺?鈫?闄嶇骇鍒扮綉椤电増 */}
+        {/* 用户选择安装但没有商店链接 -> 降级到网页版 */}
         {openState === "failed" && installChoice === "yes" && storeLinks.length === 0 && (
           <div className="mb-4 text-sm text-gray-600">
             {language === "zh"
@@ -559,7 +631,7 @@ export default function OutboundPage() {
         )}
 
         <div className="space-y-3">
-          {/* 鎵嬪姩閲嶈瘯鎵撳紑 App 鎸夐挳 */}
+          {/* 手动重试打开 App 按钮 */}
           {hasAutoTry && (openState === "failed" || openState === "idle") && (
             <Button
               className="w-full bg-black text-white hover:bg-black/90"
@@ -581,12 +653,12 @@ export default function OutboundPage() {
               }}
             >
               {language === "zh"
-                ? `閲嶆柊鎵撳紑 ${providerName} App`
+                ? `重新打开 ${providerName} App`
                 : `Retry opening ${providerName}`}
             </Button>
           )}
 
-          {/* 缃戦〉鐗堝厹搴曪紙浠呭湪闈炲畨瑁呴€夋嫨娴佺▼涓樉绀猴級 */}
+          {/* 网页版兜底（仅在非安装流程中显示） */}
           {webLink && installChoice !== "yes" && installChoice !== "asking" && (
             <Button
               className="w-full"
@@ -602,7 +674,7 @@ export default function OutboundPage() {
           )}
 
           <Button className="w-full" variant="ghost" onClick={handleBack}>
-            {language === "zh" ? "杩斿洖鎺ㄨ崘缁撴灉" : "Back to recommendations"}
+            {language === "zh" ? "返回推荐结果" : "Back to recommendations"}
           </Button>
         </div>
       </Card>

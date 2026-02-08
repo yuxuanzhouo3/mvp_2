@@ -79,7 +79,7 @@ const categoryConfig: Record<
   },
 }
 
-// åŽ†å²è®°å½•å¡«å……ä¸º AI æŽ¨èæ ¼å¼ï¼Œç»Ÿä¸€ä¾é� å•ä¸ªæŽ¨èå¡
+// Map history records into AI recommendation card shape
 type HistoryItem = AIRecommendation & { historyId?: string }
 
 function mapHistoryRecordToRecommendation(
@@ -170,7 +170,7 @@ function prioritizeEntertainmentRecommendations<T extends AIRecommendation>(item
   return [...picks, ...rest]
 }
 
-// èŽ·å–ç”¨æˆ· ID
+// Get current user ID
 function getUserId(): string {
   if (typeof window !== "undefined") {
     const isCN = RegionConfig.database.provider === "cloudbase";

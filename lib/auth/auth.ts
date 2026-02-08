@@ -1,4 +1,4 @@
-// lib/auth/auth.ts - 璁よ瘉宸ュ叿鍑芥暟
+// lib/auth/auth.ts - 认证工具函数
 import { NextRequest, NextResponse } from "next/server";
 import {
   extractTokenFromRequest,
@@ -6,7 +6,7 @@ import {
 } from "@/lib/auth/auth-utils";
 
 /**
- * 楠岃瘉鐢ㄦ埛璁よ瘉鐘舵€?
+ * 验证用户认证状态
  */
 export async function requireAuth(request: NextRequest): Promise<{
   user: any;
@@ -47,7 +47,7 @@ export async function requireAuth(request: NextRequest): Promise<{
 }
 
 /**
- * 鍒涘缓璁よ瘉澶辫触鐨勫搷搴?
+ * 创建认证失败的响应
  */
 export function createAuthErrorResponse(
   message: string = "Authentication required"

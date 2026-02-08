@@ -260,6 +260,43 @@ export function decodeCandidateLink(
   };
 }
 
+export function stripIntentBrowserFallbackUrl(url: string): string {
+  if (!url.toLowerCase().startsWith("intent://")) {
+    return url;
+  }
+
+  return url
+    .replace(/;S\.browser_fallback_url=[^;]*;?/gi, ";")
+    .replace(/;;+/g, ";")
+    .replace(/#Intent;end$/i, "#Intent;end");
+}
+
+export function sanitizeAutoTryLinksForIntlAndroid(
+  links: OutboundLink[]
+): OutboundLink[] {
+  const seen = new Set<string>();
+  const result: OutboundLink[] = [];
+
+  for (const link of links) {
+    if (link.type === "universal_link") {
+      continue;
+    }
+
+    const url =
+      link.type === "intent" ? stripIntentBrowserFallbackUrl(link.url) : link.url;
+    const key = `${link.type}:${url}`;
+
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    result.push(url === link.url ? link : { ...link, url });
+  }
+
+  return result;
+}
+
 /**
  * INTL Android 环境下获取首选的 Google Play 商店链接
  * 优先返回 intent:// 格式（可直接拉起 Google Play App），

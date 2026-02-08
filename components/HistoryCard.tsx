@@ -10,8 +10,9 @@ import { motion } from "framer-motion"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import type { RecommendationHistory, RecommendationCategory } from "@/lib/types/recommendation"
+import type { CandidateLink, RecommendationHistory, RecommendationCategory } from "@/lib/types/recommendation"
 import { buildOutboundHref } from "@/lib/outbound/outbound-url"
+import { getClientHint } from "@/lib/app/app-container"
 import { X, ExternalLink } from "lucide-react"
 
 interface HistoryCardProps {
@@ -111,6 +112,20 @@ const HistoryCardComponent = forwardRef<HTMLDivElement, HistoryCardProps>(
                 ? "链接"
                 : "Link"
 
+        const buildFallbackCandidateLink = (): CandidateLink => {
+            return {
+                provider: (item.metadata as any)?.platform || "Web",
+                title: item.title,
+                primary: { type: "web", url: item.link, label: "Web" },
+                fallbacks: [],
+                metadata: {
+                    source: "history_client_fallback",
+                    category: item.category,
+                    platform: (item.metadata as any)?.platform,
+                },
+            }
+        }
+
         // 处理删除
         const handleDelete = async () => {
             setIsDeletingLocal(true)
@@ -125,12 +140,13 @@ const HistoryCardComponent = forwardRef<HTMLDivElement, HistoryCardProps>(
         const handleLinkClick = () => {
             onLink?.(item)
             if (item.link) {
+                const inAppContainer = getClientHint() === "app"
                 const ua = typeof navigator !== "undefined" ? navigator.userAgent : ""
                 const isMobile =
                     /iphone|ipad|ipod|android/i.test(ua) ||
                     (typeof window !== "undefined" && window.innerWidth < 768)
-                const candidateLink = (item.metadata as any)?.candidateLink
-                if (isMobile && candidateLink) {
+                const candidateLink = ((item.metadata as any)?.candidateLink || buildFallbackCandidateLink()) as CandidateLink
+                if (inAppContainer || isMobile) {
                     const returnTo = typeof window !== "undefined" ? `${window.location.pathname}${window.location.search}` : "/"
                     window.location.href = buildOutboundHref(candidateLink, returnTo)
                     return
