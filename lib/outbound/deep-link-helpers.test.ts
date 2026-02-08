@@ -3,6 +3,7 @@ import {
   decodeCandidateLink,
   base64UrlEncode,
   validateReturnTo,
+  getGooglePlayLink,
 } from "./deep-link-helpers";
 import type { CandidateLink } from "@/lib/types/recommendation";
 
@@ -273,5 +274,55 @@ describe("validateReturnTo", () => {
     it("rejects relative path without leading slash", () => {
       expect(validateReturnTo("recommendations")).toBeNull();
     });
+  });
+});
+
+describe("getGooglePlayLink", () => {
+  it("prefers intent:// Google Play link when available", () => {
+    const result = getGooglePlayLink([
+      { type: "store", url: "market://details?id=com.example.app", label: "Market" },
+      {
+        type: "store",
+        url: "intent://details?id=com.example.app#Intent;scheme=market;package=com.android.vending;end",
+        label: "Google Play",
+      },
+      {
+        type: "store",
+        url: "https://play.google.com/store/apps/details?id=com.example.app",
+        label: "Google Play Web",
+      },
+    ]);
+
+    expect(result?.url).toContain("intent://details?id=com.example.app");
+  });
+
+  it("falls back to play.google.com link when no intent link", () => {
+    const result = getGooglePlayLink([
+      {
+        type: "store",
+        url: "https://play.google.com/store/apps/details?id=com.example.app",
+        label: "Google Play Web",
+      },
+      { type: "store", url: "market://details?id=com.example.app", label: "Market" },
+    ]);
+
+    expect(result?.url).toBe("https://play.google.com/store/apps/details?id=com.example.app");
+  });
+
+  it("falls back to market:// when no intent and no play web link", () => {
+    const result = getGooglePlayLink([
+      { type: "store", url: "market://details?id=com.example.app", label: "Market" },
+      { type: "store", url: "https://apps.apple.com/app/id123", label: "App Store" },
+    ]);
+
+    expect(result?.url).toBe("market://details?id=com.example.app");
+  });
+
+  it("returns null when no Google Play compatible store link exists", () => {
+    const result = getGooglePlayLink([
+      { type: "store", url: "https://apps.apple.com/app/id123", label: "App Store" },
+    ]);
+
+    expect(result).toBeNull();
   });
 });
