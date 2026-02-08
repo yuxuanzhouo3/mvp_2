@@ -720,7 +720,8 @@ export function selectBestPlatform(
   category: string,
   suggestedPlatform?: string,
   locale: string = 'zh',
-  entertainmentType?: 'video' | 'game' | 'music' | 'review'
+  entertainmentType?: 'video' | 'game' | 'music' | 'review',
+  isMobile?: boolean
 ): string {
 
   // 如果是娱乐分类的游戏类型，使用 GAME_PLATFORMS 数组
@@ -790,8 +791,19 @@ export function selectBestPlatform(
     }
   };
 
-  const availablePlatforms = categoryPlatforms[locale]?.[category] ||
-    (locale === 'en' ? ['Google'] : ['百度']);
+  // INTL mobile: prioritize platforms with native apps on Google Play
+  const intlMobilePlatforms: Record<string, string[]> = {
+    entertainment: ['YouTube', 'TikTok', 'Spotify', 'JustWatch', 'Medium'],
+    shopping: ['Amazon Shopping', 'Etsy', 'Slickdeals', 'Pinterest'],
+    food: ['DoorDash', 'Uber Eats', 'Fantuan Delivery', 'HungryPanda'],
+    travel: ['TripAdvisor', 'Yelp', 'Wanderlog', 'Visit A City', 'GetYourGuide', 'Google Maps'],
+    fitness: ['Nike Training Club', 'Peloton', 'Strava', 'Nike Run Club', 'Hevy', 'Strong', 'Down Dog', 'MyFitnessPal']
+  };
+
+  const isIntlMobile = locale === 'en' && isMobile;
+  const availablePlatforms = isIntlMobile
+    ? (intlMobilePlatforms[category] || ['Google'])
+    : (categoryPlatforms[locale]?.[category] || (locale === 'en' ? ['Google'] : ['百度']));
 
   // 如果 AI 建议的平台在可用列表中，使用它
   if (suggestedPlatform && availablePlatforms.includes(suggestedPlatform)) {

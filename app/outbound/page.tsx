@@ -14,6 +14,7 @@ import {
   getWebLink,
   getStoreLinks,
   filterStoreLinksByOs,
+  getGooglePlayLink,
 } from "@/lib/outbound/deep-link-helpers";
 
 /**
@@ -264,11 +265,30 @@ export default function OutboundPage() {
   }, [webLinkUrl, handleBack]);
 
   /**
-   * 用户选择"是"（安装App），显示商店选择
+   * 用户选择"是"（安装App）
+   * INTL + Android：直接跳转 Google Play，跳过商店选择
+   * 其他情况：显示商店选择列表
    */
   const handleInstallYes = useCallback(() => {
+    const os = detectMobileOs();
+    const region = decoded.candidateLink?.metadata?.region;
+    const isIntlAndroid = region === "INTL" && os === "android";
+
+    if (isIntlAndroid && decoded.candidateLink) {
+      const allStoreLinks = filterStoreLinksByOs(
+        getStoreLinks(decoded.candidateLink),
+        os
+      );
+      const playLink = getGooglePlayLink(allStoreLinks);
+      if (playLink) {
+        // 直接跳转 Google Play，不显示商店选择
+        setInstallChoice("yes");
+        handleStoreClick(playLink.url);
+        return;
+      }
+    }
     setInstallChoice("yes");
-  }, []);
+  }, [decoded.candidateLink, handleStoreClick]);
 
   /**
    * 点击商店链接下载 App
@@ -289,9 +309,9 @@ export default function OutboundPage() {
     }
   }, []);
 
-  // 从应用商店返回后，自动跳转到网页版
+  // 从应用商店返回后：先尝试重新打开 App，失败则跳转网页版
   useEffect(() => {
-    if (!webLinkUrl) return;
+    if (!decoded.candidateLink) return;
 
     const key = "outbound:store-return";
     const onVisibilityChange = () => {
@@ -307,13 +327,36 @@ export default function OutboundPage() {
       } catch {
         return;
       }
-      window.location.href = webLinkUrl;
+
+      // 从商店返回后，先尝试重新打开 App
+      const os = detectMobileOs();
+      const retryLinks = getAutoTryLinks(decoded.candidateLink!, os);
+
+      if (retryLinks.length > 0) {
+        setOpenState("trying");
+        attemptOpenLinksSequential(retryLinks, 2500).then((opened) => {
+          if (opened) {
+            // App 已安装并成功打开 → 标记状态，用户从 App 返回时会自动回到推荐页
+            appOpenedRef.current = true;
+            setOpenState("opened");
+          } else {
+            // App 仍未安装 → 跳转网页版
+            setOpenState("failed");
+            if (webLinkUrl) {
+              window.location.href = webLinkUrl;
+            }
+          }
+        });
+      } else if (webLinkUrl) {
+        // 没有可尝试的 App 链接，直接跳转网页版
+        window.location.href = webLinkUrl;
+      }
     };
 
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () =>
       document.removeEventListener("visibilitychange", onVisibilityChange);
-  }, [webLinkUrl]);
+  }, [decoded.candidateLink, webLinkUrl]);
 
   /* ---- Error state ---- */
   if (decoded.error) {
@@ -338,6 +381,8 @@ export default function OutboundPage() {
   const link = decoded.candidateLink;
   const providerName =
     link.metadata?.providerDisplayName || link.provider || "";
+  const isIntlAndroid =
+    link.metadata?.region === "INTL" && os === "android";
 
   const webLink = getWebLink(link);
   const storeLinks = filterStoreLinksByOs(getStoreLinks(link), os);
@@ -406,38 +451,60 @@ export default function OutboundPage() {
           </div>
         )}
 
-        {/* 用户选择安装 → 显示商店选择 */}
+        {/* 用户选择安装 → 显示商店选择（INTL Android 已直接跳转 Google Play） */}
         {openState === "failed" && installChoice === "yes" && storeLinks.length > 0 && (
           <div className="mb-4">
-            <div className="flex items-center gap-2 text-sm font-medium text-gray-900 mb-3">
-              <span className="text-base">⬇️</span>
-              <span>
-                {language === "zh"
-                  ? `请选择下载 ${providerName} 的方式`
-                  : `Choose where to download ${providerName}`}
-              </span>
-            </div>
-            <div className="space-y-2">
-              {storeLinks.map((l, idx) => (
-                <Button
-                  key={`${l.type}:${l.url}`}
-                  className={`w-full ${
-                    idx === 0
-                      ? "bg-gradient-to-r from-blue-500 to-cyan-500 text-white hover:from-blue-600 hover:to-cyan-600"
-                      : ""
-                  }`}
-                  variant={idx === 0 ? "default" : "outline"}
-                  onClick={() => handleStoreClick(l.url)}
-                >
-                  {l.label || (language === "zh" ? "应用商店" : "Store")}
-                </Button>
-              ))}
-            </div>
-            <p className="text-xs text-gray-500 mt-2 text-center">
-              {language === "zh"
-                ? "安装完成后返回此页面，将自动跳转到网页版"
-                : "After installing, return here to continue on web"}
-            </p>
+            {isIntlAndroid ? (
+              /* INTL Android: 已直接跳转 Google Play，显示等待提示 */
+              <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-base">🏪</span>
+                  <span className="font-medium text-blue-800 text-sm">
+                    {language === "zh"
+                      ? `正在前往 Google Play 下载 ${providerName}`
+                      : `Going to Google Play to install ${providerName}`}
+                  </span>
+                </div>
+                <p className="text-blue-700 text-xs">
+                  {language === "zh"
+                    ? "安装完成后返回此页面，将自动打开 App"
+                    : "After installing, return here to auto-open the app"}
+                </p>
+              </div>
+            ) : (
+              /* 非 INTL Android：显示商店选择列表 */
+              <>
+                <div className="flex items-center gap-2 text-sm font-medium text-gray-900 mb-3">
+                  <span className="text-base">⬇️</span>
+                  <span>
+                    {language === "zh"
+                      ? `请选择下载 ${providerName} 的方式`
+                      : `Choose where to download ${providerName}`}
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  {storeLinks.map((l, idx) => (
+                    <Button
+                      key={`${l.type}:${l.url}`}
+                      className={`w-full ${
+                        idx === 0
+                          ? "bg-gradient-to-r from-blue-500 to-cyan-500 text-white hover:from-blue-600 hover:to-cyan-600"
+                          : ""
+                      }`}
+                      variant={idx === 0 ? "default" : "outline"}
+                      onClick={() => handleStoreClick(l.url)}
+                    >
+                      {l.label || (language === "zh" ? "应用商店" : "Store")}
+                    </Button>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-500 mt-2 text-center">
+                  {language === "zh"
+                    ? "安装完成后返回此页面，将自动尝试打开 App"
+                    : "After installing, return here to auto-open the app"}
+                </p>
+              </>
+            )}
 
             {/* 网页版兜底按钮 */}
             {webLink && (

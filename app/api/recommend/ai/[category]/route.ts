@@ -414,7 +414,8 @@ function selectWeightedPlatformForCategory(
   seed: string,
   client: "app" | "web",
   suggestedPlatform?: string,
-  entertainmentType?: "video" | "game" | "music" | "review"
+  entertainmentType?: "video" | "game" | "music" | "review",
+  isMobile?: boolean
 ): string | null {
   const isZh = locale === "zh";
 
@@ -520,6 +521,57 @@ function selectWeightedPlatformForCategory(
       }
     }
 
+    // INTL mobile branch — prioritize platforms with native apps on Google Play
+    if (isMobile) {
+      switch (category) {
+        case "entertainment":
+          return [
+            { platform: "YouTube", weight: 0.25 },
+            { platform: "TikTok", weight: 0.25 },
+            { platform: "Spotify", weight: 0.20 },
+            { platform: "JustWatch", weight: 0.20 },
+            { platform: "Medium", weight: 0.10 },
+          ];
+        case "shopping":
+          return [
+            { platform: "Amazon Shopping", weight: 0.30 },
+            { platform: "Etsy", weight: 0.25 },
+            { platform: "Slickdeals", weight: 0.25 },
+            { platform: "Pinterest", weight: 0.20 },
+          ];
+        case "food":
+          return [
+            { platform: "DoorDash", weight: 0.30 },
+            { platform: "Uber Eats", weight: 0.30 },
+            { platform: "Fantuan Delivery", weight: 0.20 },
+            { platform: "HungryPanda", weight: 0.20 },
+          ];
+        case "travel":
+          return [
+            { platform: "TripAdvisor", weight: 0.18 },
+            { platform: "Yelp", weight: 0.18 },
+            { platform: "Wanderlog", weight: 0.15 },
+            { platform: "Visit A City", weight: 0.12 },
+            { platform: "GetYourGuide", weight: 0.17 },
+            { platform: "Google Maps", weight: 0.20 },
+          ];
+        case "fitness":
+          return [
+            { platform: "Nike Training Club", weight: 0.14 },
+            { platform: "Peloton", weight: 0.14 },
+            { platform: "Strava", weight: 0.13 },
+            { platform: "Nike Run Club", weight: 0.11 },
+            { platform: "Hevy", weight: 0.11 },
+            { platform: "Strong", weight: 0.11 },
+            { platform: "Down Dog", weight: 0.13 },
+            { platform: "MyFitnessPal", weight: 0.13 },
+          ];
+        default:
+          return null;
+      }
+    }
+
+    // INTL web branch
     switch (category) {
       case "food":
         return [
@@ -974,7 +1026,8 @@ export async function GET(request: NextRequest, { params }: { params: { category
             selectionSeed,
             client,
             enhancedRec.platform,
-            enhancedRec.entertainmentType
+            enhancedRec.entertainmentType,
+            isMobile
           );
 
           const forcedPlatform = getShoppingPlatformOverride({
@@ -1036,7 +1089,7 @@ export async function GET(request: NextRequest, { params }: { params: { category
               }
             }
           } else {
-            platform = selectBestPlatform(category, enhancedRec.platform, locale, enhancedRec.entertainmentType);
+            platform = selectBestPlatform(category, enhancedRec.platform, locale, enhancedRec.entertainmentType, isMobile);
           }
 
           if (category === "food" && locale === "zh" && client === "web") {
@@ -1755,7 +1808,8 @@ async function generateFallbackRecommendations(params: {
       selectionSeed,
       client,
       enhancedRec.platform,
-      enhancedRec.entertainmentType
+      enhancedRec.entertainmentType,
+      isMobile
     );
 
     const forcedPlatform = getShoppingPlatformOverride({
@@ -1817,7 +1871,7 @@ async function generateFallbackRecommendations(params: {
         }
       }
     } else {
-      platform = selectBestPlatform(category, enhancedRec.platform, locale, enhancedRec.entertainmentType);
+      platform = selectBestPlatform(category, enhancedRec.platform, locale, enhancedRec.entertainmentType, isMobile);
     }
 
     if (category === "food" && locale === "zh" && client === "web") {

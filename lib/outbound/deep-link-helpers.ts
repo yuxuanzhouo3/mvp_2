@@ -261,6 +261,38 @@ export function decodeCandidateLink(
 }
 
 /**
+ * INTL Android 环境下获取首选的 Google Play 商店链接
+ * 优先返回 intent:// 格式（可直接拉起 Google Play App），
+ * 其次返回 Google Play 网页链接，最后返回 market:// 链接
+ */
+export function getGooglePlayLink(
+  storeLinks: OutboundLink[]
+): OutboundLink | null {
+  // 优先：intent:// 格式的 Google Play 链接（含 com.android.vending）
+  const intentPlay = storeLinks.find(
+    (l) =>
+      l.url.toLowerCase().startsWith("intent://") &&
+      l.url.toLowerCase().includes("com.android.vending")
+  );
+  if (intentPlay) return intentPlay;
+
+  // 其次：Google Play 网页链接
+  const playWeb = storeLinks.find(
+    (l) =>
+      l.url.toLowerCase().includes("play.google.com")
+  );
+  if (playWeb) return playWeb;
+
+  // 最后：market:// 链接
+  const market = storeLinks.find(
+    (l) => l.url.toLowerCase().startsWith("market://")
+  );
+  if (market) return market;
+
+  return null;
+}
+
+/**
  * 验证 returnTo 参数是否为安全的相对路径
  *
  * 仅接受以 "/" 开头的相对路径作为有效的返回地址。
