@@ -954,6 +954,10 @@ fitnessType must be nearby_place/tutorial/equipment` : ''}
 ${isIntlMobile ? `
 [Mobile App Platform Rules - INTL]
 You are generating recommendations for a MOBILE user. Prioritize platforms with native apps.
+North America local-life preference (important):
+- Prefer US/Canada local contexts, neighborhoods, city landmarks, and realistic daily-life scenarios.
+- searchQuery must be concrete single items (specific place/store/dish/route/workout), not broad categories.
+- Avoid generic phrasing such as "top", "best", "trending", "guide", "ideas", "things to do", "near me".
 
 Entertainment:
 - Short videos: use YouTube or TikTok, searchQuery = topic or trend keyword

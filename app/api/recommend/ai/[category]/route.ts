@@ -209,43 +209,43 @@ function enforceIntlMobileEntertainmentMix<T extends {
   const youtubeVideo = pickPlatform(
     "YouTube",
     "video",
-    "Trending Shorts",
-    "trending shorts",
+    "YouTube: NPR Tiny Desk - Chappell Roan",
+    "NPR Tiny Desk Chappell Roan",
     byType.video
   );
   const tiktokVideo = pickPlatform(
     "TikTok",
     "video",
-    "TikTok Trends",
-    "tiktok trends",
+    "TikTok: #BookTok Fourth Wing edits",
+    "BookTok Fourth Wing edits",
     byType.video
   );
   const justWatch = pickPlatform(
     "JustWatch",
     "review",
-    "Top Movies & Shows",
-    "top movies shows",
+    "The Bear Season 3",
+    "The Bear Season 3",
     byType.review
   );
   const spotify = pickPlatform(
     "Spotify",
     "music",
-    "Top Songs Playlist",
-    "top songs playlist",
+    "Noah Kahan - Stick Season",
+    "Noah Kahan Stick Season",
     byType.music
   );
   const medium = pickPlatform(
     "Medium",
     "review",
-    "Deep Entertainment Articles",
-    "entertainment analysis",
+    "Why 'The Bear' Feels Like Modern City Life",
+    "The Bear city life analysis",
     byType.review
   );
   const miniReview = pickPlatform(
     "MiniReview",
     "game",
-    "Top Android Indie Games",
-    "indie android games",
+    "Vampire Survivors (Android)",
+    "Vampire Survivors",
     byType.game
   );
 
@@ -610,6 +610,228 @@ export function isIntlAndroidFitnessContext(params: {
     Boolean(isMobile) &&
     Boolean(isAndroid)
   );
+}
+
+const INTL_ANDROID_CONCRETE_QUERY_FALLBACK_BY_PLATFORM: Partial<Record<string, string>> = {
+  YouTube: "NPR Tiny Desk Chappell Roan",
+  TikTok: "BookTok Fourth Wing edits",
+  JustWatch: "The Bear Season 3",
+  Spotify: "Noah Kahan Stick Season",
+  Medium: "The Bear city life analysis",
+  MiniReview: "Vampire Survivors",
+  "Amazon Shopping": "Stanley Quencher H2.0 40oz",
+  Etsy: "custom house number sign",
+  Slickdeals: "Anker 737 power bank deal",
+  Pinterest: "small apartment entryway storage",
+  DoorDash: "Nashville hot chicken sandwich",
+  "Uber Eats": "chipotle chicken burrito bowl",
+  "Fantuan Delivery": "Richmond BC dim sum",
+  HungryPanda: "Toronto brown sugar bubble tea",
+  TripAdvisor: "Banff Lake Louise",
+  Yelp: "Pike Place Chowder Seattle",
+  Wanderlog: "New York City 3 day itinerary",
+  "Visit A City": "San Diego 2 day itinerary",
+  GetYourGuide: "Niagara Falls boat tour",
+  "Google Maps": "Golden Gate Bridge San Francisco",
+  "Nike Training Club": "20-minute lower body dumbbell workout",
+  Peloton: "45-minute Power Zone ride",
+  Strava: "Prospect Park 5k loop",
+  "Nike Run Club": "10k progression run",
+  Hevy: "barbell bench press",
+  Strong: "romanian deadlift",
+  "Down Dog": "vinyasa flow 20 min",
+  MyFitnessPal: "Trader Joe's chicken tikka masala",
+};
+
+const INTL_ANDROID_CONCRETE_QUERY_FALLBACK_BY_CATEGORY: Record<RecommendationCategory, string> = {
+  entertainment: "The Bear Season 3",
+  shopping: "Stanley Quencher H2.0 40oz",
+  food: "Nashville hot chicken sandwich",
+  travel: "Banff Lake Louise",
+  fitness: "20-minute lower body dumbbell workout",
+};
+
+const INTL_ANDROID_GENERIC_QUERY_TERMS: Record<RecommendationCategory, string[]> = {
+  entertainment: [
+    "top",
+    "trending",
+    "trends",
+    "best",
+    "movies",
+    "movie",
+    "shows",
+    "show",
+    "songs",
+    "song",
+    "playlist",
+    "playlists",
+    "games",
+    "game",
+    "articles",
+    "article",
+    "video",
+    "videos",
+    "entertainment",
+  ],
+  shopping: [
+    "top",
+    "best",
+    "deal",
+    "deals",
+    "discount",
+    "discounts",
+    "shopping",
+    "products",
+    "product",
+    "ideas",
+    "inspiration",
+    "gift",
+    "gifts",
+    "sale",
+    "sales",
+    "essentials",
+  ],
+  food: [
+    "food",
+    "foods",
+    "restaurant",
+    "restaurants",
+    "cuisine",
+    "cuisines",
+    "delivery",
+    "takeout",
+    "recipe",
+    "recipes",
+    "lunch",
+    "dinner",
+    "brunch",
+    "breakfast",
+  ],
+  travel: [
+    "travel",
+    "trip",
+    "trips",
+    "things",
+    "destination",
+    "destinations",
+    "guide",
+    "guides",
+    "itinerary",
+    "itineraries",
+    "attractions",
+    "hotel",
+    "hotels",
+    "vacation",
+    "places",
+  ],
+  fitness: [
+    "fitness",
+    "workout",
+    "workouts",
+    "training",
+    "exercise",
+    "exercises",
+    "plan",
+    "plans",
+    "routine",
+    "routines",
+    "gym",
+    "gyms",
+    "tips",
+    "beginner",
+    "advanced",
+  ],
+};
+
+const GLOBAL_GENERIC_QUERY_TERMS = new Set([
+  "a",
+  "an",
+  "the",
+  "and",
+  "or",
+  "to",
+  "for",
+  "with",
+  "of",
+  "in",
+  "on",
+  "near",
+  "me",
+]);
+
+export function isIntlAndroidConcreteTermContext(params: {
+  category: RecommendationCategory;
+  locale: "zh" | "en";
+  isMobile?: boolean;
+  isAndroid?: boolean;
+}): boolean {
+  const { category, locale, isMobile, isAndroid } = params;
+  return (
+    locale === "en" &&
+    Boolean(isMobile) &&
+    Boolean(isAndroid) &&
+    ["entertainment", "shopping", "food", "travel", "fitness"].includes(category)
+  );
+}
+
+export function isConcreteIntlAndroidSearchQuery(params: {
+  category: RecommendationCategory;
+  query: string;
+}): boolean {
+  const normalized = normalizeQueryBase(params.query);
+  if (!normalized) return false;
+
+  const lowered = normalized.toLowerCase();
+  if (/^https?:\/\//.test(lowered)) return false;
+  if (/\b(top|best|trending|trends|ideas|guide|guides|list|playlist|playlists)\b/.test(lowered)) {
+    return false;
+  }
+  if (/\b(near me|things to do|what to buy|random)\b/.test(lowered)) {
+    return false;
+  }
+
+  const categoryTerms = new Set(INTL_ANDROID_GENERIC_QUERY_TERMS[params.category] || []);
+  const words = lowered.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return false;
+
+  const hasCjk = /[\u4e00-\u9fff]/.test(normalized);
+  if (hasCjk) {
+    return normalized.length >= 2;
+  }
+
+  const contentWords = words.filter((word) => !GLOBAL_GENERIC_QUERY_TERMS.has(word) && !categoryTerms.has(word));
+  if (contentWords.length >= 2) return true;
+
+  const single = contentWords[0] || "";
+  if (!single) return false;
+  if (/\d/.test(single)) return true;
+  if (single.length >= 5) return true;
+  return false;
+}
+
+export function enforceConcreteIntlAndroidSearchQuery(params: {
+  category: RecommendationCategory;
+  platform: string;
+  title?: string | null;
+  query?: string | null;
+}): string {
+  const query = normalizeQueryBase(params.query || "");
+  const title = normalizeQueryBase(params.title || "");
+
+  if (isConcreteIntlAndroidSearchQuery({ category: params.category, query })) {
+    return query;
+  }
+
+  if (isConcreteIntlAndroidSearchQuery({ category: params.category, query: title })) {
+    return title;
+  }
+
+  const byPlatform = INTL_ANDROID_CONCRETE_QUERY_FALLBACK_BY_PLATFORM[params.platform];
+  if (byPlatform) {
+    return byPlatform;
+  }
+
+  return INTL_ANDROID_CONCRETE_QUERY_FALLBACK_BY_CATEGORY[params.category] || query || title;
 }
 
 export function getRecommendationTargetCount(params: {
@@ -1584,6 +1806,8 @@ export async function GET(request: NextRequest, { params }: { params: { category
             locale,
             title: String(enhancedRec.title || ""),
             searchQuery: searchQueryForLink,
+            isMobile,
+            isAndroid,
           });
 
           let searchLink = generateSearchLink(
@@ -2171,10 +2395,22 @@ function sanitizeSearchQueryForLink(params: {
   locale: "zh" | "en";
   title: string;
   searchQuery?: string | null;
+  isMobile?: boolean;
+  isAndroid?: boolean;
 }): string {
-  const { category, entertainmentType, platform, locale, title, searchQuery } = params;
+  const { category, entertainmentType, platform, locale, title, searchQuery, isMobile, isAndroid } = params;
   const base = normalizeQueryBase(searchQuery || title);
   if (!base) return base;
+  if (isIntlAndroidConcreteTermContext({ category, locale, isMobile, isAndroid })) {
+    const concreteQuery = enforceConcreteIntlAndroidSearchQuery({
+      category,
+      platform,
+      title,
+      query: base,
+    });
+    return concreteQuery || normalizeQueryBase(title) || base;
+  }
+
   if (category === "food" && locale === "zh") {
     let query = base;
     query = stripQueryTokens(query, ["美食", "餐厅"]);
@@ -2431,6 +2667,8 @@ async function generateFallbackRecommendations(params: {
       locale,
       title: String(enhancedRec.title || ""),
       searchQuery: searchQueryForLink as string,
+      isMobile,
+      isAndroid,
     });
 
     let searchLink = generateSearchLink(
