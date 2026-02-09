@@ -651,6 +651,171 @@ const INTL_ANDROID_CONCRETE_QUERY_FALLBACK_BY_CATEGORY: Record<RecommendationCat
   fitness: "20-minute lower body dumbbell workout",
 };
 
+type IntlAndroidFoodPriceRange = "$" | "$$" | "$$$";
+
+type IntlAndroidFoodFallbackDish = {
+  dishName: string;
+  cuisine: string;
+  priceRange: IntlAndroidFoodPriceRange;
+};
+
+const INTL_ANDROID_FOOD_ALLOWED_PLATFORMS = new Set<string>([
+  "DoorDash",
+  "Uber Eats",
+  "Fantuan Delivery",
+  "HungryPanda",
+]);
+
+const INTL_ANDROID_FOOD_SCENARIO_TERMS = [
+  "family gathering",
+  "friends hangout",
+  "late night scenario",
+  "late-night scenario",
+  "date night",
+  "office lunch",
+  "group dinner",
+  "家庭聚餐",
+  "朋友小聚",
+  "宵夜场景",
+  "约会",
+  "办公室午餐",
+];
+
+const INTL_ANDROID_FOOD_GENERIC_LABEL_TERMS = new Set<string>([
+  "food",
+  "foods",
+  "restaurant",
+  "restaurants",
+  "cuisine",
+  "cuisines",
+  "delivery",
+  "takeout",
+  "meal",
+  "meals",
+  "lunch",
+  "dinner",
+  "breakfast",
+  "brunch",
+  "snack",
+  "snacks",
+  "chinese food",
+  "western food",
+  "fast food",
+  "中餐",
+  "西餐",
+  "快餐",
+  "面食",
+  "甜品",
+  "饮品",
+]);
+
+const INTL_ANDROID_FOOD_FALLBACK_DISHES_BY_PLATFORM: Record<string, IntlAndroidFoodFallbackDish[]> = {
+  DoorDash: [
+    { dishName: "Nashville hot chicken sandwich", cuisine: "American", priceRange: "$$" },
+    { dishName: "Cheese smashburger", cuisine: "American", priceRange: "$$" },
+    { dishName: "Chicken caesar wrap", cuisine: "American", priceRange: "$" },
+  ],
+  "Uber Eats": [
+    { dishName: "Chipotle chicken burrito bowl", cuisine: "Mexican", priceRange: "$$" },
+    { dishName: "Tonkotsu ramen", cuisine: "Japanese", priceRange: "$$" },
+    { dishName: "Pad thai shrimp", cuisine: "Thai", priceRange: "$$" },
+  ],
+  "Fantuan Delivery": [
+    { dishName: "麻辣烫", cuisine: "Chinese", priceRange: "$$" },
+    { dishName: "兰州牛肉面", cuisine: "Chinese", priceRange: "$" },
+    { dishName: "小笼包", cuisine: "Chinese", priceRange: "$$" },
+  ],
+  HungryPanda: [
+    { dishName: "黄焖鸡米饭", cuisine: "Chinese", priceRange: "$" },
+    { dishName: "重庆小面", cuisine: "Chinese", priceRange: "$" },
+    { dishName: "螺蛳粉", cuisine: "Chinese", priceRange: "$$" },
+  ],
+};
+
+function resolveIntlAndroidFoodPlatform(platform: string, index: number): string {
+  if (INTL_ANDROID_FOOD_ALLOWED_PLATFORMS.has(platform)) return platform;
+  if (REQUIRED_FOOD_PLATFORMS_INTL_ANDROID.length === 0) return "DoorDash";
+  return REQUIRED_FOOD_PLATFORMS_INTL_ANDROID[Math.abs(index) % REQUIRED_FOOD_PLATFORMS_INTL_ANDROID.length] || "DoorDash";
+}
+
+function resolveIntlAndroidFoodFallbackDish(platform: string, index: number): IntlAndroidFoodFallbackDish {
+  const normalizedPlatform = resolveIntlAndroidFoodPlatform(platform, index);
+  const choices = INTL_ANDROID_FOOD_FALLBACK_DISHES_BY_PLATFORM[normalizedPlatform] || INTL_ANDROID_FOOD_FALLBACK_DISHES_BY_PLATFORM.DoorDash;
+  return choices[Math.abs(index) % choices.length] || INTL_ANDROID_FOOD_FALLBACK_DISHES_BY_PLATFORM.DoorDash[0];
+}
+
+function includesIntlAndroidFoodScenarioTerms(value: string): boolean {
+  const normalized = normalizeQueryBase(value).toLowerCase();
+  if (!normalized) return false;
+  return INTL_ANDROID_FOOD_SCENARIO_TERMS.some((term) => normalized.includes(normalizeQueryBase(term).toLowerCase()));
+}
+
+function isIntlAndroidFoodGenericLabel(value: string): boolean {
+  const normalized = normalizeQueryBase(value).toLowerCase();
+  if (!normalized) return true;
+  if (INTL_ANDROID_FOOD_GENERIC_LABEL_TERMS.has(normalized)) return true;
+  const words = normalized.split(/\s+/).filter(Boolean);
+  if (words.length > 0 && words.every((word) => INTL_ANDROID_FOOD_GENERIC_LABEL_TERMS.has(word))) {
+    return true;
+  }
+  return false;
+}
+
+function isValidIntlAndroidFoodDishTerm(value: string): boolean {
+  const normalized = normalizeQueryBase(value);
+  if (!normalized) return false;
+  if (includesIntlAndroidFoodScenarioTerms(normalized)) return false;
+  if (isIntlAndroidFoodGenericLabel(normalized)) return false;
+  return isConcreteIntlAndroidSearchQuery({
+    category: "food",
+    query: normalized,
+  });
+}
+
+export function sanitizeIntlAndroidFoodRecommendation(params: {
+  title?: string | null;
+  query?: string | null;
+  tags?: string[] | null;
+  platform?: string | null;
+  index: number;
+}): {
+  title: string;
+  searchQuery: string;
+  tags: string[];
+  platform: string;
+  cuisine: string;
+  priceRange: IntlAndroidFoodPriceRange;
+} {
+  const platform = resolveIntlAndroidFoodPlatform(String(params.platform || ""), params.index);
+  const fallbackDish = resolveIntlAndroidFoodFallbackDish(platform, params.index);
+
+  const normalizedTitle = normalizeQueryBase(String(params.title || ""));
+  const normalizedQuery = normalizeQueryBase(String(params.query || ""));
+
+  const title = isValidIntlAndroidFoodDishTerm(normalizedTitle) ? normalizedTitle : fallbackDish.dishName;
+  const searchQuery = isValidIntlAndroidFoodDishTerm(normalizedQuery) ? normalizedQuery : title;
+
+  const rawTags = Array.isArray(params.tags)
+    ? params.tags
+      .filter((tag): tag is string => typeof tag === "string" && tag.trim().length > 0)
+      .map((tag) => tag.trim())
+    : [];
+  const tagSet = new Set(rawTags);
+  const hasCuisineTag = rawTags.some((tag) => /^cuisine:/i.test(tag));
+  const hasPriceRangeTag = rawTags.some((tag) => /^price_range:(\$|\$\$|\$\$\$)$/i.test(tag));
+  if (!hasCuisineTag) tagSet.add(`cuisine:${fallbackDish.cuisine}`);
+  if (!hasPriceRangeTag) tagSet.add(`price_range:${fallbackDish.priceRange}`);
+
+  return {
+    title,
+    searchQuery,
+    tags: Array.from(tagSet),
+    platform,
+    cuisine: fallbackDish.cuisine,
+    priceRange: fallbackDish.priceRange,
+  };
+}
+
 const INTL_ANDROID_GENERIC_QUERY_TERMS: Record<RecommendationCategory, string[]> = {
   entertainment: [
     "top",
@@ -1522,6 +1687,7 @@ export async function GET(request: NextRequest, { params }: { params: { category
           avoidTitles: excludeTitles,
           signals: recommendationSignals,
           isMobile,
+          isAndroid,
         });
 
         const shouldEnsureEntertainmentTypes = category === "entertainment" && locale === "zh" && client === "web" && isChinaDeployment();
@@ -1580,6 +1746,7 @@ export async function GET(request: NextRequest, { params }: { params: { category
             avoidTitles: avoidTitlesForTopUp,
             signals: recommendationSignals,
             isMobile,
+            isAndroid,
           });
 
           processedRecommendations = dedupeRecommendations([...(processedRecommendations as any[]), ...(topUps as any[])], {
@@ -1761,6 +1928,23 @@ export async function GET(request: NextRequest, { params }: { params: { category
             }
           } else {
             platform = selectBestPlatform(category, enhancedRec.platform, locale, enhancedRec.entertainmentType, isMobile);
+          }
+
+          if (isIntlAndroidFoodContext({ category, locale, isMobile, isAndroid })) {
+            const sanitizedFood = sanitizeIntlAndroidFoodRecommendation({
+              title: enhancedRec.title,
+              query: enhancedRec.searchQuery,
+              tags: Array.isArray((enhancedRec as any).tags) ? ((enhancedRec as any).tags as string[]) : null,
+              platform,
+              index,
+            });
+            enhancedRec = {
+              ...enhancedRec,
+              title: sanitizedFood.title,
+              searchQuery: sanitizedFood.searchQuery,
+              tags: sanitizedFood.tags,
+            };
+            platform = sanitizedFood.platform;
           }
 
           if (category === "food" && locale === "zh" && client === "web") {
@@ -2629,6 +2813,23 @@ async function generateFallbackRecommendations(params: {
       }
     } else {
       platform = selectBestPlatform(category, enhancedRec.platform || "", locale, fallbackRec.entertainmentType, isMobile);
+    }
+
+    if (isIntlAndroidFoodContext({ category, locale, isMobile, isAndroid })) {
+      const sanitizedFood = sanitizeIntlAndroidFoodRecommendation({
+        title: enhancedRec.title,
+        query: enhancedRec.searchQuery,
+        tags: Array.isArray((enhancedRec as any).tags) ? ((enhancedRec as any).tags as string[]) : null,
+        platform,
+        index,
+      });
+      enhancedRec = {
+        ...enhancedRec,
+        title: sanitizedFood.title,
+        searchQuery: sanitizedFood.searchQuery,
+        tags: sanitizedFood.tags,
+      };
+      platform = sanitizedFood.platform;
     }
 
     if (category === "food" && locale === "zh" && client === "web") {

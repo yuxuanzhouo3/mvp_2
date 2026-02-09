@@ -90,5 +90,40 @@ describe("INTL Android food platform mix", () => {
       })
     ).toBeNull();
   });
-});
 
+  it("sanitizes scenario-style food recommendation to concrete dish", async () => {
+    const mod = (await import(routePath)) as any;
+    const sanitize = mod.sanitizeIntlAndroidFoodRecommendation as
+      | ((params: {
+          title?: string | null;
+          query?: string | null;
+          tags?: string[] | null;
+          platform?: string | null;
+          index: number;
+        }) => {
+          title: string;
+          searchQuery: string;
+          tags: string[];
+          platform: string;
+          cuisine: string;
+          priceRange: "$" | "$$" | "$$$";
+        })
+      | undefined;
+
+    expect(typeof sanitize).toBe("function");
+
+    const output = sanitize!({
+      title: "家庭聚餐",
+      query: "friends hangout dinner",
+      tags: ["food"],
+      platform: "DoorDash",
+      index: 0,
+    });
+
+    expect(output.platform).toBe("DoorDash");
+    expect(output.title).toBe("Nashville hot chicken sandwich");
+    expect(output.searchQuery).toBe("Nashville hot chicken sandwich");
+    expect(output.tags.some((tag) => tag.startsWith("cuisine:"))).toBe(true);
+    expect(output.tags.some((tag) => tag.startsWith("price_range:"))).toBe(true);
+  });
+});

@@ -533,6 +533,7 @@ export type GenerateRecommendationsOptions = {
   geo?: { lat: number; lng: number } | null;
   avoidTitles?: string[] | null;
   isMobile?: boolean;
+  isAndroid?: boolean;
   signals?:
   | {
     topTags?: string[] | null;
@@ -624,8 +625,10 @@ export async function generateRecommendations(
   const client = options?.client ?? "web";
   const geo = options?.geo ?? null;
   const isMobile = options?.isMobile ?? false;
+  const isAndroid = options?.isAndroid ?? false;
   const isCnWeb = isChinaDeployment() && locale === "zh" && client === "web";
   const isIntlMobile = !isChinaDeployment() && locale === "en" && isMobile;
+  const isIntlAndroidFood = !isChinaDeployment() && locale === "en" && isMobile && isAndroid && category === "food";
   const avoidTitles = Array.isArray(options?.avoidTitles)
     ? options!.avoidTitles!.filter((t) => typeof t === "string" && t.trim().length > 0)
     : [];
@@ -862,6 +865,18 @@ fitnessType 必须为 nearby_place/tutorial/equipment 之一。
   const angleIndex = Math.floor(Math.random() * diversityAngles.length);
   const currentAngle = diversityAngles[angleIndex];
 
+  const intlAndroidFoodHardConstraintsPrompt = isIntlAndroidFood
+    ? `
+[INTL Android Food Hard Constraints / INTL 安卓 Food 硬约束]
+- Return specific orderable dish names only (title = dish_name). No scenario labels.
+- 仅输出可直接下单的具体菜品（title = dish_name），禁止场景词：家庭聚餐、朋友小聚、宵夜场景、约会、办公室午餐。
+- platform = app_name and MUST be one of: DoorDash, Uber Eats, Fantuan Delivery, HungryPanda.
+- 每条需满足结构映射：title=dish_name, platform=app_name, tags must include cuisine:<type> and price_range:<$|$$|$$$>.
+- At least 70% must be concrete single dishes; avoid broad labels such as Chinese food, Western food, fast food.
+- searchQuery must be a concrete dish keyword and should match title semantics.
+`
+    : "";
+
   const prompt = locale === 'zh' ? `
 生成 ${desiredCount} 个多样化推荐，严格遵守类型分布要求。
 
@@ -975,6 +990,7 @@ Shopping:
 Food:
 - US mainstream delivery: use DoorDash or Uber Eats, searchQuery = cuisine or dish
 - Chinese food delivery: use Fantuan Delivery or HungryPanda, searchQuery = dish name in Chinese or English
+${intlAndroidFoodHardConstraintsPrompt}
 
 Travel:
 - Reviews/guides: use TripAdvisor or Yelp, searchQuery = destination + "things to do"
