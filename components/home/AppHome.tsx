@@ -165,7 +165,7 @@ export function AppHome({
                     <Sparkles className="h-4 w-4 text-gray-600" />
                   </span>
                   <div className="min-w-0">
-                    <h1 className={`${isCN ? "text-lg" : "text-xl"} font-bold text-gray-800`}>
+                    <h1 className={`${isCN ? "text-lg" : "text-base sm:text-[18px]"} font-bold text-gray-800`}>
                       {t.randomLife.title}
                     </h1>
                     <p className="text-gray-600 text-sm">{t.randomLife.subtitle}</p>
