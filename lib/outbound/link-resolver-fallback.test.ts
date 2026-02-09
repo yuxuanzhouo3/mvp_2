@@ -88,6 +88,25 @@ describe("INTL fallback provider chains", () => {
       const labels = getFallbackLabels("entertainment", "Google");
       expect(labels).toContain("YouTube");
     });
+
+    it("should include MiniReview in INTL mobile entertainment fallback chain", () => {
+      const result = resolveCandidateLink({
+        title: "Test Item",
+        query: "test query",
+        category: "entertainment",
+        locale: "en",
+        region: "INTL",
+        provider: "YouTube",
+        isMobile: true,
+      });
+
+      const labels = result.fallbacks
+        .filter((f) => ["search", "map", "video", "web", "app", "intent"].includes(f.type))
+        .map((f) => f.label || "")
+        .filter(Boolean);
+
+      expect(labels).toContain("MiniReview");
+    });
   });
 
   describe("travel (Requirement 4.4)", () => {

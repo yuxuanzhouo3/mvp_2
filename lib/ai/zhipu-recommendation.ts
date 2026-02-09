@@ -594,7 +594,7 @@ export function getIntlCategoryPlatforms(category: string): string[] {
 export function getMobilePlatforms(category: string): string[] {
   switch (category) {
     case "entertainment":
-      return ["YouTube", "TikTok", "JustWatch", "Spotify", "Medium"];
+      return ["YouTube", "TikTok", "JustWatch", "Spotify", "Medium", "MiniReview"];
     case "shopping":
       return ["Amazon Shopping", "Etsy", "Slickdeals", "Pinterest"];
     case "food":
@@ -960,6 +960,7 @@ Entertainment:
 - Movies/TV: use JustWatch, searchQuery = movie/show title
 - Music: use Spotify, searchQuery = "Artist - Song" format
 - Articles/News: use Medium, searchQuery = topic keyword
+- Games: use MiniReview, searchQuery = game name or genre
 
 Shopping:
 - General shopping: use Amazon Shopping, searchQuery = product name

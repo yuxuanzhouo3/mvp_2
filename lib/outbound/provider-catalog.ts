@@ -70,6 +70,7 @@ export type ProviderId =
   | "TikTok"
   | "JustWatch"
   | "Medium"
+  | "MiniReview"
   | "Etsy"
   | "Slickdeals"
   | "Pinterest"
@@ -193,7 +194,7 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       iosScheme: ({ query }) => `youtube://results?search_query=${encodeURIComponent(query)}`,
       androidScheme: ({ query }) => {
         const web = youtubeSearchUrl(query);
-        return `intent://results?search_query=${encodeURIComponent(query)}#Intent;scheme=youtube;package=com.google.android.youtube;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+        return `intent://www.youtube.com/results?search_query=${encodeURIComponent(query)}#Intent;scheme=https;package=com.google.android.youtube;S.browser_fallback_url=${encodeURIComponent(web)};end`;
       },
     },
     "腾讯视频": {
@@ -907,7 +908,7 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       iosScheme: ({ query }) => `snssdk1128://search?keyword=${encodeURIComponent(query)}`,
       androidScheme: ({ query }) => {
         const web = `https://www.tiktok.com/search?q=${encodeURIComponent(query)}`;
-        return `intent://#Intent;action=android.intent.action.VIEW;package=com.zhiliaoapp.musically;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+        return `intent://www.tiktok.com/search?q=${encodeURIComponent(query)}#Intent;scheme=https;package=com.zhiliaoapp.musically;S.browser_fallback_url=${encodeURIComponent(web)};end`;
       },
     },
     "JustWatch": {
@@ -921,7 +922,7 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       iosScheme: ({ query }) => `justwatch://search?q=${encodeURIComponent(query)}`,
       androidScheme: ({ query }) => {
         const web = `https://www.justwatch.com/us/search?q=${encodeURIComponent(query)}`;
-        return `intent://search?q=${encodeURIComponent(query)}#Intent;scheme=justwatch;package=com.justwatch.justwatch;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+        return `intent://www.justwatch.com/us/search?q=${encodeURIComponent(query)}#Intent;scheme=https;package=com.justwatch.justwatch;S.browser_fallback_url=${encodeURIComponent(web)};end`;
       },
     },
     "Medium": {
@@ -934,6 +935,25 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
         `https://medium.com/search?q=${encodeURIComponent(query)}`,
       webLink: ({ query }) =>
         `https://medium.com/search?q=${encodeURIComponent(query)}`,
+      androidScheme: ({ query }) => {
+        const web = `https://medium.com/search?q=${encodeURIComponent(query)}`;
+        return `intent://medium.com/search?q=${encodeURIComponent(query)}#Intent;scheme=https;package=com.medium.reader;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      },
+    },
+    "MiniReview": {
+      id: "MiniReview",
+      displayName: { zh: "MiniReview", en: "MiniReview" },
+      domains: ["minireview.io"],
+      hasApp: true,
+      androidPackageId: "minireview.best.android.games.reviews",
+      universalLink: ({ query }) =>
+        `https://minireview.io/?s=${encodeURIComponent(query)}`,
+      webLink: ({ query }) =>
+        `https://minireview.io/?s=${encodeURIComponent(query)}`,
+      androidScheme: ({ query }) => {
+        const web = `https://minireview.io/?s=${encodeURIComponent(query)}`;
+        return `intent://#Intent;action=android.intent.action.VIEW;package=minireview.best.android.games.reviews;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      },
     },
     // --- INTL 购物类目 ---
     "Etsy": {
@@ -985,11 +1005,12 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       domains: ["fantuanorder.com"],
       hasApp: true,
       androidPackageId: "com.AmazingTech.FanTuanDelivery",
-      webLink: () => `https://www.fantuanorder.com`,
-      iosScheme: () => `fantuandelivery://`,
-      androidScheme: () => {
-        const web = `https://www.fantuanorder.com`;
-        return `intent://#Intent;scheme=fantuandelivery;package=com.AmazingTech.FanTuanDelivery;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      webLink: ({ query }) => `https://www.fantuanorder.com/search?keyword=${encodeURIComponent(query)}`,
+      iosScheme: ({ query }) =>
+        `fantuandelivery://search?keyword=${encodeURIComponent(query)}&from=deeplink`,
+      androidScheme: ({ query }) => {
+        const web = `https://www.fantuanorder.com/search?keyword=${encodeURIComponent(query)}`;
+        return `intent://search?keyword=${encodeURIComponent(query)}#Intent;scheme=fantuandelivery;package=com.AmazingTech.FanTuanDelivery;S.browser_fallback_url=${encodeURIComponent(web)};end`;
       },
     },
     "HungryPanda": {
@@ -998,11 +1019,12 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       domains: ["hungrypanda.co"],
       hasApp: true,
       androidPackageId: "com.nicetomeetyou.hungrypanda",
-      webLink: () => `https://www.hungrypanda.co/`,
-      iosScheme: () => `hungrypanda://`,
-      androidScheme: () => {
-        const web = `https://www.hungrypanda.co/`;
-        return `intent://#Intent;scheme=hungrypanda;package=com.nicetomeetyou.hungrypanda;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      webLink: ({ query }) => `https://www.hungrypanda.co/search?keyword=${encodeURIComponent(query)}`,
+      iosScheme: ({ query }) =>
+        `hungrypanda://search?keyword=${encodeURIComponent(query)}&from=deeplink`,
+      androidScheme: ({ query }) => {
+        const web = `https://www.hungrypanda.co/search?keyword=${encodeURIComponent(query)}`;
+        return `intent://search?keyword=${encodeURIComponent(query)}#Intent;scheme=hungrypanda;package=com.nicetomeetyou.hungrypanda;S.browser_fallback_url=${encodeURIComponent(web)};end`;
       },
     },
     // --- INTL 旅行类目 ---
@@ -1024,9 +1046,15 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       id: "Visit A City",
       displayName: { zh: "Visit A City", en: "Visit A City" },
       domains: ["visitacity.com"],
-      hasApp: false,
+      hasApp: true,
+      androidPackageId: "com.visitacity.visitacityapp",
       webLink: ({ query }) =>
         `https://www.visitacity.com/en/search?q=${encodeURIComponent(query)}`,
+      iosScheme: ({ query }) => `visitacity://search?q=${encodeURIComponent(query)}`,
+      androidScheme: ({ query }) => {
+        const web = `https://www.visitacity.com/en/search?q=${encodeURIComponent(query)}`;
+        return `intent://www.visitacity.com/en/search?q=${encodeURIComponent(query)}#Intent;scheme=https;package=com.visitacity.visitacityapp;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      },
     },
     "GetYourGuide": {
       id: "GetYourGuide",
@@ -1049,11 +1077,11 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       domains: ["nike.com"],
       hasApp: true,
       androidPackageId: "com.nike.ntc",
-      webLink: () => `https://www.nike.com/ntc-app`,
-      iosScheme: () => `ntc://`,
-      androidScheme: () => {
-        const web = `https://www.nike.com/ntc-app`;
-        return `intent://#Intent;scheme=ntc;package=com.nike.ntc;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      webLink: ({ query }) => `https://www.nike.com/ntc-app?query=${encodeURIComponent(query)}`,
+      iosScheme: ({ query }) => `ntc://search?query=${encodeURIComponent(query)}`,
+      androidScheme: ({ query }) => {
+        const web = `https://www.nike.com/ntc-app?query=${encodeURIComponent(query)}`;
+        return `intent://search?query=${encodeURIComponent(query)}#Intent;scheme=ntc;package=com.nike.ntc;S.browser_fallback_url=${encodeURIComponent(web)};end`;
       },
     },
     "Strava": {
@@ -1062,11 +1090,11 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       domains: ["strava.com"],
       hasApp: true,
       androidPackageId: "com.strava",
-      webLink: () => `https://www.strava.com/search`,
-      iosScheme: () => `strava://search`,
-      androidScheme: () => {
-        const web = `https://www.strava.com/search`;
-        return `intent://search#Intent;scheme=strava;package=com.strava;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      webLink: ({ query }) => `https://www.strava.com/search?text=${encodeURIComponent(query)}`,
+      iosScheme: ({ query }) => `strava://search?text=${encodeURIComponent(query)}`,
+      androidScheme: ({ query }) => {
+        const web = `https://www.strava.com/search?text=${encodeURIComponent(query)}`;
+        return `intent://search?text=${encodeURIComponent(query)}#Intent;scheme=strava;package=com.strava;S.browser_fallback_url=${encodeURIComponent(web)};end`;
       },
     },
     "Nike Run Club": {
@@ -1075,11 +1103,11 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       domains: ["nike.com"],
       hasApp: true,
       androidPackageId: "com.nike.plusgps",
-      webLink: () => `https://www.nike.com/nrc-app`,
-      iosScheme: () => `nikerunclub://`,
-      androidScheme: () => {
-        const web = `https://www.nike.com/nrc-app`;
-        return `intent://#Intent;scheme=nikerunclub;package=com.nike.plusgps;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      webLink: ({ query }) => `https://www.nike.com/nrc-app?query=${encodeURIComponent(query)}`,
+      iosScheme: ({ query }) => `nikerunclub://search?query=${encodeURIComponent(query)}`,
+      androidScheme: ({ query }) => {
+        const web = `https://www.nike.com/nrc-app?query=${encodeURIComponent(query)}`;
+        return `intent://search?query=${encodeURIComponent(query)}#Intent;scheme=nikerunclub;package=com.nike.plusgps;S.browser_fallback_url=${encodeURIComponent(web)};end`;
       },
     },
     "Hevy": {
@@ -1088,11 +1116,11 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       domains: ["hevyapp.com"],
       hasApp: true,
       androidPackageId: "com.hevy.tracker",
-      webLink: () => `https://www.hevyapp.com`,
-      iosScheme: () => `hevy://`,
-      androidScheme: () => {
-        const web = `https://www.hevyapp.com`;
-        return `intent://#Intent;scheme=hevy;package=com.hevy.tracker;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      webLink: ({ query }) => `https://www.hevyapp.com/?q=${encodeURIComponent(query)}`,
+      iosScheme: ({ query }) => `hevy://search?query=${encodeURIComponent(query)}`,
+      androidScheme: ({ query }) => {
+        const web = `https://www.hevyapp.com/?q=${encodeURIComponent(query)}`;
+        return `intent://search?query=${encodeURIComponent(query)}#Intent;scheme=hevy;package=com.hevy.tracker;S.browser_fallback_url=${encodeURIComponent(web)};end`;
       },
     },
     "Strong": {
@@ -1101,11 +1129,11 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       domains: ["strong.app"],
       hasApp: true,
       androidPackageId: "io.strongapp.strong",
-      webLink: () => `https://www.strong.app`,
-      iosScheme: () => `strong://`,
-      androidScheme: () => {
-        const web = `https://www.strong.app`;
-        return `intent://#Intent;scheme=strong;package=io.strongapp.strong;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      webLink: ({ query }) => `https://www.strong.app/?q=${encodeURIComponent(query)}`,
+      iosScheme: ({ query }) => `strong://search?query=${encodeURIComponent(query)}`,
+      androidScheme: ({ query }) => {
+        const web = `https://www.strong.app/?q=${encodeURIComponent(query)}`;
+        return `intent://search?query=${encodeURIComponent(query)}#Intent;scheme=strong;package=io.strongapp.strong;S.browser_fallback_url=${encodeURIComponent(web)};end`;
       },
     },
     "Down Dog": {
@@ -1114,11 +1142,11 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       domains: ["downdogapp.com"],
       hasApp: true,
       androidPackageId: "com.downdogapp",
-      webLink: () => `https://www.downdogapp.com`,
-      iosScheme: () => `downdog://`,
-      androidScheme: () => {
-        const web = `https://www.downdogapp.com`;
-        return `intent://#Intent;scheme=downdog;package=com.downdogapp;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      webLink: ({ query }) => `https://www.downdogapp.com/?q=${encodeURIComponent(query)}`,
+      iosScheme: ({ query }) => `downdog://search?query=${encodeURIComponent(query)}`,
+      androidScheme: ({ query }) => {
+        const web = `https://www.downdogapp.com/?q=${encodeURIComponent(query)}`;
+        return `intent://search?query=${encodeURIComponent(query)}#Intent;scheme=downdog;package=com.downdogapp;S.browser_fallback_url=${encodeURIComponent(web)};end`;
       },
     },
     "携程": {
@@ -1240,20 +1268,19 @@ export function getWeightedProvidersForCategory(
     switch (category) {
       case "entertainment":
         return [
-          { provider: "YouTube", weight: 0.20, tier: "mainstream" },
-          { provider: "TikTok", weight: 0.20, tier: "mainstream" },
-          { provider: "Spotify", weight: 0.20, tier: "mainstream" },
-          { provider: "JustWatch", weight: 0.15, tier: "mainstream" },
-          { provider: "Medium", weight: 0.10, tier: "longtail" },
-          { provider: "Google", weight: 0.15, tier: "longtail" },
+          { provider: "YouTube", weight: 0.18, tier: "mainstream" },
+          { provider: "TikTok", weight: 0.18, tier: "mainstream" },
+          { provider: "JustWatch", weight: 0.16, tier: "mainstream" },
+          { provider: "Spotify", weight: 0.16, tier: "mainstream" },
+          { provider: "Medium", weight: 0.16, tier: "longtail" },
+          { provider: "MiniReview", weight: 0.16, tier: "longtail" },
         ];
       case "shopping":
         return [
-          { provider: "Amazon", weight: 0.25, tier: "mainstream" },
-          { provider: "Etsy", weight: 0.20, tier: "mainstream" },
-          { provider: "Slickdeals", weight: 0.20, tier: "mainstream" },
+          { provider: "Amazon", weight: 0.30, tier: "mainstream" },
+          { provider: "Etsy", weight: 0.25, tier: "mainstream" },
+          { provider: "Slickdeals", weight: 0.25, tier: "mainstream" },
           { provider: "Pinterest", weight: 0.20, tier: "mainstream" },
-          { provider: "Google", weight: 0.15, tier: "longtail" },
         ];
       case "food":
         return [

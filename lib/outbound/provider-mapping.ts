@@ -28,6 +28,7 @@ export function mapSearchPlatformToProvider(platform: string, locale: "zh" | "en
     "TikTok": "TikTok",
     "JustWatch": "JustWatch",
     "Medium": "Medium",
+    "MiniReview": "MiniReview",
     "Etsy": "Etsy",
     "Slickdeals": "Slickdeals",
     "Pinterest": "Pinterest",

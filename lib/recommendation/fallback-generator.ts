@@ -83,7 +83,7 @@ export function getFallbackPool(locale: "zh" | "en"): Record<RecommendationCateg
           reason: "Perfect for a relaxing weekend gaming session",
           tags: ["games", "indie", "puzzle", "short"],
           searchQuery: "indie puzzle games short story weekend",
-          platform: "Steam",
+          platform: "MiniReview",
           entertainmentType: "game",
         },
         {

@@ -16,10 +16,10 @@ export const TRUSTED_PLATFORMS = {
     fitness: ['B站健身', '优酷健身', 'Keep', '大众点评', '美团', '百度地图健身', '高德地图健身', '腾讯地图健身', '知乎', '什么值得买']
   },
   en: {
-    video: ['IMDb', 'YouTube', 'Netflix', 'Rotten Tomatoes', 'Hulu', 'Disney+', 'Amazon Prime Video', 'HBO Max'],
-    game: ['Steam', 'Epic Games', 'GOG', 'Nintendo eShop', 'PlayStation Store', 'Xbox Games Store', 'Twitch', 'IGN', 'Humble Bundle', 'itch.io', 'Game Pass', 'Green Man Gaming'],
+    video: ['IMDb', 'YouTube', 'TikTok', 'Netflix', 'Rotten Tomatoes', 'Hulu', 'Disney+', 'Amazon Prime Video', 'HBO Max'],
+    game: ['Steam', 'Epic Games', 'GOG', 'Nintendo eShop', 'PlayStation Store', 'Xbox Games Store', 'Twitch', 'IGN', 'Humble Bundle', 'itch.io', 'Game Pass', 'Green Man Gaming', 'MiniReview'],
     music: ['Spotify', 'YouTube Music', 'Apple Music', 'Amazon Music', 'SoundCloud', 'Bandcamp', 'Pandora'],
-    review: ['IMDb', 'Rotten Tomatoes', 'Metacritic', 'IGN', 'Gamespot', 'Polygon', 'Entertainment Weekly', 'Variety'],
+    review: ['IMDb', 'JustWatch', 'Medium', 'Rotten Tomatoes', 'Metacritic', 'IGN', 'Gamespot', 'Polygon', 'Entertainment Weekly', 'Variety'],
     shopping: ['Amazon', 'eBay', 'Walmart', 'Target'],
     food: ['Uber Eats', 'DoorDash', 'Yelp', 'Google Maps'],
     travel: ['Google Maps', 'TripAdvisor', 'Booking.com', 'Agoda', 'Airbnb'],
@@ -158,6 +158,7 @@ export const PLATFORM_DOMAINS = {
   'TikTok': 'tiktok.com',
   'JustWatch': 'justwatch.com',
   'Medium': 'medium.com',
+  'MiniReview': 'minireview.io',
   'Etsy': 'etsy.com',
   'Slickdeals': 'slickdeals.net',
   'Pinterest': 'pinterest.com',
@@ -220,6 +221,7 @@ export const OUTBOUND_ALLOWED_SCHEMES = [
   "youtube",       // YouTube
   "nflx",          // Netflix
   "justwatch",     // JustWatch
+  "minireview",    // MiniReview
   // INTL 移动端 App scheme - 购物类
   "com.amazon.mobile.shopping", // Amazon iOS
   "etsy",          // Etsy

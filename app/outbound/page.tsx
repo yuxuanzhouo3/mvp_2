@@ -442,7 +442,7 @@ export default function OutboundPage() {
           </div>
           <div className="text-sm text-gray-600 mb-4">{decoded.error}</div>
           <Button className="w-full" onClick={handleBack}>
-            {language === "zh" ? "返回" : "Back"}
+            {language === "zh" ? "返回 RandomLife" : "Back to RandomLife"}
           </Button>
         </Card>
       </div>
@@ -491,8 +491,8 @@ export default function OutboundPage() {
           <div className="text-sm text-green-700 mb-4 flex items-center gap-2">
             <span className="text-lg">✅</span>
             {language === "zh"
-              ? `${providerName} App 已打开，返回后将自动回到推荐页`
-              : `${providerName} app opened, will return to recommendations when you come back`}
+              ? `${providerName} App 已打开，返回后将自动回到 RandomLife 推荐页`
+              : `${providerName} app opened, and you will return to RandomLife recommendations when you come back`}
           </div>
         )}
 
@@ -555,8 +555,8 @@ export default function OutboundPage() {
                 </div>
                 <p className="text-blue-700 text-xs">
                   {language === "zh"
-                    ? "安装完成后返回此页面，将自动打开 App"
-                    : "After installing, return here to auto-open the app"}
+                    ? "安装完成后返回 RandomLife 此页面，将自动打开 App"
+                    : "After installing, return to this RandomLife page to auto-open the app"}
                 </p>
                 <Button
                   className="w-full mt-3 bg-gradient-to-r from-blue-500 to-cyan-500 text-white hover:from-blue-600 hover:to-cyan-600"
@@ -594,8 +594,8 @@ export default function OutboundPage() {
                 </div>
                 <p className="text-xs text-gray-500 mt-2 text-center">
                   {language === "zh"
-                    ? "安装完成后返回此页面，将自动尝试打开 App"
-                    : "After installing, return here to auto-open the app"}
+                    ? "安装完成后返回 RandomLife 此页面，将自动尝试打开 App"
+                    : "After installing, return to this RandomLife page to auto-open the app"}
                 </p>
               </>
             )}
@@ -672,7 +672,7 @@ export default function OutboundPage() {
           )}
 
           <Button className="w-full" variant="ghost" onClick={handleBack}>
-            {language === "zh" ? "返回推荐结果" : "Back to recommendations"}
+            {language === "zh" ? "返回 RandomLife 推荐页" : "Back to RandomLife recommendations"}
           </Button>
         </div>
       </Card>

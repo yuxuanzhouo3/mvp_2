@@ -469,6 +469,7 @@ export function generateSearchLink(
     },
     en: {
       // Shopping platforms
+      'Amazon Shopping': (q) => `https://www.amazon.com/s?k=${encodeURIComponent(q)}`,
       'Amazon': (q) => `https://www.amazon.com/s?k=${encodeURIComponent(q)}`,
       'eBay': (q) => `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(q)}`,
       'Walmart': (q) => `https://www.walmart.com/search?q=${encodeURIComponent(q)}`,
@@ -483,6 +484,7 @@ export function generateSearchLink(
       'TikTok': (q) => `https://www.tiktok.com/search?q=${encodeURIComponent(q)}`,
       'JustWatch': (q) => `https://www.justwatch.com/us/search?q=${encodeURIComponent(q)}`,
       'Medium': (q) => `https://medium.com/search?q=${encodeURIComponent(q)}`,
+      'MiniReview': (q) => `https://minireview.io/?s=${encodeURIComponent(q)}`,
       'Spotify': (q) => `https://open.spotify.com/search/${encodeURIComponent(q)}`,
       'Rotten Tomatoes': (q) => `https://www.rottentomatoes.com/search?search=${encodeURIComponent(q)}`,
       'Metacritic': (q) => `https://www.metacritic.com/search/all/${encodeURIComponent(q)}/results`,
@@ -509,8 +511,8 @@ export function generateSearchLink(
       'Zomato': (q) => `https://www.zomato.com/search?q=${encodeURIComponent(q)}`,
       'Allrecipes': (q) => `https://www.allrecipes.com/search?q=${encodeURIComponent(q)}`,
       'Love and Lemons': (q) => `https://www.loveandlemons.com/?s=${encodeURIComponent(q)}`,
-      'Fantuan Delivery': () => `https://www.fantuanorder.com`,
-      'HungryPanda': () => `https://www.hungrypanda.co/`,
+      'Fantuan Delivery': (q) => `https://www.fantuanorder.com/search?keyword=${encodeURIComponent(q)}`,
+      'HungryPanda': (q) => `https://www.hungrypanda.co/search?keyword=${encodeURIComponent(q)}`,
 
       // Travel platforms
       'TripAdvisor Travel': (q) => `https://www.tripadvisor.com/Search?q=${encodeURIComponent(q)}`,
@@ -768,7 +770,7 @@ export function selectBestPlatform(
     },
     en: {
       video: ['YouTube', 'IMDb', 'Netflix', 'Rotten Tomatoes'],
-      game: ['Steam', 'Metacritic', 'Epic Games'],
+      game: ['MiniReview', 'Steam', 'Metacritic', 'Epic Games'],
       music: ['Spotify', 'YouTube'],
       review: ['IMDb', 'Rotten Tomatoes', 'Metacritic']
     }
@@ -793,7 +795,7 @@ export function selectBestPlatform(
 
   // INTL mobile: prioritize platforms with native apps on Google Play
   const intlMobilePlatforms: Record<string, string[]> = {
-    entertainment: ['YouTube', 'TikTok', 'Spotify', 'JustWatch', 'Medium'],
+      entertainment: ['YouTube', 'TikTok', 'JustWatch', 'Spotify', 'Medium', 'MiniReview'],
     shopping: ['Amazon Shopping', 'Etsy', 'Slickdeals', 'Pinterest'],
     food: ['DoorDash', 'Uber Eats', 'Fantuan Delivery', 'HungryPanda'],
     travel: ['TripAdvisor', 'Yelp', 'Wanderlog', 'Visit A City', 'GetYourGuide', 'Google Maps'],

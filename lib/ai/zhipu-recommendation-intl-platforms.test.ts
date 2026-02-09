@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getIntlCategoryPlatforms } from "./zhipu-recommendation";
+import { getIntlCategoryPlatforms, getMobilePlatforms } from "./zhipu-recommendation";
 
 /**
  * Unit tests for INTL categoryConfig platform lists.
@@ -89,6 +89,19 @@ describe("getIntlCategoryPlatforms — INTL categoryConfig platform lists", () =
   describe("unknown category", () => {
     it("should return an empty array for unknown categories", () => {
       expect(getIntlCategoryPlatforms("unknown")).toEqual([]);
+    });
+  });
+
+  describe("mobile entertainment platforms", () => {
+    it("should include YouTube, TikTok, JustWatch, Spotify, Medium, and MiniReview", () => {
+      const platforms = getMobilePlatforms("entertainment");
+      expect(platforms).toContain("YouTube");
+      expect(platforms).toContain("TikTok");
+      expect(platforms).toContain("JustWatch");
+      expect(platforms).toContain("Spotify");
+      expect(platforms).toContain("Medium");
+      expect(platforms).toContain("MiniReview");
+      expect(platforms).toHaveLength(6);
     });
   });
 });

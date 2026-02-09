@@ -28,6 +28,12 @@ describe("mapSearchPlatformToProvider — INTL mappings", () => {
     );
   });
 
+  it('should map "MiniReview" to "MiniReview"', () => {
+    expect(mapSearchPlatformToProvider("MiniReview", "en")).toBe(
+      "MiniReview"
+    );
+  });
+
   it("should return the platform name unchanged when no mapping exists", () => {
     expect(mapSearchPlatformToProvider("YouTube", "en")).toBe("YouTube");
     expect(mapSearchPlatformToProvider("Google", "en")).toBe("Google");

@@ -46,6 +46,17 @@ describe("getWeightedProvidersForCategory — INTL WeightedProvider configuratio
     it("should have weights summing to approximately 1.0", () => {
       expect(sumWeights(providers)).toBeCloseTo(1.0, 2);
     });
+
+    it("should include INTL mobile entertainment app set", () => {
+      const mobileProviders = getWeightedProvidersForCategory("entertainment", "INTL", true);
+      const names = getProviderNames(mobileProviders);
+      expect(names).toContain("YouTube");
+      expect(names).toContain("TikTok");
+      expect(names).toContain("JustWatch");
+      expect(names).toContain("Spotify");
+      expect(names).toContain("Medium");
+      expect(names).toContain("MiniReview");
+    });
   });
 
   describe("shopping (Requirement 9.2)", () => {
@@ -61,6 +72,17 @@ describe("getWeightedProvidersForCategory — INTL WeightedProvider configuratio
 
     it("should have weights summing to approximately 1.0", () => {
       expect(sumWeights(providers)).toBeCloseTo(1.0, 2);
+    });
+
+    it("should use INTL mobile shopping app set only", () => {
+      const mobileProviders = getWeightedProvidersForCategory("shopping", "INTL", true);
+      const names = getProviderNames(mobileProviders);
+      expect(names).toContain("Amazon");
+      expect(names).toContain("Etsy");
+      expect(names).toContain("Slickdeals");
+      expect(names).toContain("Pinterest");
+      expect(names).not.toContain("Google");
+      expect(names).not.toContain("Google Maps");
     });
   });
 

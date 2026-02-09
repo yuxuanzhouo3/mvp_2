@@ -144,7 +144,7 @@ function getFallbackProviders(
   if (region === "INTL" && isMobile) {
     switch (category) {
       case "entertainment":
-        return ["YouTube", "TikTok", "Spotify", "JustWatch", "Medium", "Google"];
+        return ["YouTube", "TikTok", "JustWatch", "Spotify", "Medium", "MiniReview", "Google"];
       case "shopping":
         return ["Amazon", "Etsy", "Slickdeals", "Pinterest", "Google Maps", "Google"];
       case "food":

@@ -25,7 +25,11 @@ import {
   identifyFitnessType,
 } from "@/lib/ai/fitness-enhancer";
 import { validateAndFixPlatforms } from "@/lib/search/platform-validator";
-import { analyzeEntertainmentDiversity, supplementEntertainmentTypes } from "@/lib/ai/entertainment-diversity-checker";
+import {
+  analyzeEntertainmentDiversity,
+  supplementEntertainmentTypes,
+  inferEntertainmentType,
+} from "@/lib/ai/entertainment-diversity-checker";
 import {
   getUserRecommendationHistory,
   getUserCategoryPreference,
@@ -103,6 +107,174 @@ function prioritizeEntertainmentCandidates<T extends { title?: string; searchQue
   });
 
   return [...picks, ...rest];
+}
+
+function normalizeIntlMobileEntertainmentType(
+  item: {
+    platform?: string;
+    entertainmentType?: string;
+    title?: string;
+    description?: string;
+    searchQuery?: string;
+    tags?: string[];
+  }
+): "video" | "game" | "music" | "review" {
+  const platform = String(item.platform || "");
+  if (platform === "YouTube" || platform === "TikTok") return "video";
+  if (platform === "MiniReview") return "game";
+  if (platform === "Spotify") return "music";
+  if (platform === "JustWatch" || platform === "Medium") return "review";
+
+  const normalized =
+    item.entertainmentType === "video" ||
+    item.entertainmentType === "game" ||
+    item.entertainmentType === "music" ||
+    item.entertainmentType === "review"
+      ? item.entertainmentType
+      : inferEntertainmentType(item as any);
+  if (normalized === "video" || normalized === "game" || normalized === "music" || normalized === "review") {
+    return normalized;
+  }
+  return "video";
+}
+
+function enforceIntlMobileEntertainmentMix<T extends {
+  platform?: string;
+  entertainmentType?: string;
+  title?: string;
+  description?: string;
+  reason?: string;
+  tags?: string[];
+  searchQuery?: string;
+}>(
+  items: T[]
+): T[] {
+  const normalized = (items || []).map((item) => {
+    const platform = String(item.platform || "");
+    const fixedType = normalizeIntlMobileEntertainmentType(item as any);
+    const fixedPlatform =
+      fixedType === "video"
+        ? platform === "TikTok"
+          ? "TikTok"
+          : "YouTube"
+        : fixedType === "game"
+          ? "MiniReview"
+          : fixedType === "music"
+            ? "Spotify"
+            : platform === "Medium"
+              ? "Medium"
+              : "JustWatch";
+    return {
+      ...item,
+      entertainmentType: fixedType,
+      platform: fixedPlatform,
+    } as T;
+  });
+
+  const byType = {
+    video: normalized.filter((item) => item.entertainmentType === "video"),
+    game: normalized.filter((item) => item.entertainmentType === "game"),
+    music: normalized.filter((item) => item.entertainmentType === "music"),
+    review: normalized.filter((item) => item.entertainmentType === "review"),
+  };
+
+  const pickPlatform = (
+    platform: "YouTube" | "TikTok" | "JustWatch" | "Spotify" | "Medium" | "MiniReview",
+    fallbackType: "video" | "game" | "music" | "review",
+    fallbackTitle: string,
+    fallbackQuery: string,
+    sourceTypeList?: T[]
+  ): T => {
+    const direct = normalized.find((item) => item.platform === platform);
+    if (direct) return direct;
+    const source = sourceTypeList?.[0];
+    if (source) {
+      return {
+        ...source,
+        platform,
+        entertainmentType: fallbackType,
+      } as T;
+    }
+    return {
+      title: fallbackTitle,
+      description: fallbackTitle,
+      reason: "",
+      tags: [],
+      searchQuery: fallbackQuery,
+      platform,
+      entertainmentType: fallbackType,
+    } as unknown as T;
+  };
+
+  const youtubeVideo = pickPlatform(
+    "YouTube",
+    "video",
+    "Trending Shorts",
+    "trending shorts",
+    byType.video
+  );
+  const tiktokVideo = pickPlatform(
+    "TikTok",
+    "video",
+    "TikTok Trends",
+    "tiktok trends",
+    byType.video
+  );
+  const justWatch = pickPlatform(
+    "JustWatch",
+    "review",
+    "Top Movies & Shows",
+    "top movies shows",
+    byType.review
+  );
+  const spotify = pickPlatform(
+    "Spotify",
+    "music",
+    "Top Songs Playlist",
+    "top songs playlist",
+    byType.music
+  );
+  const medium = pickPlatform(
+    "Medium",
+    "review",
+    "Deep Entertainment Articles",
+    "entertainment analysis",
+    byType.review
+  );
+  const miniReview = pickPlatform(
+    "MiniReview",
+    "game",
+    "Top Android Indie Games",
+    "indie android games",
+    byType.game
+  );
+
+  return [
+    youtubeVideo,
+    tiktokVideo,
+    justWatch,
+    spotify,
+    medium,
+    miniReview,
+    ...normalized.filter((item) => ![youtubeVideo, tiktokVideo, justWatch, spotify, medium, miniReview].includes(item)),
+  ];
+}
+
+function enforceIntlMobileEntertainmentLinkTypes<T extends { platform?: string; linkType?: string }>(items: T[]): T[] {
+  return (items || []).map((item) => {
+    const platform = String(item.platform || "");
+    let linkType = item.linkType;
+    if (platform === "YouTube" || platform === "TikTok") {
+      linkType = "video";
+    } else if (platform === "MiniReview") {
+      linkType = "game";
+    } else if (platform === "Spotify") {
+      linkType = "music";
+    } else if (platform === "JustWatch" || platform === "Medium") {
+      linkType = "article";
+    }
+    return { ...item, linkType } as T;
+  });
 }
 
 const FITNESS_REQUIRED_TYPES_WEB_CN = ["tutorial", "theory_article", "equipment"] as const;
@@ -328,19 +500,228 @@ function pickWeightedPlatform(candidates: WeightedCandidate[], seed: string): st
 }
 
 const REQUIRED_SHOPPING_PLATFORMS_CN_WEB = ["京东", "什么值得买", "慢慢买"] as const;
+const REQUIRED_ENTERTAINMENT_PLATFORMS_INTL_MOBILE = [
+  "YouTube",
+  "TikTok",
+  "JustWatch",
+  "Spotify",
+  "Medium",
+  "MiniReview",
+] as const;
+const REQUIRED_SHOPPING_PLATFORMS_INTL_ANDROID = [
+  "Amazon Shopping",
+  "Amazon Shopping",
+  "Etsy",
+  "Etsy",
+  "Slickdeals",
+  "Pinterest",
+] as const;
+const REQUIRED_FOOD_PLATFORMS_INTL_ANDROID = [
+  "DoorDash",
+  "DoorDash",
+  "Uber Eats",
+  "Uber Eats",
+  "Fantuan Delivery",
+  "HungryPanda",
+] as const;
+const REQUIRED_TRAVEL_PLATFORMS_INTL_ANDROID = [
+  "TripAdvisor",
+  "Yelp",
+  "Wanderlog",
+  "Visit A City",
+  "GetYourGuide",
+  "Google Maps",
+] as const;
+const REQUIRED_FITNESS_PLATFORMS_INTL_ANDROID = [
+  "Nike Training Club",
+  "Peloton",
+  "Strava",
+  "Nike Run Club",
+  "Hevy",
+  "Strong",
+  "Down Dog",
+  "MyFitnessPal",
+] as const;
 
-function getShoppingPlatformOverride(params: {
+function isIntlMobileEntertainmentContext(params: {
   category: RecommendationCategory;
   locale: "zh" | "en";
-  client: "app" | "web";
+  isMobile?: boolean;
+}): boolean {
+  const { category, locale, isMobile } = params;
+  return category === "entertainment" && locale === "en" && Boolean(isMobile);
+}
+
+export function isIntlAndroidShoppingContext(params: {
+  category: RecommendationCategory;
+  locale: "zh" | "en";
+  isMobile?: boolean;
+  isAndroid?: boolean;
+}): boolean {
+  const { category, locale, isMobile, isAndroid } = params;
+  return (
+    category === "shopping" &&
+    locale === "en" &&
+    Boolean(isMobile) &&
+    Boolean(isAndroid)
+  );
+}
+
+export function isIntlAndroidFoodContext(params: {
+  category: RecommendationCategory;
+  locale: "zh" | "en";
+  isMobile?: boolean;
+  isAndroid?: boolean;
+}): boolean {
+  const { category, locale, isMobile, isAndroid } = params;
+  return (
+    category === "food" &&
+    locale === "en" &&
+    Boolean(isMobile) &&
+    Boolean(isAndroid)
+  );
+}
+
+export function isIntlAndroidTravelContext(params: {
+  category: RecommendationCategory;
+  locale: "zh" | "en";
+  isMobile?: boolean;
+  isAndroid?: boolean;
+}): boolean {
+  const { category, locale, isMobile, isAndroid } = params;
+  return (
+    category === "travel" &&
+    locale === "en" &&
+    Boolean(isMobile) &&
+    Boolean(isAndroid)
+  );
+}
+
+export function isIntlAndroidFitnessContext(params: {
+  category: RecommendationCategory;
+  locale: "zh" | "en";
+  isMobile?: boolean;
+  isAndroid?: boolean;
+}): boolean {
+  const { category, locale, isMobile, isAndroid } = params;
+  return (
+    category === "fitness" &&
+    locale === "en" &&
+    Boolean(isMobile) &&
+    Boolean(isAndroid)
+  );
+}
+
+export function getRecommendationTargetCount(params: {
+  category: RecommendationCategory;
+  locale: "zh" | "en";
+  isMobile?: boolean;
+  isAndroid?: boolean;
+  requestedCount: number;
+}): number {
+  const { requestedCount } = params;
+  if (isIntlMobileEntertainmentContext(params)) {
+    return Math.max(requestedCount, REQUIRED_ENTERTAINMENT_PLATFORMS_INTL_MOBILE.length);
+  }
+  if (isIntlAndroidShoppingContext(params)) {
+    return Math.max(requestedCount, REQUIRED_SHOPPING_PLATFORMS_INTL_ANDROID.length);
+  }
+  if (isIntlAndroidFoodContext(params)) {
+    return Math.max(requestedCount, REQUIRED_FOOD_PLATFORMS_INTL_ANDROID.length);
+  }
+  if (isIntlAndroidTravelContext(params)) {
+    return Math.max(requestedCount, REQUIRED_TRAVEL_PLATFORMS_INTL_ANDROID.length);
+  }
+  if (isIntlAndroidFitnessContext(params)) {
+    return Math.max(requestedCount, REQUIRED_FITNESS_PLATFORMS_INTL_ANDROID.length);
+  }
+  return requestedCount;
+}
+
+function getEntertainmentPlatformOverride(params: {
+  category: RecommendationCategory;
+  locale: "zh" | "en";
+  isMobile?: boolean;
   index: number;
   count: number;
 }): string | null {
-  const { category, locale, client, index, count } = params;
+  const { category, locale, isMobile, index, count } = params;
+  if (!isIntlMobileEntertainmentContext({ category, locale, isMobile })) return null;
+  if (count <= 0) return null;
+  const max = Math.min(count, REQUIRED_ENTERTAINMENT_PLATFORMS_INTL_MOBILE.length);
+  return index < max ? REQUIRED_ENTERTAINMENT_PLATFORMS_INTL_MOBILE[index] : null;
+}
+
+export function getShoppingPlatformOverride(params: {
+  category: RecommendationCategory;
+  locale: "zh" | "en";
+  client: "app" | "web";
+  isMobile?: boolean;
+  isAndroid?: boolean;
+  index: number;
+  count: number;
+}): string | null {
+  const { category, locale, client, isMobile, isAndroid, index, count } = params;
+  if (isIntlAndroidShoppingContext({ category, locale, isMobile, isAndroid })) {
+    if (count <= 0) return null;
+    const max = Math.min(count, REQUIRED_SHOPPING_PLATFORMS_INTL_ANDROID.length);
+    return index < max ? REQUIRED_SHOPPING_PLATFORMS_INTL_ANDROID[index] : null;
+  }
   if (category !== "shopping" || locale !== "zh" || client !== "web") return null;
   if (count <= 0) return null;
   const max = Math.min(count, REQUIRED_SHOPPING_PLATFORMS_CN_WEB.length);
   return index < max ? REQUIRED_SHOPPING_PLATFORMS_CN_WEB[index] : null;
+}
+
+export function getFoodPlatformOverride(params: {
+  category: RecommendationCategory;
+  locale: "zh" | "en";
+  isMobile?: boolean;
+  isAndroid?: boolean;
+  index: number;
+  count: number;
+}): string | null {
+  const { category, locale, isMobile, isAndroid, index, count } = params;
+  if (!isIntlAndroidFoodContext({ category, locale, isMobile, isAndroid })) {
+    return null;
+  }
+  if (count <= 0) return null;
+  const max = Math.min(count, REQUIRED_FOOD_PLATFORMS_INTL_ANDROID.length);
+  return index < max ? REQUIRED_FOOD_PLATFORMS_INTL_ANDROID[index] : null;
+}
+
+export function getTravelPlatformOverride(params: {
+  category: RecommendationCategory;
+  locale: "zh" | "en";
+  isMobile?: boolean;
+  isAndroid?: boolean;
+  index: number;
+  count: number;
+}): string | null {
+  const { category, locale, isMobile, isAndroid, index, count } = params;
+  if (!isIntlAndroidTravelContext({ category, locale, isMobile, isAndroid })) {
+    return null;
+  }
+  if (count <= 0) return null;
+  const max = Math.min(count, REQUIRED_TRAVEL_PLATFORMS_INTL_ANDROID.length);
+  return index < max ? REQUIRED_TRAVEL_PLATFORMS_INTL_ANDROID[index] : null;
+}
+
+export function getFitnessPlatformOverride(params: {
+  category: RecommendationCategory;
+  locale: "zh" | "en";
+  isMobile?: boolean;
+  isAndroid?: boolean;
+  index: number;
+  count: number;
+}): string | null {
+  const { category, locale, isMobile, isAndroid, index, count } = params;
+  if (!isIntlAndroidFitnessContext({ category, locale, isMobile, isAndroid })) {
+    return null;
+  }
+  if (count <= 0) return null;
+  const max = Math.min(count, REQUIRED_FITNESS_PLATFORMS_INTL_ANDROID.length);
+  return index < max ? REQUIRED_FITNESS_PLATFORMS_INTL_ANDROID[index] : null;
 }
 
 function resolveFoodPlatformForWebCN(rec: {
@@ -526,11 +907,12 @@ function selectWeightedPlatformForCategory(
       switch (category) {
         case "entertainment":
           return [
-            { platform: "YouTube", weight: 0.25 },
-            { platform: "TikTok", weight: 0.25 },
-            { platform: "Spotify", weight: 0.20 },
-            { platform: "JustWatch", weight: 0.20 },
-            { platform: "Medium", weight: 0.10 },
+            { platform: "YouTube", weight: 0.18 },
+            { platform: "TikTok", weight: 0.18 },
+            { platform: "JustWatch", weight: 0.16 },
+            { platform: "Spotify", weight: 0.16 },
+            { platform: "Medium", weight: 0.16 },
+            { platform: "MiniReview", weight: 0.16 },
           ];
         case "shopping":
           return [
@@ -651,7 +1033,7 @@ export async function GET(request: NextRequest, { params }: { params: { category
 
     const searchParams = request.nextUrl.searchParams;
     const userId = searchParams.get("userId") || "anonymous";
-    const count = Math.min(parseInt(searchParams.get("count") || "5"), 10);
+    const requestedCount = Math.min(parseInt(searchParams.get("count") || "5"), 10);
     const locale = (searchParams.get("locale") as "zh" | "en") || getLocale();
     const skipCache = searchParams.get("skipCache") === "true";
     const enableStreaming = searchParams.get("stream") === "true";
@@ -665,6 +1047,14 @@ export async function GET(request: NextRequest, { params }: { params: { category
     const isCnWeb = isChinaDeployment() && locale === "zh" && client === "web";
     const userAgent = request.headers.get("user-agent") || "";
     const isMobile = /iphone|ipad|ipod|android/i.test(userAgent);
+    const isAndroid = /android/i.test(userAgent);
+    const count = getRecommendationTargetCount({
+      category,
+      locale,
+      isMobile,
+      isAndroid,
+      requestedCount,
+    });
 
     const excludeTitlesRaw = searchParams.get("excludeTitles");
     let excludeTitles: string[] = [];
@@ -850,7 +1240,10 @@ export async function GET(request: NextRequest, { params }: { params: { category
     const preferenceHash = generatePreferenceHash(userPreference, userHistory || []);
     const isAnonymous = userId === "anonymous";
 
-    if (!skipCache && !isAnonymous) {
+    const shouldBypassCacheForIntlMobileEntertainment =
+      isIntlMobileEntertainmentContext({ category, locale, isMobile });
+
+    if (!skipCache && !isAnonymous && !shouldBypassCacheForIntlMobileEntertainment) {
       try {
         const cachedRecommendations = await getCachedRecommendations(category, preferenceHash);
         if (cachedRecommendations && cachedRecommendations.length > 0) {
@@ -884,11 +1277,16 @@ export async function GET(request: NextRequest, { params }: { params: { category
         userPreference,
         excludeTitles,
         isMobile,
+        isAndroid,
       });
+
+      const fallbackOutput = isIntlMobileEntertainmentContext({ category, locale, isMobile })
+        ? enforceIntlMobileEntertainmentLinkTypes((fallbackRecs as any[]).slice(0, count))
+        : fallbackRecs;
 
       return NextResponse.json({
         success: true,
-        recommendations: fallbackRecs,
+        recommendations: fallbackOutput,
         source: "fallback",
       } satisfies AIRecommendResponse);
     }
@@ -917,6 +1315,10 @@ export async function GET(request: NextRequest, { params }: { params: { category
           }
           if (shouldEnsureEntertainmentTypes) {
             processedRecommendations = prioritizeEntertainmentCandidates(processedRecommendations as any);
+          }
+
+          if (isIntlMobileEntertainmentContext({ category, locale, isMobile })) {
+            processedRecommendations = enforceIntlMobileEntertainmentMix(processedRecommendations as any).slice(0, count) as any;
           }
         } else if (category === "fitness") {
           const fitnessValidation = validateFitnessRecommendationDiversity(
@@ -966,6 +1368,10 @@ export async function GET(request: NextRequest, { params }: { params: { category
           });
         }
 
+        if (isIntlMobileEntertainmentContext({ category, locale, isMobile })) {
+          processedRecommendations = enforceIntlMobileEntertainmentMix(processedRecommendations as any).slice(0, count) as any;
+        }
+
         if (shouldEnsureEntertainmentTypes) {
           const coverage = analyzeEntertainmentDiversity(processedRecommendations as any);
           if (coverage.missingTypes.length > 0) {
@@ -1000,6 +1406,10 @@ export async function GET(request: NextRequest, { params }: { params: { category
           }
         }
 
+        if (isIntlMobileEntertainmentContext({ category, locale, isMobile })) {
+          processedRecommendations = enforceIntlMobileEntertainmentMix(processedRecommendations as any).slice(0, count) as any;
+        }
+
         let webFoodReviewCount = 0;
 
         const finalRecommendations = processedRecommendations.map((rec, index) => {
@@ -1030,13 +1440,52 @@ export async function GET(request: NextRequest, { params }: { params: { category
             isMobile
           );
 
-          const forcedPlatform = getShoppingPlatformOverride({
+          const forcedEntertainmentPlatform = getEntertainmentPlatformOverride({
             category,
             locale,
-            client,
+            isMobile,
             index,
             count,
           });
+          const forcedShoppingPlatform = getShoppingPlatformOverride({
+            category,
+            locale,
+            client,
+            isMobile,
+            isAndroid,
+            index,
+            count,
+          });
+          const forcedFoodPlatform = getFoodPlatformOverride({
+            category,
+            locale,
+            isMobile,
+            isAndroid,
+            index,
+            count,
+          });
+          const forcedTravelPlatform = getTravelPlatformOverride({
+            category,
+            locale,
+            isMobile,
+            isAndroid,
+            index,
+            count,
+          });
+          const forcedFitnessPlatform = getFitnessPlatformOverride({
+            category,
+            locale,
+            isMobile,
+            isAndroid,
+            index,
+            count,
+          });
+          const forcedPlatform =
+            forcedEntertainmentPlatform ||
+            forcedShoppingPlatform ||
+            forcedFoodPlatform ||
+            forcedTravelPlatform ||
+            forcedFitnessPlatform;
           const foodPlatformHint =
             category === "food" && locale === "zh" && client === "web" ? resolveFoodPlatformForWebCN(enhancedRec as any) : null;
           const travelPlatformHint =
@@ -1270,11 +1719,13 @@ export async function GET(request: NextRequest, { params }: { params: { category
               "itch.io",
               "Game Pass",
               "Green Man Gaming",
+              "MiniReview",
             ];
 
             if (
               platform === "B站" ||
               platform === "YouTube" ||
+              platform === "TikTok" ||
               platform === "爱奇艺" ||
               platform === "腾讯视频" ||
               platform === "优酷" ||
@@ -1290,7 +1741,7 @@ export async function GET(request: NextRequest, { params }: { params: { category
               platform === "Spotify"
             ) {
               linkType = "music";
-            } else if (platform === "豆瓣" || platform === "IMDb") {
+            } else if (platform === "豆瓣" || platform === "IMDb" || platform === "JustWatch" || platform === "Medium") {
               linkType = "article";
             } else if (platform === "笔趣阁") {
               linkType = "book";
@@ -1408,6 +1859,7 @@ export async function GET(request: NextRequest, { params }: { params: { category
                 userPreference,
                 excludeTitles,
                 isMobile,
+                isAndroid,
               });
 
               send("recommend", {
@@ -1483,6 +1935,7 @@ export async function GET(request: NextRequest, { params }: { params: { category
                 userPreference,
                 excludeTitles,
                 isMobile,
+                isAndroid,
               });
 
               send("error", {
@@ -1544,9 +1997,13 @@ export async function GET(request: NextRequest, { params }: { params: { category
         };
       }
 
+      const finalOutput = isIntlMobileEntertainmentContext({ category, locale, isMobile })
+        ? enforceIntlMobileEntertainmentLinkTypes(validatedRecommendations.slice(0, count) as any)
+        : validatedRecommendations.slice(0, count);
+
       return NextResponse.json({
         success: true,
-        recommendations: validatedRecommendations.slice(0, count),
+        recommendations: finalOutput,
         source: "ai",
         ...(usageInfo && { usage: usageInfo }),
       } satisfies AIRecommendResponse);
@@ -1563,11 +2020,16 @@ export async function GET(request: NextRequest, { params }: { params: { category
         userPreference,
         excludeTitles,
         isMobile,
+        isAndroid,
       });
+
+      const fallbackOutput = isIntlMobileEntertainmentContext({ category, locale, isMobile })
+        ? enforceIntlMobileEntertainmentLinkTypes((fallbackRecs as any[]).slice(0, count))
+        : fallbackRecs;
 
       return NextResponse.json({
         success: true,
-        recommendations: fallbackRecs,
+        recommendations: fallbackOutput,
         source: "fallback",
         error: "AI temporarily unavailable, showing curated recommendations",
       } satisfies AIRecommendResponse);
@@ -1758,6 +2220,9 @@ function sanitizeSearchQueryForLink(params: {
     const titleText = normalizeQueryBase(title);
     query = titleText || query;
     query = stripQueryTokens(query, ["Steam"], true);
+  } else if (entertainmentType === "game" && platform === "MiniReview") {
+    query = stripQueryTokens(query, ["MiniReview"], true);
+    query = stripQueryTokens(query, ["review", "reviews", "rating", "ratings", "best android games"], true);
   }
 
   return query || normalizeQueryBase(title) || base;
@@ -1773,8 +2238,20 @@ async function generateFallbackRecommendations(params: {
   userPreference: Awaited<ReturnType<typeof getUserCategoryPreference>> | null;
   excludeTitles: string[];
   isMobile?: boolean;
+  isAndroid?: boolean;
 }) {
-  const { category, client, count, excludeTitles, geo, locale, userHistory, userPreference, isMobile } = params;
+  const {
+    category,
+    client,
+    count,
+    excludeTitles,
+    geo,
+    locale,
+    userHistory,
+    userPreference,
+    isMobile,
+    isAndroid,
+  } = params;
   const isCnWeb = isChinaDeployment() && locale === "zh" && client === "web";
   const limitedRecs = generateFallbackCandidates({
     category,
@@ -1788,7 +2265,11 @@ async function generateFallbackRecommendations(params: {
 
   let webFoodReviewCount = 0;
 
-  return limitedRecs.map((rec, index) => {
+  const seededRecs = isIntlMobileEntertainmentContext({ category, locale, isMobile })
+    ? enforceIntlMobileEntertainmentMix(limitedRecs as any).slice(0, count)
+    : limitedRecs;
+
+  return seededRecs.map((rec, index) => {
     let enhancedRec = category === "travel" ? enhanceTravelRecommendation(rec, locale) : rec;
     if (category === "fitness") {
       enhancedRec = enhanceFitnessRecommendation(rec, locale);
@@ -1813,13 +2294,52 @@ async function generateFallbackRecommendations(params: {
         isMobile
       );
 
-    const forcedPlatform = getShoppingPlatformOverride({
+    const forcedEntertainmentPlatform = getEntertainmentPlatformOverride({
       category: category as RecommendationCategory,
       locale,
-      client,
+      isMobile,
       index,
       count,
     });
+    const forcedShoppingPlatform = getShoppingPlatformOverride({
+      category: category as RecommendationCategory,
+      locale,
+      client,
+      isMobile,
+      isAndroid,
+      index,
+      count,
+      });
+    const forcedFoodPlatform = getFoodPlatformOverride({
+      category: category as RecommendationCategory,
+      locale,
+      isMobile,
+      isAndroid,
+      index,
+      count,
+    });
+    const forcedTravelPlatform = getTravelPlatformOverride({
+      category: category as RecommendationCategory,
+      locale,
+      isMobile,
+      isAndroid,
+      index,
+      count,
+    });
+    const forcedFitnessPlatform = getFitnessPlatformOverride({
+      category: category as RecommendationCategory,
+      locale,
+      isMobile,
+      isAndroid,
+      index,
+      count,
+    });
+    const forcedPlatform =
+      forcedEntertainmentPlatform ||
+      forcedShoppingPlatform ||
+      forcedFoodPlatform ||
+      forcedTravelPlatform ||
+      forcedFitnessPlatform;
     const foodPlatformHint =
       category === "food" && locale === "zh" && client === "web" ? resolveFoodPlatformForWebCN(enhancedRec as any) : null;
     const travelPlatformHint =
@@ -1850,7 +2370,7 @@ async function generateFallbackRecommendations(params: {
         } else if (fitnessType === "nearby_place") {
           platform = locale === "zh" ? (index % 2 === 0 ? "美团" : "高德地图健身") : "Google Maps";
         } else {
-          platform = selectFitnessPlatform(fitnessType as any, enhancedRec.platform, locale);
+          platform = selectFitnessPlatform(fitnessType as any, enhancedRec.platform || "", locale);
         }
       } else {
         const titleText = typeof enhancedRec.title === "string" ? enhancedRec.title : "";
@@ -1868,11 +2388,11 @@ async function generateFallbackRecommendations(params: {
         } else if (fitnessType === "nearby_place") {
           platform = locale === "zh" ? (index % 2 === 0 ? "美团" : "高德地图健身") : "Google Maps";
         } else {
-          platform = selectFitnessPlatform(fitnessType as any, enhancedRec.platform, locale);
+          platform = selectFitnessPlatform(fitnessType as any, enhancedRec.platform || "", locale);
         }
       }
     } else {
-      platform = selectBestPlatform(category, enhancedRec.platform, locale, fallbackRec.entertainmentType, isMobile);
+      platform = selectBestPlatform(category, enhancedRec.platform || "", locale, fallbackRec.entertainmentType, isMobile);
     }
 
     if (category === "food" && locale === "zh" && client === "web") {
@@ -1914,8 +2434,8 @@ async function generateFallbackRecommendations(params: {
     });
 
     let searchLink = generateSearchLink(
-      enhancedRec.title,
-      searchQueryForLink,
+      String(enhancedRec.title || ""),
+      String(searchQueryForLink || ""),
       platform,
       locale,
       category,
@@ -1955,8 +2475,8 @@ async function generateFallbackRecommendations(params: {
     const region = isChinaDeployment() ? "CN" : "INTL";
     const providerForCandidateLink = mapSearchPlatformToProvider(platform, locale);
     const candidateLink = resolveCandidateLink({
-      title: enhancedRec.title,
-      query: searchQueryForLink || enhancedRec.title,
+      title: String(enhancedRec.title || ""),
+      query: String(searchQueryForLink || enhancedRec.title || ""),
       category: category as RecommendationCategory,
       locale,
       region,
