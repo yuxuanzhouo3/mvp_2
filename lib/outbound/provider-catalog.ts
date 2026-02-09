@@ -907,7 +907,7 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       iosScheme: ({ query }) => `snssdk1128://search?keyword=${encodeURIComponent(query)}`,
       androidScheme: ({ query }) => {
         const web = `https://www.tiktok.com/search?q=${encodeURIComponent(query)}`;
-        return `intent://search?q=${encodeURIComponent(query)}#Intent;scheme=snssdk1128;package=com.zhiliaoapp.musically;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+        return `intent://#Intent;action=android.intent.action.VIEW;package=com.zhiliaoapp.musically;S.browser_fallback_url=${encodeURIComponent(web)};end`;
       },
     },
     "JustWatch": {
@@ -928,7 +928,10 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       id: "Medium",
       displayName: { zh: "Medium", en: "Medium" },
       domains: ["medium.com"],
-      hasApp: false,
+      hasApp: true,
+      androidPackageId: "com.medium.reader",
+      universalLink: ({ query }) =>
+        `https://medium.com/search?q=${encodeURIComponent(query)}`,
       webLink: ({ query }) =>
         `https://medium.com/search?q=${encodeURIComponent(query)}`,
     },

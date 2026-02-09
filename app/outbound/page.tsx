@@ -6,7 +6,6 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import type { CandidateLink, OutboundLink } from "@/lib/types/recommendation";
 import { useLanguage } from "@/components/language-provider";
-import { RegionConfig } from "@/lib/config/region";
 import {
   decodeCandidateLink,
   validateReturnTo,
@@ -17,6 +16,8 @@ import {
   filterStoreLinksByOs,
   getGooglePlayLink,
   sanitizeAutoTryLinksForIntlAndroid,
+  isIntlAndroidContext as isIntlAndroidContextHelper,
+  getFallbackGooglePlayUrl as getFallbackGooglePlayUrlHelper,
 } from "@/lib/outbound/deep-link-helpers";
 
 /**
@@ -235,35 +236,12 @@ export default function OutboundPage() {
   }, []);
 
   const getFallbackGooglePlayUrl = useCallback(() => {
-    const providerDisplayName =
-      typeof decoded.candidateLink?.metadata?.providerDisplayName === "string"
-        ? decoded.candidateLink.metadata.providerDisplayName
-        : "";
-    const keyword =
-      providerDisplayName ||
-      decoded.candidateLink?.provider ||
-      decoded.candidateLink?.title ||
-      "app";
-    return `https://play.google.com/store/search?q=${encodeURIComponent(
-      keyword
-    )}&c=apps`;
+    return getFallbackGooglePlayUrlHelper(decoded.candidateLink);
   }, [decoded.candidateLink]);
 
   const isIntlAndroidContext = useCallback(
     (candidate: CandidateLink | null | undefined) => {
-      if (!candidate || detectMobileOs() !== "android") {
-        return false;
-      }
-
-      const region =
-        typeof candidate.metadata?.region === "string"
-          ? candidate.metadata.region.toUpperCase()
-          : null;
-
-      if (region === "INTL") return true;
-      if (region === "CN") return false;
-
-      return RegionConfig.database.provider !== "cloudbase";
+      return isIntlAndroidContextHelper(candidate);
     },
     []
   );
@@ -299,7 +277,9 @@ export default function OutboundPage() {
 
     if (autoTryLinks.length === 0) {
       setOpenState("failed");
-      setInstallChoice("asking");
+      if (!redirectIntlAndroidToGooglePlay()) {
+        setInstallChoice("asking");
+      }
       return;
     }
 
@@ -310,12 +290,14 @@ export default function OutboundPage() {
         appOpenedRef.current = true;
         setOpenState("opened");
       } else {
-        // App 未安装，询问用户是否安装
+        // App 未安装：INTL Android 直接跳 Google Play，其他平台显示安装询问
         setOpenState("failed");
-        setInstallChoice("asking");
+        if (!redirectIntlAndroidToGooglePlay()) {
+          setInstallChoice("asking");
+        }
       }
     });
-  }, [decoded.candidateLink, isIntlAndroidContext]);
+  }, [decoded.candidateLink, isIntlAndroidContext, redirectIntlAndroidToGooglePlay]);
 
   // 当用户从 App 返回时，自动导航回推荐结果页
   useEffect(() => {
@@ -484,8 +466,7 @@ export default function OutboundPage() {
   const hasAutoTry = autoTryLinks.length > 0;
   const shouldShowInstallPrompt =
     openState === "failed" &&
-    (installChoice === "asking" ||
-      (isIntlAndroid && installChoice === "none"));
+    installChoice === "asking";
 
   return (
     <div className="min-h-screen bg-[#F7F9FC] p-4 flex items-center justify-center">
@@ -531,25 +512,34 @@ export default function OutboundPage() {
                 ? `是否安装 ${providerName} App？安装后体验更好。`
                 : `Would you like to install ${providerName}? It provides a better experience.`}
             </p>
-            <div className="flex gap-3">
+            {isIntlAndroid ? (
               <Button
-                className="flex-1 bg-gradient-to-r from-blue-500 to-cyan-500 text-white hover:from-blue-600 hover:to-cyan-600"
+                className="w-full bg-gradient-to-r from-blue-500 to-cyan-500 text-white hover:from-blue-600 hover:to-cyan-600"
                 onClick={handleInstallYes}
               >
-                {language === "zh" ? "是，去安装" : "Yes, install"}
+                {language === "zh" ? "前往 Google Play 下载" : "Go to Google Play"}
               </Button>
-              <Button
-                className="flex-1"
-                variant="outline"
-                onClick={handleInstallNo}
-              >
-                {language === "zh" ? "否，用网页版" : "No, use web"}
-              </Button>
-            </div>
+            ) : (
+              <div className="flex gap-3">
+                <Button
+                  className="flex-1 bg-gradient-to-r from-blue-500 to-cyan-500 text-white hover:from-blue-600 hover:to-cyan-600"
+                  onClick={handleInstallYes}
+                >
+                  {language === "zh" ? "是，去安装" : "Yes, install"}
+                </Button>
+                <Button
+                  className="flex-1"
+                  variant="outline"
+                  onClick={handleInstallNo}
+                >
+                  {language === "zh" ? "否，用网页版" : "No, use web"}
+                </Button>
+              </div>
+            )}
           </div>
         )}
 
-        {/* 用户选择安装 -> 显示商店选择（INTL Android 已直跳 Google Play） */}
+        {/* 用户选择安装 -> 显示商店选择（Android 已直跳 Google Play） */}
         {openState === "failed" && installChoice === "yes" && storeLinks.length > 0 && (
           <div className="mb-4">
             {isIntlAndroid ? (
@@ -568,6 +558,12 @@ export default function OutboundPage() {
                     ? "安装完成后返回此页面，将自动打开 App"
                     : "After installing, return here to auto-open the app"}
                 </p>
+                <Button
+                  className="w-full mt-3 bg-gradient-to-r from-blue-500 to-cyan-500 text-white hover:from-blue-600 hover:to-cyan-600"
+                  onClick={handleInstallYes}
+                >
+                  {language === "zh" ? "继续前往 Google Play" : "Continue to Google Play"}
+                </Button>
               </div>
             ) : (
               /* 非 INTL Android：显示商店选择列表 */
@@ -604,8 +600,8 @@ export default function OutboundPage() {
               </>
             )}
 
-            {/* 网页版兜底按钮 */}
-            {webLink && (
+            {/* 网页版兜底按钮（INTL Android 安装流程中隐藏） */}
+            {!isIntlAndroid && webLink && (
               <Button
                 className="w-full mt-3"
                 variant="secondary"
@@ -621,8 +617,8 @@ export default function OutboundPage() {
           </div>
         )}
 
-        {/* 用户选择安装但没有商店链接 -> 降级到网页版 */}
-        {openState === "failed" && installChoice === "yes" && storeLinks.length === 0 && (
+        {/* 用户选择安装但没有商店链接 -> 非 INTL Android 降级到网页版 */}
+        {openState === "failed" && installChoice === "yes" && storeLinks.length === 0 && !isIntlAndroid && (
           <div className="mb-4 text-sm text-gray-600">
             {language === "zh"
               ? "暂无可用下载链接，将为你打开网页版。"
@@ -644,7 +640,9 @@ export default function OutboundPage() {
                       setOpenState("opened");
                     } else {
                       setOpenState("failed");
-                      if (installChoice === "none") {
+                      if (isIntlAndroid) {
+                        redirectIntlAndroidToGooglePlay();
+                      } else if (installChoice === "none") {
                         setInstallChoice("asking");
                       }
                     }
@@ -681,4 +679,3 @@ export default function OutboundPage() {
     </div>
   );
 }
-

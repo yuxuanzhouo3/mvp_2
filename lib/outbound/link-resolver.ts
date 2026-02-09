@@ -189,8 +189,22 @@ function resolvePrimary(provider: ProviderDefinition, ctx: LinkContext): Outboun
 
 function resolveAppSchemes(provider: ProviderDefinition, ctx: LinkContext): OutboundLink[] {
   const links: OutboundLink[] = [];
-  if (provider.iosScheme) links.push({ type: "app", url: provider.iosScheme(ctx), label: "iOS" });
-  if (provider.androidScheme) links.push({ type: "app", url: provider.androidScheme(ctx), label: "Android" });
+  if (provider.iosScheme) {
+    const url = provider.iosScheme(ctx);
+    links.push({
+      type: url.toLowerCase().startsWith("intent://") ? "intent" : "app",
+      url,
+      label: "iOS",
+    });
+  }
+  if (provider.androidScheme) {
+    const url = provider.androidScheme(ctx);
+    links.push({
+      type: url.toLowerCase().startsWith("intent://") ? "intent" : "app",
+      url,
+      label: "Android",
+    });
+  }
 
   // Android 兜底：若平台有 packageId 但未提供 androidScheme，生成可直接唤起已安装 App 的 intent
   if (provider.androidPackageId && !provider.androidScheme) {

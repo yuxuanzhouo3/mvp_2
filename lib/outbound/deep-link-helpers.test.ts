@@ -4,10 +4,14 @@ import {
   base64UrlEncode,
   validateReturnTo,
   getGooglePlayLink,
+  isIntlAndroidContext,
+  getFallbackGooglePlayUrl,
+  getAutoTryLinks,
   sanitizeAutoTryLinksForIntlAndroid,
   stripIntentBrowserFallbackUrl,
 } from "./deep-link-helpers";
 import type { CandidateLink } from "@/lib/types/recommendation";
+import { RegionConfig } from "@/lib/config/region";
 
 /**
  * Unit tests for decodeCandidateLink
@@ -276,6 +280,14 @@ describe("validateReturnTo", () => {
     it("rejects relative path without leading slash", () => {
       expect(validateReturnTo("recommendations")).toBeNull();
     });
+
+    it("rejects protocol-relative URL (//evil.com)", () => {
+      expect(validateReturnTo("//evil.com")).toBeNull();
+    });
+
+    it("rejects protocol-relative URL with path (//evil.com/path)", () => {
+      expect(validateReturnTo("//evil.com/path")).toBeNull();
+    });
   });
 });
 
@@ -326,6 +338,145 @@ describe("getGooglePlayLink", () => {
     ]);
 
     expect(result).toBeNull();
+  });
+
+  it("returns null for an empty store links array", () => {
+    const result = getGooglePlayLink([]);
+    expect(result).toBeNull();
+  });
+});
+
+describe("isIntlAndroidContext", () => {
+  const baseCandidate: CandidateLink = {
+    provider: "Google",
+    title: "Test",
+    primary: { type: "web", url: "https://google.com/search?q=test" },
+    fallbacks: [],
+  };
+
+  it("returns false when candidate is null", () => {
+    expect(isIntlAndroidContext(null, "android")).toBe(false);
+  });
+
+  it("returns false when os is not android", () => {
+    expect(
+      isIntlAndroidContext(
+        {
+          ...baseCandidate,
+          metadata: { region: "INTL" },
+        },
+        "ios"
+      )
+    ).toBe(false);
+  });
+
+  it("returns true when metadata.region is INTL on android", () => {
+    expect(
+      isIntlAndroidContext(
+        {
+          ...baseCandidate,
+          metadata: { region: "INTL" },
+        },
+        "android"
+      )
+    ).toBe(true);
+  });
+
+  it("treats metadata.region case-insensitively", () => {
+    expect(
+      isIntlAndroidContext(
+        {
+          ...baseCandidate,
+          metadata: { region: "intl" },
+        },
+        "android"
+      )
+    ).toBe(true);
+  });
+
+  it("returns false when metadata.region is CN on android", () => {
+    expect(
+      isIntlAndroidContext(
+        {
+          ...baseCandidate,
+          metadata: { region: "CN" },
+        },
+        "android"
+      )
+    ).toBe(false);
+  });
+
+  it("falls back to RegionConfig when metadata.region is missing", () => {
+    const expected = RegionConfig.database.provider !== "cloudbase";
+    expect(
+      isIntlAndroidContext(
+        {
+          ...baseCandidate,
+          metadata: {},
+        },
+        "android"
+      )
+    ).toBe(expected);
+  });
+
+  it("falls back to RegionConfig when metadata.region is unknown", () => {
+    const expected = RegionConfig.database.provider !== "cloudbase";
+    expect(
+      isIntlAndroidContext(
+        {
+          ...baseCandidate,
+          metadata: { region: "EU" },
+        },
+        "android"
+      )
+    ).toBe(expected);
+  });
+});
+
+describe("getFallbackGooglePlayUrl", () => {
+  function getKeywordFromUrl(url: string): string | null {
+    const parsed = new URL(url);
+    return parsed.searchParams.get("q");
+  }
+
+  it("prefers metadata.providerDisplayName as fallback keyword", () => {
+    const url = getFallbackGooglePlayUrl({
+      provider: "YouTube",
+      title: "My Video",
+      primary: { type: "web", url: "https://youtube.com" },
+      fallbacks: [],
+      metadata: { providerDisplayName: "YouTube Music" },
+    });
+
+    expect(getKeywordFromUrl(url)).toBe("YouTube Music");
+    expect(url).toContain("&c=apps");
+  });
+
+  it("falls back to provider when providerDisplayName is unavailable", () => {
+    const url = getFallbackGooglePlayUrl({
+      provider: "Spotify",
+      title: "Best Songs",
+      primary: { type: "web", url: "https://spotify.com" },
+      fallbacks: [],
+    });
+
+    expect(getKeywordFromUrl(url)).toBe("Spotify");
+  });
+
+  it("falls back to title when provider is empty", () => {
+    const url = getFallbackGooglePlayUrl({
+      provider: "",
+      title: "Running App",
+      primary: { type: "web", url: "https://example.com" },
+      fallbacks: [],
+    });
+
+    expect(getKeywordFromUrl(url)).toBe("Running App");
+  });
+
+  it("falls back to app when candidate is null", () => {
+    const url = getFallbackGooglePlayUrl(null);
+    expect(getKeywordFromUrl(url)).toBe("app");
   });
 });
 
@@ -395,5 +546,232 @@ describe("sanitizeAutoTryLinksForIntlAndroid", () => {
 
     const result = sanitizeAutoTryLinksForIntlAndroid(links);
     expect(result).toHaveLength(1);
+  });
+
+  it("normalizes TikTok snssdk intent to package-only intent on Android", () => {
+    const links = [
+      {
+        type: "intent" as const,
+        url: "intent://search?q=test#Intent;scheme=snssdk1128;package=com.zhiliaoapp.musically;S.browser_fallback_url=https%3A%2F%2Fwww.tiktok.com%2Fsearch%3Fq%3Dtest;end",
+      },
+    ];
+
+    const result = sanitizeAutoTryLinksForIntlAndroid(links);
+    expect(result).toHaveLength(1);
+    expect(result[0].url).toContain("package=com.zhiliaoapp.musically");
+    expect(result[0].url).not.toContain("scheme=snssdk1128");
+  });
+});
+
+describe("getAutoTryLinks", () => {
+  // --- Criterion 1: Sorting logic intent(0) > app(1) > universal_link(2) ---
+  describe("Android sorting: intent > app > universal_link (Req 1.2)", () => {
+    it("sorts intent before app before universal_link on Android", () => {
+      const candidateLink: CandidateLink = {
+        provider: "YouTube",
+        title: "YouTube Test",
+        primary: {
+          type: "universal_link",
+          url: "https://www.youtube.com/results?search_query=test",
+        },
+        fallbacks: [
+          {
+            type: "app",
+            url: "youtube://results?search_query=test",
+            label: "Android",
+          },
+          {
+            type: "intent",
+            url: "intent://results?search_query=test#Intent;scheme=youtube;package=com.google.android.youtube;end",
+            label: "Android",
+          },
+        ],
+      };
+
+      const links = getAutoTryLinks(candidateLink, "android");
+      expect(links.length).toBe(3);
+      expect(links[0].type).toBe("intent");
+      expect(links[1].type).toBe("app");
+      expect(links[2].type).toBe("universal_link");
+    });
+
+    it("places multiple intents before apps on Android", () => {
+      const candidateLink: CandidateLink = {
+        provider: "TestProvider",
+        title: "Test",
+        primary: {
+          type: "app",
+          url: "testapp://search?q=test",
+        },
+        fallbacks: [
+          {
+            type: "universal_link",
+            url: "https://www.testprovider.com/search?q=test",
+          },
+          {
+            type: "intent",
+            url: "intent://search?q=test#Intent;scheme=testapp;package=com.test.app;end",
+          },
+          {
+            type: "app",
+            url: "testapp2://search?q=test",
+          },
+          {
+            type: "intent",
+            url: "intent://search?q=test2#Intent;scheme=testapp;package=com.test.app2;end",
+          },
+        ],
+      };
+
+      const links = getAutoTryLinks(candidateLink, "android");
+      // All intents should come before all apps, all apps before universal_links
+      const intentIndices = links
+        .map((l, i) => (l.type === "intent" ? i : -1))
+        .filter((i) => i >= 0);
+      const appIndices = links
+        .map((l, i) => (l.type === "app" ? i : -1))
+        .filter((i) => i >= 0);
+      const ulIndices = links
+        .map((l, i) => (l.type === "universal_link" ? i : -1))
+        .filter((i) => i >= 0);
+
+      // Every intent index should be less than every app index
+      for (const ii of intentIndices) {
+        for (const ai of appIndices) {
+          expect(ii).toBeLessThan(ai);
+        }
+      }
+      // Every app index should be less than every universal_link index
+      for (const ai of appIndices) {
+        for (const ui of ulIndices) {
+          expect(ai).toBeLessThan(ui);
+        }
+      }
+    });
+
+    it("does not apply Android sorting on iOS", () => {
+      const candidateLink: CandidateLink = {
+        provider: "YouTube",
+        title: "YouTube Test",
+        primary: {
+          type: "universal_link",
+          url: "https://www.youtube.com/results?search_query=test",
+        },
+        fallbacks: [
+          {
+            type: "app",
+            url: "youtube://results?search_query=test",
+            label: "iOS",
+          },
+        ],
+      };
+
+      const links = getAutoTryLinks(candidateLink, "ios");
+      // On iOS, universal_link comes first (from primary), then app — no re-sorting
+      expect(links[0].type).toBe("universal_link");
+      expect(links[1].type).toBe("app");
+    });
+  });
+
+  // --- Criterion 2: iOS-labeled links filtered on Android ---
+  describe("filters iOS-labeled links on Android (Req 1.2)", () => {
+    it("filters iOS-labeled app links on Android", () => {
+      const candidateLink: CandidateLink = {
+        provider: "YouTube",
+        title: "YouTube Test",
+        primary: {
+          type: "universal_link",
+          url: "https://www.youtube.com/results?search_query=test",
+        },
+        fallbacks: [
+          {
+            type: "app",
+            url: "youtube://results?search_query=test",
+            label: "iOS",
+          },
+          {
+            type: "intent",
+            url: "intent://results?search_query=test#Intent;scheme=youtube;package=com.google.android.youtube;end",
+            label: "Android",
+          },
+        ],
+      };
+
+      const links = getAutoTryLinks(candidateLink, "android");
+      expect(links.some((link) => link.label === "iOS")).toBe(false);
+      expect(links.some((link) => link.type === "intent")).toBe(true);
+    });
+
+    it("filters iOS-labeled universal_link on Android", () => {
+      const candidateLink: CandidateLink = {
+        provider: "TestProvider",
+        title: "Test",
+        primary: {
+          type: "intent",
+          url: "intent://search?q=test#Intent;scheme=testapp;package=com.test.app;end",
+        },
+        fallbacks: [
+          {
+            type: "universal_link",
+            url: "https://apps.apple.com/app/test",
+            label: "iOS",
+          },
+          {
+            type: "app",
+            url: "testapp://search?q=test",
+            label: "Android",
+          },
+        ],
+      };
+
+      const links = getAutoTryLinks(candidateLink, "android");
+      expect(links.some((link) => link.label === "iOS")).toBe(false);
+      expect(links.length).toBe(2);
+      expect(links[0].type).toBe("intent");
+      expect(links[1].type).toBe("app");
+    });
+
+    it("filters case-insensitive iOS labels on Android", () => {
+      const candidateLink: CandidateLink = {
+        provider: "TestProvider",
+        title: "Test",
+        primary: {
+          type: "app",
+          url: "testapp://search?q=test",
+          label: "IOS App",
+        },
+        fallbacks: [
+          {
+            type: "intent",
+            url: "intent://search?q=test#Intent;scheme=testapp;package=com.test.app;end",
+            label: "Android",
+          },
+        ],
+      };
+
+      const links = getAutoTryLinks(candidateLink, "android");
+      expect(links.length).toBe(1);
+      expect(links[0].type).toBe("intent");
+    });
+
+    it("keeps links without labels on Android", () => {
+      const candidateLink: CandidateLink = {
+        provider: "TestProvider",
+        title: "Test",
+        primary: {
+          type: "app",
+          url: "testapp://search?q=test",
+        },
+        fallbacks: [
+          {
+            type: "intent",
+            url: "intent://search?q=test#Intent;scheme=testapp;package=com.test.app;end",
+          },
+        ],
+      };
+
+      const links = getAutoTryLinks(candidateLink, "android");
+      expect(links.length).toBe(2);
+    });
   });
 });
