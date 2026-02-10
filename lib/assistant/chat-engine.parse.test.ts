@@ -38,6 +38,9 @@ const doubleEncodedResultsJson = JSON.stringify(
 const smartQuoteResultsJson =
   "下面是结果：\n```json\n{“type”:“results”,“message”:“找到 1 个候选结果：”,“intent”:“search_nearby”,“candidates”:[{“id”:“1”,“name”:“家庭拉伸入门”,“description”:“适合久坐人群，5分钟快速放松”,“category”:“健身视频”,“distance”:“0km”,“rating”:4.8,“platform”:“B站”,“searchQuery”:“办公室拉伸 5分钟”}],“followUps”:[{“text”:“想看无器械力量训练吗？”,“type”:“refine”}]}\n```";
 
+const extraClosingBraceInArrayJson =
+  '{"type":"results","message":"找到了以下健身视频推荐：","intent":"search_nearby","plan":[{"step":1,"description":"获取您的位置","status":"done"},{"step":2,"description":"搜索健身类视频内容","status":"done"}],"candidates":[{"id":"1","name":"居家高效燃脂训练｜15分钟瘦腰腹","description":"无需器械，适合初学者的全身燃脂动作，跟练轻松上手","category":"健身视频","distance":"0km","rating":4.9,"priceRange":"免费","businessHours":"随时可看","phone":"","address":"","tags":["燃脂","减脂","居家"],"platform":"B站","searchQuery":"居家燃脂训练 15分钟"}},{"id":"2","name":"力量训练入门指南｜新手必看","description":"详细讲解基础力量训练动作要领，安全有效提升肌肉力量","category":"健身视频","distance":"0km","rating":4.8,"priceRange":"免费","businessHours":"随时可看","phone":"","address":"","tags":["力量训练","新手","增肌"],"platform":"B站","searchQuery":"力量训练入门 新手"}],"followUps":[{"text":"要不要更侧重某个部位？","type":"refine"}]}';
+
 vi.mock("./preference-manager", () => ({
   getUserPreferences: vi.fn(async () => []),
   savePreference: vi.fn(),
@@ -158,5 +161,26 @@ describe("processChat JSON tolerant parsing", () => {
     expect(response.candidates?.length).toBe(1);
     expect(response.candidates?.[0]?.platform).toBe("B站");
     expect(response.candidates?.[0]?.searchQuery).toContain("拉伸");
+  });
+
+  it("repairs candidates array when model emits extra closing brace", async () => {
+    vi.mocked(callAI).mockResolvedValueOnce({
+      model: "qwen-flash",
+      content: extraClosingBraceInArrayJson,
+    });
+
+    const response = await processChat(
+      {
+        message: "我想健身，有没有视频推荐",
+        locale: "zh",
+        region: "CN",
+      },
+      "test-user"
+    );
+
+    expect(response.type).toBe("results");
+    expect(response.candidates?.length).toBe(2);
+    expect(response.candidates?.[0]?.name).toContain("燃脂");
+    expect(response.candidates?.[1]?.name).toContain("力量训练");
   });
 });

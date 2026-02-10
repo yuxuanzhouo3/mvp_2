@@ -102,6 +102,12 @@ function normalizeProviderId(provider: string | undefined, region: DeploymentReg
   const providerAliasMap: Record<string, ProviderId> = {
     "哔哩哔哩": "B站",
     bilibili: "B站",
+    抖音: "抖音",
+    douyin: "抖音",
+    tiktokcn: "抖音",
+    快手: "快手",
+    kuaishou: "快手",
+    kwai: "快手",
     "qq music": "QQ音乐",
     qqmusic: "QQ音乐",
     kugou: "酷狗音乐",

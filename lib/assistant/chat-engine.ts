@@ -564,6 +564,7 @@ function repairTruncatedJson(content: string): string {
   }
 
   const stack: Array<"{" | "["> = [];
+  let sanitized = "";
   let inString = false;
   let escaped = false;
 
@@ -571,26 +572,31 @@ function repairTruncatedJson(content: string): string {
     const char = trimmed[i];
 
     if (escaped) {
+      sanitized += char;
       escaped = false;
       continue;
     }
 
     if (char === "\\") {
+      sanitized += char;
       escaped = true;
       continue;
     }
 
     if (char === "\"") {
       inString = !inString;
+      sanitized += char;
       continue;
     }
 
     if (inString) {
+      sanitized += char;
       continue;
     }
 
     if (char === "{" || char === "[") {
       stack.push(char);
+      sanitized += char;
       continue;
     }
 
@@ -598,11 +604,15 @@ function repairTruncatedJson(content: string): string {
       const expected = char === "}" ? "{" : "[";
       if (stack[stack.length - 1] === expected) {
         stack.pop();
+        sanitized += char;
       }
+      continue;
     }
+
+    sanitized += char;
   }
 
-  let repaired = trimmed.replace(/[,:]\s*$/, "").replace(/,\s*$/, "");
+  let repaired = sanitized.replace(/[,:]\s*$/, "").replace(/,\s*$/, "");
 
   if (inString) {
     repaired += "\"";

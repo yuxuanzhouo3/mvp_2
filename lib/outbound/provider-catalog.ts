@@ -42,6 +42,8 @@ export type ProviderId =
   | "百度"
   | "YouTube"
   | "B站"
+  | "抖音"
+  | "快手"
   | "Steam"
   | "Uber Eats"
   | "DoorDash"
@@ -137,6 +139,10 @@ function baiduSearchUrl(query: string) {
 
 function bilibiliSearchUrl(query: string) {
   return `https://search.bilibili.com/all?keyword=${encodeURIComponent(query)}`;
+}
+
+function kuaishouSearchUrl(query: string) {
+  return `https://www.kuaishou.com/search/video?searchKey=${encodeURIComponent(query)}`;
 }
 
 function youtubeSearchUrl(query: string) {
@@ -342,8 +348,38 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       webLink: ({ query }) => bilibiliSearchUrl(query),
       iosScheme: ({ query }) =>
         `bilibili://search?keyword=${encodeURIComponent(query)}`,
-      androidScheme: ({ query }) =>
-        `bilibili://search?keyword=${encodeURIComponent(query)}`,
+      androidScheme: ({ query }) => {
+        const web = bilibiliSearchUrl(query);
+        return `intent://search?keyword=${encodeURIComponent(query)}#Intent;scheme=bilibili;package=tv.danmaku.bili;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      },
+    },
+    抖音: {
+      id: "抖音",
+      displayName: { zh: "抖音", en: "Douyin" },
+      domains: ["douyin.com"],
+      hasApp: true,
+      androidPackageId: "com.ss.android.ugc.aweme",
+      universalLink: ({ query }) => `https://www.douyin.com/search/${encodeURIComponent(query)}`,
+      webLink: ({ query }) => `https://www.douyin.com/search/${encodeURIComponent(query)}`,
+      iosScheme: ({ query }) => `snssdk1128://search?keyword=${encodeURIComponent(query)}`,
+      androidScheme: ({ query }) => {
+        const web = `https://www.douyin.com/search/${encodeURIComponent(query)}`;
+        return `intent://search?keyword=${encodeURIComponent(query)}#Intent;scheme=snssdk1128;package=com.ss.android.ugc.aweme;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      },
+    },
+    快手: {
+      id: "快手",
+      displayName: { zh: "快手", en: "Kuaishou" },
+      domains: ["kuaishou.com"],
+      hasApp: true,
+      androidPackageId: "com.smile.gifmaker",
+      universalLink: ({ query }) => kuaishouSearchUrl(query),
+      webLink: ({ query }) => kuaishouSearchUrl(query),
+      iosScheme: ({ query }) => `kwai://search?keyword=${encodeURIComponent(query)}`,
+      androidScheme: ({ query }) => {
+        const web = kuaishouSearchUrl(query);
+        return `intent://#Intent;action=android.intent.action.VIEW;package=com.smile.gifmaker;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      },
     },
     "大众点评": {
       id: "大众点评",

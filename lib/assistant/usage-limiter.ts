@@ -14,6 +14,8 @@ import { isChinaDeployment } from "@/lib/config/deployment.config";
 import { ASSISTANT_USAGE_LIMITS } from "./types";
 import type { AssistantUsageStats } from "./types";
 
+type UserPlanType = "free" | "pro" | "enterprise";
+
 // ==========================================
 // 数据库客户端
 // ==========================================
@@ -46,6 +48,109 @@ async function getCloudBaseDb() {
   return app.database();
 }
 
+function normalizePlanType(rawPlan: unknown): UserPlanType {
+  if (typeof rawPlan !== "string") {
+    return "free";
+  }
+
+  const plan = rawPlan.trim().toLowerCase();
+  if (!plan) {
+    return "free";
+  }
+
+  if (plan.includes("enterprise") || plan.includes("企业")) {
+    return "enterprise";
+  }
+
+  if (plan.includes("pro") || plan.includes("专业")) {
+    return "pro";
+  }
+
+  return "free";
+}
+
+function parseDateToTimestamp(value: unknown): number | null {
+  if (value instanceof Date) {
+    const timestamp = value.getTime();
+    return Number.isNaN(timestamp) ? null : timestamp;
+  }
+
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  if (typeof value === "string" && value.trim().length > 0) {
+    const timestamp = new Date(value).getTime();
+    return Number.isNaN(timestamp) ? null : timestamp;
+  }
+
+  return null;
+}
+
+function resolvePlanFromUserRecord(record: unknown): UserPlanType {
+  if (!record || typeof record !== "object") {
+    return "free";
+  }
+
+  const userRecord = record as Record<string, unknown>;
+  const planCandidates = [
+    userRecord.subscription_plan,
+    userRecord.subscription_tier,
+    userRecord.plan_type,
+    userRecord.plan,
+    userRecord.tier,
+  ];
+
+  for (const candidate of planCandidates) {
+    const normalized = normalizePlanType(candidate);
+    if (normalized !== "free") {
+      return normalized;
+    }
+  }
+
+  if (userRecord.enterprise === true) {
+    return "enterprise";
+  }
+
+  if (userRecord.pro === true) {
+    return "pro";
+  }
+
+  return "free";
+}
+
+async function getUserPlanTypeFromCNUserRecord(db: any, userId: string): Promise<UserPlanType> {
+  const usersCollection = db.collection("users");
+
+  try {
+    const userResult = await usersCollection.doc(userId).get();
+    const userData = Array.isArray(userResult?.data)
+      ? userResult.data[0]
+      : userResult?.data;
+    const planType = resolvePlanFromUserRecord(userData);
+
+    if (planType !== "free") {
+      return planType;
+    }
+  } catch {
+    // Ignore and continue fallback lookup.
+  }
+
+  try {
+    const byUserIdResult = await usersCollection.where({ user_id: userId }).limit(1).get();
+    const userData = byUserIdResult?.data?.[0];
+    const planType = resolvePlanFromUserRecord(userData);
+
+    if (planType !== "free") {
+      return planType;
+    }
+  } catch {
+    // Ignore and return free.
+  }
+
+  return "free";
+}
+
 // ==========================================
 // 获取用户计划
 // ==========================================
@@ -55,14 +160,14 @@ async function getCloudBaseDb() {
  * @param userId - 用户 ID
  * @returns 计划类型 free/pro/enterprise
  */
-async function getUserPlanType(userId: string): Promise<"free" | "pro" | "enterprise"> {
+async function getUserPlanType(userId: string): Promise<UserPlanType> {
   if (isChinaDeployment()) {
     return getUserPlanTypeCN(userId);
   }
   return getUserPlanTypeINTL(userId);
 }
 
-async function getUserPlanTypeINTL(userId: string): Promise<"free" | "pro" | "enterprise"> {
+async function getUserPlanTypeINTL(userId: string): Promise<UserPlanType> {
   const supabase = getSupabaseAdmin();
   const { data } = await supabase
     .from("user_subscriptions")
@@ -74,48 +179,66 @@ async function getUserPlanTypeINTL(userId: string): Promise<"free" | "pro" | "en
     .limit(1)
     .maybeSingle();
 
-  if (!data) return "free";
+  if (!data) {
+    return "free";
+  }
+
   const row = data as { plan_type?: string } | null;
-  const pt = (row?.plan_type || "").toLowerCase();
-  if (pt.includes("enterprise")) return "enterprise";
-  if (pt.includes("pro")) return "pro";
-  return "free";
+  return normalizePlanType(row?.plan_type);
 }
 
-async function getUserPlanTypeCN(userId: string): Promise<"free" | "pro" | "enterprise"> {
+async function getUserPlanTypeCN(userId: string): Promise<UserPlanType> {
   const db = await getCloudBaseDb();
+  const now = Date.now();
+
   try {
     const result = await db
       .collection("user_subscriptions")
       .where({ user_id: userId, status: "active" })
-      .orderBy("subscription_end", "desc")
-      .limit(1)
       .get();
 
-    if (!result.data || result.data.length === 0) {
-      // 检查 users 集合
-      const userResult = await db.collection("users").doc(userId).get();
-      const userData = userResult.data?.[0] || userResult.data;
-      if (userData?.pro === true) return "pro";
-      const plan = (userData?.subscription_plan as string || "").toLowerCase();
-      if (plan.includes("enterprise")) return "enterprise";
-      if (plan.includes("pro")) return "pro";
-      return "free";
-    }
+    const subscriptions = Array.isArray(result?.data) ? result.data : [];
 
-    const sub = result.data[0];
-    if (sub.subscription_end < new Date().toISOString()) return "free";
-    const pt = (sub.plan_type as string || "").toLowerCase();
-    if (pt.includes("enterprise")) return "enterprise";
-    if (pt.includes("pro")) return "pro";
-    return "free";
+    const latestActiveSubscription = subscriptions
+      .filter((item: unknown) => {
+        const subscription = item as Record<string, unknown>;
+        const expiresAt = parseDateToTimestamp(subscription.subscription_end);
+        return expiresAt === null || expiresAt > now;
+      })
+      .sort((left: unknown, right: unknown) => {
+        const leftExpires =
+          parseDateToTimestamp((left as Record<string, unknown>).subscription_end) ??
+          Number.MAX_SAFE_INTEGER;
+        const rightExpires =
+          parseDateToTimestamp((right as Record<string, unknown>).subscription_end) ??
+          Number.MAX_SAFE_INTEGER;
+        return rightExpires - leftExpires;
+      })[0];
+
+    if (latestActiveSubscription) {
+      const subscriptionRecord = latestActiveSubscription as Record<string, unknown>;
+      const subscriptionPlanCandidates = [
+        subscriptionRecord.plan_type,
+        subscriptionRecord.subscription_plan,
+        subscriptionRecord.subscription_tier,
+      ];
+
+      for (const candidate of subscriptionPlanCandidates) {
+        const subscriptionPlan = normalizePlanType(candidate);
+        if (subscriptionPlan !== "free") {
+          return subscriptionPlan;
+        }
+      }
+    }
   } catch {
-    return "free";
+    // Ignore and fallback to users collection lookup.
   }
+
+  return getUserPlanTypeFromCNUserRecord(db, userId);
 }
 
 // ==========================================
-// 获取今日已用次数
+// 获取本周期已用次数
 // ==========================================
 
 /**
@@ -295,3 +418,4 @@ async function recordUsageCN(
     return { success: false, error: "Failed to record usage" };
   }
 }
+
