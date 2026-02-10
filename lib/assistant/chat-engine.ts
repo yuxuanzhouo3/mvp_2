@@ -217,36 +217,27 @@ function isNearbyIntent(message: string, locale: "zh" | "en"): boolean {
  * @throws 如果无法解析为有效 JSON
  */
 function parseAIResponse(content: string): AssistantResponse {
-  // 清理可能的 markdown 代码块
-  let cleaned = content.trim();
+  const cleaned = stripMarkdownCodeFence(content);
+  const parsed = parseJsonCandidate(cleaned);
 
-  // 移除 ```json ... ``` 包裹
-  if (cleaned.startsWith("```")) {
-    const firstNewline = cleaned.indexOf("\n");
-    if (firstNewline !== -1) {
-      cleaned = cleaned.substring(firstNewline + 1);
-    }
-    if (cleaned.endsWith("```")) {
-      cleaned = cleaned.substring(0, cleaned.length - 3);
-    }
-    cleaned = cleaned.trim();
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("AI response is not a JSON object");
   }
 
-  // 尝试解析 JSON
-  const parsed = JSON.parse(cleaned);
+  const response = parsed as Partial<AssistantResponse>;
 
   // 验证基本结构
-  if (!parsed.type || !parsed.message) {
+  if (!response.type || !response.message) {
     throw new Error("Missing required fields: type, message");
   }
 
   // 确保 type 是有效值
   const validTypes = ["plan", "results", "clarify", "text", "preference_saved", "error"];
-  if (!validTypes.includes(parsed.type)) {
-    parsed.type = "text";
+  if (!validTypes.includes(response.type)) {
+    response.type = "text";
   }
 
-  return parsed as AssistantResponse;
+  return response as AssistantResponse;
 }
 
 /**
@@ -392,6 +383,80 @@ function stripMarkdownCodeFence(content: string): string {
   return cleaned.trim();
 }
 
+function looksLikeJsonPayload(content: string): boolean {
+  const trimmed = content.trim();
+  return (
+    (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+    (trimmed.startsWith("[") && trimmed.endsWith("]"))
+  );
+}
+
+function parseJsonCandidate(candidate: string, depth = 0): unknown {
+  const parsed = JSON.parse(candidate);
+
+  if (typeof parsed === "string" && depth < 2) {
+    const nested = stripMarkdownCodeFence(parsed.trim());
+    if (looksLikeJsonPayload(nested)) {
+      return parseJsonCandidate(nested, depth + 1);
+    }
+  }
+
+  return parsed;
+}
+
+function escapeInvalidCharactersInJsonStrings(content: string): string {
+  let result = "";
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < content.length; i += 1) {
+    const char = content[i];
+
+    if (escaped) {
+      result += char;
+      escaped = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      result += char;
+      escaped = true;
+      continue;
+    }
+
+    if (char === "\"") {
+      inString = !inString;
+      result += char;
+      continue;
+    }
+
+    if (inString) {
+      if (char === "\n") {
+        result += "\\n";
+        continue;
+      }
+      if (char === "\r") {
+        result += "\\r";
+        continue;
+      }
+      if (char === "\t") {
+        result += "\\t";
+        continue;
+      }
+
+      const code = char.charCodeAt(0);
+      if (code < 32) {
+        result += `\\u${code.toString(16).padStart(4, "0")}`;
+        continue;
+      }
+    }
+
+    result += char;
+  }
+
+  return result;
+}
+
 function extractJsonObjectSegment(content: string): string {
   const firstBrace = content.indexOf("{");
   const lastBrace = content.lastIndexOf("}");
@@ -403,6 +468,76 @@ function extractJsonObjectSegment(content: string): string {
   return content.slice(firstBrace, lastBrace + 1);
 }
 
+function extractBalancedJsonSegment(content: string): string {
+  const trimmed = content.trim();
+  const firstObject = trimmed.indexOf("{");
+  const firstArray = trimmed.indexOf("[");
+
+  const start =
+    firstObject === -1
+      ? firstArray
+      : firstArray === -1
+        ? firstObject
+        : Math.min(firstObject, firstArray);
+
+  if (start === -1) {
+    return trimmed;
+  }
+
+  let inString = false;
+  let escaped = false;
+  let objectDepth = 0;
+  let arrayDepth = 0;
+  let started = false;
+
+  for (let i = start; i < trimmed.length; i += 1) {
+    const char = trimmed[i];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+
+    if (char === "\"") {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) {
+      continue;
+    }
+
+    if (char === "{") {
+      objectDepth += 1;
+      started = true;
+      continue;
+    }
+
+    if (char === "[") {
+      arrayDepth += 1;
+      started = true;
+      continue;
+    }
+
+    if (char === "}") {
+      objectDepth = Math.max(0, objectDepth - 1);
+    } else if (char === "]") {
+      arrayDepth = Math.max(0, arrayDepth - 1);
+    }
+
+    if (started && objectDepth === 0 && arrayDepth === 0) {
+      return trimmed.slice(start, i + 1);
+    }
+  }
+
+  return trimmed.slice(start);
+}
+
 function repairCommonJsonIssues(content: string): string {
   return content
     .replace(/,\s*"\{/g, ",{")
@@ -410,21 +545,115 @@ function repairCommonJsonIssues(content: string): string {
     .replace(/,\s*([}\]])/g, "$1");
 }
 
+function normalizeJsonContent(content: string): string {
+  const normalizedQuotes = content
+    .replace(/^\uFEFF/, "")
+    .replace(/[“”]/g, "\"")
+    .replace(/[‘’]/g, "'");
+
+  const commonRepaired = repairCommonJsonIssues(normalizedQuotes);
+  const withoutTrailingCommas = commonRepaired.replace(/,\s*([}\]])/g, "$1");
+
+  return escapeInvalidCharactersInJsonStrings(withoutTrailingCommas);
+}
+
+function repairTruncatedJson(content: string): string {
+  const trimmed = content.trim();
+  if (!trimmed) {
+    return trimmed;
+  }
+
+  const stack: Array<"{" | "["> = [];
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < trimmed.length; i += 1) {
+    const char = trimmed[i];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+
+    if (char === "\"") {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) {
+      continue;
+    }
+
+    if (char === "{" || char === "[") {
+      stack.push(char);
+      continue;
+    }
+
+    if (char === "}" || char === "]") {
+      const expected = char === "}" ? "{" : "[";
+      if (stack[stack.length - 1] === expected) {
+        stack.pop();
+      }
+    }
+  }
+
+  let repaired = trimmed.replace(/[,:]\s*$/, "").replace(/,\s*$/, "");
+
+  if (inString) {
+    repaired += "\"";
+  }
+
+  for (let i = stack.length - 1; i >= 0; i -= 1) {
+    repaired += stack[i] === "{" ? "}" : "]";
+  }
+
+  return repaired;
+}
+
 function parseJsonWithTolerance(content: string): unknown {
   const cleaned = stripMarkdownCodeFence(content);
   const extracted = extractJsonObjectSegment(cleaned);
+  const balanced = extractBalancedJsonSegment(cleaned);
 
-  const candidates = [
+  const rawCandidates = [
     cleaned,
     extracted,
+    balanced,
     repairCommonJsonIssues(cleaned),
     repairCommonJsonIssues(extracted),
+    repairCommonJsonIssues(balanced),
+    normalizeJsonContent(cleaned),
+    normalizeJsonContent(extracted),
+    normalizeJsonContent(balanced),
   ];
 
+  const dedupedCandidates: string[] = [];
+  const seen = new Set<string>();
+  for (const candidate of rawCandidates) {
+    const normalized = candidate.trim();
+    if (!normalized || seen.has(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    dedupedCandidates.push(normalized);
+  }
+
   let lastError: unknown;
-  for (const candidate of candidates) {
+  for (const candidate of dedupedCandidates) {
     try {
-      return JSON.parse(candidate);
+      return parseJsonCandidate(candidate);
+    } catch (error) {
+      lastError = error;
+    }
+
+    try {
+      const repaired = repairTruncatedJson(candidate);
+      return parseJsonCandidate(repaired);
     } catch (error) {
       lastError = error;
     }

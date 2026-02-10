@@ -4,6 +4,40 @@ import { callAI } from "@/lib/ai/client";
 const malformedResultsJson =
   '{"type":"results","message":"找到了以下候选结果：","intent":"search_nearby","candidates":[{"id":"1","name":"门店A","description":"描述A","category":"汽车服务","distance":"1.2km","rating":4.6,"priceRange":"¥30-80","platform":"高德地图","searchQuery":"洗车 店"},"{"id":"2","name":"门店B","description":"描述B","category":"汽车服务","distance":"2.8km","rating":4.4,"priceRange":"¥25-60","platform":"大众点评","searchQuery":"洗车 店"}],"followUps":[{"text":"要不要更近一点？","type":"refine"}]}'
 
+const doubleEncodedResultsJson = JSON.stringify(
+  JSON.stringify({
+    type: "results",
+    message: "找到了以下健身视频推荐：",
+    intent: "search_nearby",
+    plan: [
+      { step: 1, description: "获取您的位置", status: "done" },
+      { step: 2, description: "搜索健身类视频内容", status: "done" },
+      { step: 3, description: "按热度/评分筛选优质视频", status: "done" },
+    ],
+    candidates: [
+      {
+        id: "1",
+        name: "居家高效燃脂训练",
+        description: "无需器械，适合初学者全身激活动作",
+        category: "健身视频",
+        distance: "0km",
+        rating: 4.9,
+        priceRange: "免费",
+        businessHours: "随时可看",
+        phone: "",
+        address: "",
+        tags: ["燃脂", "居家"],
+        platform: "B站",
+        searchQuery: "居家燃脂训练 15分钟",
+      },
+    ],
+    followUps: [{ text: "要不要再来点力量训练？", type: "refine" }],
+  })
+);
+
+const smartQuoteResultsJson =
+  "下面是结果：\n```json\n{“type”:“results”,“message”:“找到 1 个候选结果：”,“intent”:“search_nearby”,“candidates”:[{“id”:“1”,“name”:“家庭拉伸入门”,“description”:“适合久坐人群，5分钟快速放松”,“category”:“健身视频”,“distance”:“0km”,“rating”:4.8,“platform”:“B站”,“searchQuery”:“办公室拉伸 5分钟”}],“followUps”:[{“text”:“想看无器械力量训练吗？”,“type”:“refine”}]}\n```";
+
 vi.mock("./preference-manager", () => ({
   getUserPreferences: vi.fn(async () => []),
   savePreference: vi.fn(),
@@ -81,5 +115,48 @@ describe("processChat JSON tolerant parsing", () => {
       "Search options",
       "Return best answer",
     ]);
+  });
+
+  it("parses double-encoded JSON string in CN assistant response", async () => {
+    vi.mocked(callAI).mockResolvedValueOnce({
+      model: "qwen-flash",
+      content: doubleEncodedResultsJson,
+    });
+
+    const response = await processChat(
+      {
+        message: "我想健身，有没有视频推荐",
+        locale: "zh",
+        region: "CN",
+      },
+      "test-user"
+    );
+
+    expect(response.type).toBe("results");
+    expect(response.message).toContain("健身视频推荐");
+    expect(response.candidates?.length).toBe(1);
+    expect(response.candidates?.[0]?.name).toBe("居家高效燃脂训练");
+    expect(response.followUps?.[0]?.text).toContain("力量训练");
+  });
+
+  it("parses smart-quote JSON wrapped by markdown and preface text", async () => {
+    vi.mocked(callAI).mockResolvedValueOnce({
+      model: "qwen-flash",
+      content: smartQuoteResultsJson,
+    });
+
+    const response = await processChat(
+      {
+        message: "推荐一些适合办公室的拉伸视频",
+        locale: "zh",
+        region: "CN",
+      },
+      "test-user"
+    );
+
+    expect(response.type).toBe("results");
+    expect(response.candidates?.length).toBe(1);
+    expect(response.candidates?.[0]?.platform).toBe("B站");
+    expect(response.candidates?.[0]?.searchQuery).toContain("拉伸");
   });
 });
