@@ -61,9 +61,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 检测移动端
+    // 检测客户端类型、移动端和 Android
     const userAgent = request.headers.get("user-agent") || "";
+    const client = (body?.client as "app" | "web" | undefined) || "web";
     const isMobile = /iphone|ipad|ipod|android/i.test(userAgent);
+    const isAndroid = /android/i.test(userAgent);
 
     // 4. 处理聊天
     const response = await processChat(
@@ -73,7 +75,9 @@ export async function POST(request: NextRequest) {
         location,
         locale: locale || "zh",
         region: region || "CN",
+        client,
         isMobile,
+        isAndroid,
       },
       userId
     );

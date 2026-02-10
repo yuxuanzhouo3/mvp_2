@@ -53,6 +53,7 @@ export interface AuthClient {
     options?: {
       data?: Record<string, any>;
       emailRedirectTo?: string;
+      verificationCode?: string;
     };
   }): Promise<AuthResponse>;
 
@@ -73,6 +74,27 @@ export interface AuthClient {
     email: string;
     options?: any;
   }): Promise<{ error: Error | null }>;
+
+  sendEmailVerificationCode?(params: {
+    email: string;
+    purpose: "register" | "reset_password";
+  }): Promise<{
+    data: { success: boolean; expiresInSeconds?: number } | null;
+    error: Error | null;
+    code?: string;
+    retryAfterSeconds?: number;
+  }>;
+
+  resetPasswordWithCode?(params: {
+    email: string;
+    code: string;
+    password: string;
+    confirmPassword: string;
+  }): Promise<{
+    data: { success: boolean } | null;
+    error: Error | null;
+    code?: string;
+  }>;
 
   verifyOtp(params: {
     email: string;
@@ -182,6 +204,7 @@ class SupabaseAuthClient implements AuthClient {
     options?: {
       data?: Record<string, any>;
       emailRedirectTo?: string;
+      verificationCode?: string;
     };
   }): Promise<AuthResponse> {
     try {
@@ -266,6 +289,87 @@ class SupabaseAuthClient implements AuthClient {
           error instanceof Error
             ? error
             : new Error("Supabase client not initialized"),
+      };
+    }
+  }
+
+  async sendEmailVerificationCode(params: {
+    email: string;
+    purpose: "register" | "reset_password";
+  }): Promise<{
+    data: { success: boolean; expiresInSeconds?: number } | null;
+    error: Error | null;
+    code?: string;
+    retryAfterSeconds?: number;
+  }> {
+    try {
+      const response = await fetch("/api/auth/email-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(params),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        return {
+          data: null,
+          error: new Error(payload.error || "Failed to send verification code"),
+          code: payload.code,
+          retryAfterSeconds: payload.retryAfterSeconds,
+        };
+      }
+
+      return {
+        data: {
+          success: true,
+          expiresInSeconds: payload.expiresInSeconds,
+        },
+        error: null,
+      };
+    } catch (error) {
+      return {
+        data: null,
+        error: error as Error,
+      };
+    }
+  }
+
+  async resetPasswordWithCode(params: {
+    email: string;
+    code: string;
+    password: string;
+    confirmPassword: string;
+  }): Promise<{
+    data: { success: boolean } | null;
+    error: Error | null;
+    code?: string;
+  }> {
+    try {
+      const response = await fetch("/api/auth/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(params),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        return {
+          data: null,
+          error: new Error(payload.error || "Failed to reset password"),
+          code: payload.code,
+        };
+      }
+
+      return {
+        data: { success: true },
+        error: null,
+      };
+    } catch (error) {
+      return {
+        data: null,
+        error: error as Error,
       };
     }
   }
@@ -468,6 +572,7 @@ class CloudBaseAuthClient implements AuthClient {
     options?: {
       data?: Record<string, any>;
       emailRedirectTo?: string;
+      verificationCode?: string;
     };
   }): Promise<AuthResponse> {
     try {
@@ -479,6 +584,7 @@ class CloudBaseAuthClient implements AuthClient {
           password: params.password,
           confirmPassword: params.password,
           fullName: params.options?.data?.name || params.email.split("@")[0],
+          verificationCode: params.options?.verificationCode,
         }),
       });
 
@@ -578,6 +684,87 @@ class CloudBaseAuthClient implements AuthClient {
         "OTP is not supported in China region. Please use WeChat login."
       ),
     };
+  }
+
+  async sendEmailVerificationCode(params: {
+    email: string;
+    purpose: "register" | "reset_password";
+  }): Promise<{
+    data: { success: boolean; expiresInSeconds?: number } | null;
+    error: Error | null;
+    code?: string;
+    retryAfterSeconds?: number;
+  }> {
+    try {
+      const response = await fetch("/api/auth/email-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(params),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        return {
+          data: null,
+          error: new Error(payload.error || "Failed to send verification code"),
+          code: payload.code,
+          retryAfterSeconds: payload.retryAfterSeconds,
+        };
+      }
+
+      return {
+        data: {
+          success: true,
+          expiresInSeconds: payload.expiresInSeconds,
+        },
+        error: null,
+      };
+    } catch (error) {
+      return {
+        data: null,
+        error: error as Error,
+      };
+    }
+  }
+
+  async resetPasswordWithCode(params: {
+    email: string;
+    code: string;
+    password: string;
+    confirmPassword: string;
+  }): Promise<{
+    data: { success: boolean } | null;
+    error: Error | null;
+    code?: string;
+  }> {
+    try {
+      const response = await fetch("/api/auth/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(params),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        return {
+          data: null,
+          error: new Error(payload.error || "Failed to reset password"),
+          code: payload.code,
+        };
+      }
+
+      return {
+        data: { success: true },
+        error: null,
+      };
+    } catch (error) {
+      return {
+        data: null,
+        error: error as Error,
+      };
+    }
   }
 
   async verifyOtp(params: {
@@ -759,10 +946,21 @@ export const auth = {
     options?: {
       data?: Record<string, any>;
       emailRedirectTo?: string;
+      verificationCode?: string;
     };
   }) => getAuthClient().signUp(params),
   signInWithOtp: (params: { email: string; options?: any }) =>
     getAuthClient().signInWithOtp(params),
+  sendEmailVerificationCode: (params: {
+    email: string;
+    purpose: "register" | "reset_password";
+  }) => getAuthClient().sendEmailVerificationCode?.(params),
+  resetPasswordWithCode: (params: {
+    email: string;
+    code: string;
+    password: string;
+    confirmPassword: string;
+  }) => getAuthClient().resetPasswordWithCode?.(params),
   verifyOtp: (params: { email: string; token: string; type: string }) =>
     getAuthClient().verifyOtp(params),
   signOut: () => getAuthClient().signOut(),

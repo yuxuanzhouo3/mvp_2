@@ -94,14 +94,45 @@ function uniqueOutboundLinks(links: OutboundLink[]): OutboundLink[] {
 
 function normalizeProviderId(provider: string | undefined, region: DeploymentRegion): ProviderId {
   if (!provider) return region === "CN" ? "百度" : "Google";
+  const normalized = provider.trim();
   const catalog = getProviderCatalog();
-  const direct = provider as ProviderId;
+  const direct = normalized as ProviderId;
   if (catalog[direct]) return direct;
+
+  const providerAliasMap: Record<string, ProviderId> = {
+    "哔哩哔哩": "B站",
+    bilibili: "B站",
+    "qq music": "QQ音乐",
+    qqmusic: "QQ音乐",
+    kugou: "酷狗音乐",
+    "netease cloud music": "网易云音乐",
+    netease: "网易云音乐",
+    tencentvideo: "腾讯视频",
+    tencentmap: "腾讯地图",
+    amap: "高德地图",
+    baidumap: "百度地图",
+    ctrip: "携程",
+    qunar: "去哪儿",
+    mafengwo: "马蜂窝",
+    qyer: "穷游",
+  };
+
+  Object.assign(providerAliasMap, {
+    amazonshopping: "Amazon" as ProviderId,
+    tripadvisor: "TripAdvisor" as ProviderId,
+    "trip-advisor": "TripAdvisor" as ProviderId,
+    ntc: "Nike Training Club" as ProviderId,
+    nrc: "Nike Run Club" as ProviderId,
+  });
+
+  const aliasKey = normalized.toLowerCase().replace(/\s+/g, "");
+  const aliasHit = providerAliasMap[aliasKey];
+  if (aliasHit && catalog[aliasHit]) return aliasHit;
 
   const byDisplayName = Object.values(catalog).find((item) => {
     const zh = item.displayName.zh.toLowerCase();
     const en = item.displayName.en.toLowerCase();
-    const candidate = provider.toLowerCase();
+    const candidate = normalized.toLowerCase();
     return candidate === zh || candidate === en;
   });
 
@@ -115,27 +146,50 @@ function getFallbackProviders(
   isMobile?: boolean
 ): ProviderId[] {
   if (region === "CN") {
+    if (isMobile) {
+      switch (category) {
+        case "food":
+          return [
+            "小红书",
+            "大众点评",
+            "美团",
+            "淘宝闪购",
+            "京东秒送",
+            "腾讯地图",
+            "百度地图",
+            "高德地图",
+            "百度",
+          ];
+        case "shopping":
+          return ["京东", "淘宝", "拼多多", "唯品会", "百度"];
+        case "entertainment":
+          return ["腾讯视频", "优酷", "爱奇艺", "TapTap", "网易云音乐", "酷狗音乐", "QQ音乐", "百度"];
+        case "travel":
+          return ["携程", "去哪儿", "马蜂窝", "百度"];
+        case "fitness":
+          return ["美团", "高德地图", "B站", "百度"];
+        default:
+          return ["百度"];
+      }
+    }
+
     switch (category) {
       case "food":
         return [
-          "京东秒送",
-          "淘宝闪购",
-          "美团外卖",
+          "下厨房",
+          "高德地图",
           "大众点评",
           "小红书",
-          "高德地图",
-          "百度地图",
-          "腾讯地图",
           "百度",
         ];
       case "shopping":
-        return ["京东", "淘宝", "拼多多", "唯品会", "什么值得买", "慢慢买", "百度"];
+        return ["京东", "什么值得买", "慢慢买", "百度"];
       case "entertainment":
-        return ["腾讯视频", "优酷", "爱奇艺", "QQ音乐", "酷狗音乐", "网易云音乐", "TapTap", "豆瓣", "笔趣阁", "百度"];
+        return ["腾讯视频", "TapTap", "Steam", "酷狗音乐", "笔趣阁", "百度"];
       case "travel":
-        return ["携程", "去哪儿", "马蜂窝", "穷游", "小红书", "百度"];
+        return ["携程", "马蜂窝", "穷游", "百度"];
       case "fitness":
-        return ["Keep", "B站", "优酷", "大众点评", "美团", "知乎", "什么值得买", "高德地图", "百度地图", "腾讯地图", "百度"];
+        return ["B站", "知乎", "什么值得买", "百度"];
       default:
         return ["百度"];
     }

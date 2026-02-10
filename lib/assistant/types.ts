@@ -266,8 +266,12 @@ export interface ChatRequest {
   locale: "zh" | "en";
   /** 区域 */
   region: "CN" | "INTL";
+  /** 客户端类型 */
+  client?: "app" | "web";
   /** 是否为移动端 */
   isMobile?: boolean;
+  /** 是否为 Android 端 */
+  isAndroid?: boolean;
 }
 
 /**

@@ -56,6 +56,11 @@ const ENV_CONFIG = {
       "CLOUDBASE_SECRET_ID",
       "CLOUDBASE_SECRET_KEY",
       "ZHIPU_API_KEY",
+      "AUTH_EMAIL_SMTP_HOST",
+      "AUTH_EMAIL_SMTP_PORT",
+      "AUTH_EMAIL_SMTP_USER",
+      "AUTH_EMAIL_SMTP_PASS",
+      "AUTH_EMAIL_FROM",
     ],
     optional: [
       "WECHAT_MOBILE_APP",

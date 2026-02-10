@@ -23,6 +23,8 @@ import {
 import { isAppContainer } from '@/lib/app/app-container'
 import { saveAuthState } from '@/lib/auth/auth-state-manager'
 
+type LoginMode = 'password' | 'reset'
+
 export default function LoginPage() {
   const router = useRouter()
   const isIPhone = useIsIPhone()
@@ -31,9 +33,17 @@ export default function LoginPage() {
   const t = useTranslations(language)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [resetCode, setResetCode] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmNewPassword, setConfirmNewPassword] = useState('')
+  const [loginMode, setLoginMode] = useState<LoginMode>('password')
+  const [sendingCode, setSendingCode] = useState(false)
+  const [resettingPassword, setResettingPassword] = useState(false)
+  const [codeCooldown, setCodeCooldown] = useState(0)
   const [loading, setLoading] = useState(false)
   const [oauthLoading, setOauthLoading] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
   const [agreeToPrivacy, setAgreeToPrivacy] = useState(false)
   const [isInMiniProgram, setIsInMiniProgram] = useState(false)
   const [mpLoginProcessing, setMpLoginProcessing] = useState(false)
@@ -170,9 +180,135 @@ export default function LoginPage() {
     }
   }, [handleMpLoginCallback, isChina])
 
+  useEffect(() => {
+    if (codeCooldown <= 0) {
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      setCodeCooldown((prev) => (prev > 0 ? prev - 1 : 0))
+    }, 1000)
+
+    return () => window.clearTimeout(timer)
+  }, [codeCooldown])
+
+  const handleSendResetCode = async () => {
+    if (!isChinaDeployment) {
+      setError(t.auth.sendOtpFailed)
+      return
+    }
+
+    const emailValue = email.trim()
+    if (!emailValue) {
+      setError(t.auth.enterEmail)
+      return
+    }
+
+    setError(null)
+    setSuccess(null)
+    setSendingCode(true)
+
+    try {
+      const result = await auth.sendEmailVerificationCode?.({
+        email: emailValue,
+        purpose: 'reset_password',
+      })
+
+      if (!result || result.error) {
+        const errorCode = result?.code
+        const errorMessage = result?.error?.message || t.auth.sendOtpFailed
+
+        if (errorCode === 'USER_NOT_FOUND') {
+          setError(isChineseLanguage ? '该邮箱未注册' : 'This email is not registered.')
+        } else if (errorCode === 'SEND_TOO_FREQUENT') {
+          const waitSeconds = result?.retryAfterSeconds ?? 60
+          setCodeCooldown(waitSeconds)
+          setError(
+            isChineseLanguage
+              ? `发送过于频繁，请 ${waitSeconds} 秒后重试`
+              : `Sending too frequently. Please retry after ${waitSeconds} seconds.`
+          )
+        } else {
+          setError(errorMessage)
+        }
+        return
+      }
+
+      const cooldown = result.data?.expiresInSeconds
+        ? Math.min(60, result.data.expiresInSeconds)
+        : 60
+      setCodeCooldown(cooldown)
+      setSuccess(t.auth.otpSent)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.auth.sendOtpFailed)
+    } finally {
+      setSendingCode(false)
+    }
+  }
+
+  const onResetPasswordSubmit = async () => {
+    if (!isChinaDeployment) {
+      setError(t.auth.setPasswordFailed)
+      return
+    }
+
+    const emailValue = email.trim()
+    if (!emailValue) {
+      setError(t.auth.enterEmail)
+      return
+    }
+
+    if (!resetCode.trim()) {
+      setError(t.auth.enterOtpRequired)
+      return
+    }
+
+    if (newPassword.length < 6) {
+      setError(t.auth.passwordTooShort)
+      return
+    }
+
+    if (newPassword !== confirmNewPassword) {
+      setError(t.auth.passwordMismatch)
+      return
+    }
+
+    setResettingPassword(true)
+
+    try {
+      const result = await auth.resetPasswordWithCode?.({
+        email: emailValue,
+        code: resetCode.trim(),
+        password: newPassword,
+        confirmPassword: confirmNewPassword,
+      })
+
+      if (!result || result.error) {
+        setError(result?.error?.message || t.auth.setPasswordFailed)
+        return
+      }
+
+      setSuccess(t.auth.passwordResetSuccess)
+      setResetCode('')
+      setNewPassword('')
+      setConfirmNewPassword('')
+      setLoginMode('password')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.auth.setPasswordFailed)
+    } finally {
+      setResettingPassword(false)
+    }
+  }
+
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
+    setSuccess(null)
+
+    if (loginMode === 'reset') {
+      await onResetPasswordSubmit()
+      return
+    }
 
     // 所有区域都必须同意隐私政策
     if (!agreeToPrivacy) {
@@ -442,21 +578,87 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                disabled={loading || !!oauthLoading}
+                disabled={loading || !!oauthLoading || sendingCode || resettingPassword}
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">{t.auth.password}</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder={t.auth.enterPassword}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                disabled={loading || !!oauthLoading}
-              />
-            </div>
+            {loginMode === 'password' ? (
+              <div className="space-y-2">
+                <Label htmlFor="password">{t.auth.password}</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder={t.auth.enterPassword}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  disabled={loading || !!oauthLoading}
+                />
+              </div>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="resetCode">{t.auth.enterOtp}</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="resetCode"
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={6}
+                      placeholder={t.auth.enterOtp}
+                      value={resetCode}
+                      onChange={(e) => setResetCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      required
+                      disabled={resettingPassword || loading}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleSendResetCode}
+                      disabled={
+                        loading ||
+                        resettingPassword ||
+                        sendingCode ||
+                        codeCooldown > 0 ||
+                        !email.trim()
+                      }
+                      className="whitespace-nowrap"
+                    >
+                      {sendingCode
+                        ? t.auth.sending
+                        : codeCooldown > 0
+                          ? `${t.auth.resendOtp} (${codeCooldown}s)`
+                          : t.auth.sendOtp}
+                    </Button>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="newPassword">{t.auth.enterNewPassword}</Label>
+                  <Input
+                    id="newPassword"
+                    type="password"
+                    placeholder={t.auth.enterNewPassword}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    required
+                    minLength={6}
+                    disabled={resettingPassword || loading}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="confirmNewPassword">{t.auth.confirmNewPassword}</Label>
+                  <Input
+                    id="confirmNewPassword"
+                    type="password"
+                    placeholder={t.auth.confirmNewPassword}
+                    value={confirmNewPassword}
+                    onChange={(e) => setConfirmNewPassword(e.target.value)}
+                    required
+                    minLength={6}
+                    disabled={resettingPassword || loading}
+                  />
+                </div>
+              </>
+            )}
 
             {/* 隐私政策同意 - 所有版本都强制同意 */}
             <div className="flex items-start gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
@@ -520,25 +722,47 @@ export default function LoginPage() {
               </div>
             )}
 
+            {success && (
+              <div className="p-3 rounded-md bg-green-500/10 text-green-600 dark:text-green-400 text-sm">
+                {success}
+              </div>
+            )}
+
             <Button
               type="submit"
               className="w-full"
-              disabled={loading || !!oauthLoading}
+              disabled={loading || !!oauthLoading || resettingPassword}
             >
-              {loading ? (
+              {loading || resettingPassword ? (
                 <span className="flex items-center gap-2">
                   <LoadingSpinner />
-                  {t.auth.loggingIn}
+                  {loginMode === 'reset' ? t.auth.setting : t.auth.loggingIn}
                 </span>
               ) : (
-                t.auth.login
+                loginMode === 'reset' ? t.auth.setNewPassword : t.auth.login
               )}
             </Button>
+
+            {isChinaDeployment && (
+              <Button
+                type="button"
+                variant="ghost"
+                className="w-full"
+                onClick={() => {
+                  setError(null)
+                  setSuccess(null)
+                  setLoginMode((prev) => (prev === 'password' ? 'reset' : 'password'))
+                }}
+                disabled={loading || resettingPassword || sendingCode}
+              >
+                {loginMode === 'password' ? t.auth.forgotPassword : t.auth.usePasswordLogin}
+              </Button>
+            )}
           </form>
           )}
 
           {/* Google Login for International */}
-          {!isIPhone && !mpLoginProcessing && RegionConfig.auth.provider === 'supabase' && RegionConfig.auth.features.googleAuth && (
+          {!isIPhone && !mpLoginProcessing && loginMode === 'password' && RegionConfig.auth.provider === 'supabase' && RegionConfig.auth.features.googleAuth && (
             <>
               <div className="relative">
                 <div className="absolute inset-0 flex items-center">
@@ -573,7 +797,7 @@ export default function LoginPage() {
           )}
 
           {/* WeChat Login for China */}
-          {!isIPhone && !mpLoginProcessing && isChinaDeployment && RegionConfig.auth.features.wechatAuth && (
+          {!isIPhone && !mpLoginProcessing && loginMode === 'password' && isChinaDeployment && RegionConfig.auth.features.wechatAuth && (
             <>
               <div className="relative">
                 <div className="absolute inset-0 flex items-center">

@@ -32,7 +32,32 @@ export async function processChat(
   request: ChatRequest,
   userId: string
 ): Promise<AssistantResponse> {
-  const { message, history, location, locale, region, isMobile } = request;
+  const { message, history, location, locale, region, isMobile, isAndroid } = request;
+
+  if (!location && isNearbyIntent(message, locale)) {
+    return {
+      type: "clarify",
+      message:
+        locale === "zh"
+          ? "你提到了“附近/周边”需求，我需要先获取你的位置，才能给出准确推荐。"
+          : "You asked for nearby options. I need your location first to provide accurate recommendations.",
+      intent: "search_nearby",
+      clarifyQuestions:
+        locale === "zh"
+          ? ["请先授权定位，或告诉我你所在的城市/商圈"]
+          : ["Please share your location permission or tell me your city/area"],
+      followUps:
+        locale === "zh"
+          ? [
+              { text: "我在上海浦东", type: "refine" },
+              { text: "已开启定位，继续", type: "refine" },
+            ]
+          : [
+              { text: "I'm in Manhattan, NYC", type: "refine" },
+              { text: "Location enabled, continue", type: "refine" },
+            ],
+    };
+  }
 
   // 1. 加载用户偏好
   const preferences = await getUserPreferences(userId);
@@ -46,6 +71,8 @@ export async function processChat(
     region,
     locale,
     !!location,
+    !!isMobile,
+    !!isAndroid,
     Object.keys(preferencesMap).length > 0 ? preferencesMap : undefined
   );
 
@@ -126,6 +153,13 @@ export async function processChat(
   }
 
   return parsed;
+}
+
+function isNearbyIntent(message: string, locale: "zh" | "en"): boolean {
+  const text = message.toLowerCase();
+  const zhPattern = /(附近|周边|就近|离我近|最近|周围)/;
+  const enPattern = /(nearby|near me|around me|close by|nearest|within \d+\s?(km|miles?))/;
+  return locale === "zh" ? zhPattern.test(text) : enPattern.test(text);
 }
 
 /**

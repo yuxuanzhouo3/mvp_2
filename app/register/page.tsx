@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
@@ -26,6 +26,9 @@ export default function RegisterPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [verificationCode, setVerificationCode] = useState('')
+  const [sendingCode, setSendingCode] = useState(false)
+  const [codeCooldown, setCodeCooldown] = useState(0)
   const [loading, setLoading] = useState(false)
   const [oauthLoading, setOauthLoading] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -34,6 +37,18 @@ export default function RegisterPage() {
   const isChineseLanguage = language === 'zh'
   const isChinaDeployment = RegionConfig.auth.provider === 'cloudbase'
   const isChina = isChinaRegion()
+
+  useEffect(() => {
+    if (codeCooldown <= 0) {
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      setCodeCooldown((prev) => (prev > 0 ? prev - 1 : 0))
+    }, 1000)
+
+    return () => window.clearTimeout(timer)
+  }, [codeCooldown])
 
   const validateForm = (): boolean => {
     // 所有区域都必须同意隐私政策
@@ -52,7 +67,61 @@ export default function RegisterPage() {
       return false
     }
 
+    if (isChinaDeployment && !verificationCode.trim()) {
+      setError(t.auth.enterOtpRequired)
+      return false
+    }
+
     return true
+  }
+
+  const handleSendVerificationCode = async () => {
+    const emailValue = email.trim()
+    if (!emailValue) {
+      setError(t.auth.enterEmail)
+      return
+    }
+
+    setError(null)
+    setSuccess(null)
+    setSendingCode(true)
+
+    try {
+      const result = await auth.sendEmailVerificationCode?.({
+        email: emailValue,
+        purpose: 'register',
+      })
+
+      if (!result || result.error) {
+        const errorMessage = result?.error?.message || t.auth.sendOtpFailed
+        const errorCode = result?.code
+
+        if (errorCode === 'EMAIL_EXISTS') {
+          setError(isChineseLanguage
+            ? '该邮箱已注册，请直接登录或使用其他邮箱'
+            : 'This email is already registered. Please login or use a different email.')
+        } else if (errorCode === 'SEND_TOO_FREQUENT') {
+          const waitSeconds = result?.retryAfterSeconds ?? 60
+          setCodeCooldown(waitSeconds)
+          setError(isChineseLanguage
+            ? `发送过于频繁，请 ${waitSeconds} 秒后重试`
+            : `Sending too frequently. Please retry after ${waitSeconds} seconds.`)
+        } else {
+          setError(errorMessage)
+        }
+        return
+      }
+
+      const cooldown = result.data?.expiresInSeconds
+        ? Math.min(60, result.data.expiresInSeconds)
+        : 60
+      setCodeCooldown(cooldown)
+      setSuccess(t.auth.otpSent)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.auth.sendOtpFailed)
+    } finally {
+      setSendingCode(false)
+    }
   }
 
   const onSubmit = async (e: React.FormEvent) => {
@@ -77,6 +146,7 @@ export default function RegisterPage() {
         options: {
           data: { name: name || email.split('@')[0] },
           emailRedirectTo: callbackUrl,
+          verificationCode: isChinaDeployment ? verificationCode.trim() : undefined,
         },
       })
 
@@ -341,9 +411,49 @@ export default function RegisterPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                disabled={loading || !!oauthLoading}
+                disabled={loading || !!oauthLoading || sendingCode}
               />
             </div>
+            {isChinaDeployment && (
+              <div className="space-y-2">
+                <Label htmlFor="verificationCode">{t.auth.enterOtp}</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="verificationCode"
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={6}
+                    placeholder={t.auth.enterOtp}
+                    value={verificationCode}
+                    onChange={(e) => {
+                      const digits = e.target.value.replace(/\D/g, '').slice(0, 6)
+                      setVerificationCode(digits)
+                    }}
+                    required
+                    disabled={loading || !!oauthLoading}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleSendVerificationCode}
+                    disabled={
+                      loading ||
+                      !!oauthLoading ||
+                      sendingCode ||
+                      codeCooldown > 0 ||
+                      !email.trim()
+                    }
+                    className="whitespace-nowrap"
+                  >
+                    {sendingCode
+                      ? t.auth.sending
+                      : codeCooldown > 0
+                        ? `${t.auth.resendOtp} (${codeCooldown}s)`
+                        : t.auth.sendOtp}
+                  </Button>
+                </div>
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="password">
                 {t.auth.password}
@@ -449,7 +559,7 @@ export default function RegisterPage() {
             <Button
               type="submit"
               className="w-full"
-              disabled={loading || !!oauthLoading || !!success}
+              disabled={loading || !!oauthLoading}
             >
               {loading ? (
                 <span className="flex items-center gap-2">

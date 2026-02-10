@@ -12,36 +12,69 @@
 
 /**
  * 获取 CN 环境下的平台列表描述
+ * @param isMobile - 是否为移动端（安卓）
  * @returns CN 平台列表字符串
  */
-function getCNPlatforms(): string {
+function getCNPlatforms(isMobile: boolean): string {
+  if (isMobile) {
+    return `
+可用平台（中国区 - 安卓移动端）：
+- 随机娱乐：视频（腾讯视频、优酷、爱奇艺）；游戏（TapTap）；音乐（网易云音乐、酷狗音乐、QQ音乐）；文章（百度）
+- 随机购物：京东、淘宝、拼多多、唯品会
+- 随机吃：小红书、大众点评、美团、淘宝闪购、京东秒送、腾讯地图、百度地图、高德地图
+- 随机出行：携程、去哪儿、马蜂窝
+- 随机健身：美团、高德地图、B站`;
+  }
+
   return `
-可用平台（中国区）：
-- 地图/导航：高德地图、百度地图、腾讯地图
-- 外卖：美团外卖、饿了么、京东秒送、淘宝闪购
-- 电商：淘宝、京东、拼多多、唯品会、1688、什么值得买、慢慢买
-- 本地生活/美食：大众点评、美团、下厨房
-- 旅行：携程、去哪儿、马蜂窝、穷游
-- 娱乐：腾讯视频、爱奇艺、优酷、QQ音乐、酷狗音乐、网易云音乐、TapTap、豆瓣、B站
-- 健身：Keep、B站
-- 社区：小红书、知乎
-- 搜索引擎：百度（兜底）`;
+可用平台（中国区 - 网页端）：
+- 随机娱乐：视频（腾讯视频）；游戏（TapTap、Steam）；音乐（酷狗音乐）；小说（笔趣阁）
+- 随机购物：京东、什么值得买、慢慢买
+- 随机吃：下厨房（食谱）、高德地图（附近美食）、大众点评（点评）、小红书（点评）
+- 随机出行：携程、马蜂窝、穷游
+- 随机健身：B站（健身视频）、知乎（健身原理）、什么值得买（健身器材）`;
 }
 
 /**
  * 获取 INTL 环境下的平台列表描述
+ * @param isMobile - 是否移动端
+ * @param isAndroid - 是否 Android 端
  * @returns INTL 平台列表字符串
  */
-function getINTLPlatforms(): string {
+function getINTLPlatforms(isMobile: boolean, isAndroid: boolean): string {
+  if (isMobile) {
+    return `
+Available Platforms (International - ${isAndroid ? "Android Mobile" : "Mobile"}):
+- Random Entertainment:
+  - Short videos: YouTube, TikTok
+  - Movies/TV: JustWatch
+  - Music: Spotify
+  - Long-form articles/news: Medium
+- Random Shopping:
+  - Amazon Shopping, Etsy, Slickdeals, Pinterest
+- Random Food:
+  - US mainstream delivery: DoorDash, Uber Eats
+  - Chinese food delivery: Fantuan Delivery, HungryPanda
+- Random Travel:
+  - Guides/reviews: Tripadvisor, Yelp
+  - Trip planning: Wanderlog, Visit A City
+  - Local experiences/tours: GetYourGuide
+  - Navigation: Google Maps
+- Random Fitness:
+  - Home/general training: Nike Training Club (NTC), Peloton
+  - Running/cycling: Strava, Nike Run Club (NRC)
+  - Strength training: Hevy, Strong
+  - Yoga: Down Dog
+  - Diet tracking: MyFitnessPal`;
+  }
+
   return `
-Available Platforms (International):
-- Maps/Navigation: Google Maps
-- Food Delivery: Uber Eats, DoorDash
-- Restaurant/Local: Yelp, OpenTable, TripAdvisor
-- Shopping: Amazon, eBay, Walmart, Target
-- Travel: Booking.com, Agoda, Airbnb, TripAdvisor
-- Entertainment: YouTube, Netflix, IMDb, Rotten Tomatoes, Metacritic
-- Fitness: YouTube Fitness, MyFitnessPal, Peloton, Muscle & Strength
+Available Platforms (International - Web):
+- Random Entertainment: IMDb, YouTube, Spotify, Metacritic, Steam, Netflix, Rotten Tomatoes
+- Random Shopping: Amazon, eBay, Walmart, Google Maps
+- Random Food: Uber Eats, Love and Lemons, Google Maps, Yelp
+- Random Travel: Booking.com, TripAdvisor, SANParks, YouTube
+- Random Fitness: YouTube Fitness, Muscle & Strength, Google Maps
 - Search: Google (fallback)`;
 }
 
@@ -58,11 +91,45 @@ export function buildSystemPrompt(
   region: "CN" | "INTL",
   locale: "zh" | "en",
   hasLocation: boolean,
+  isMobile = false,
+  isAndroid = false,
   userPreferences?: Record<string, unknown>
 ): string {
   const isCN = region === "CN";
   const isZh = locale === "zh";
-  const platforms = isCN ? getCNPlatforms() : getINTLPlatforms();
+  const isIntlAndroidMobile = !isCN && isMobile && isAndroid;
+  const platforms = isCN
+    ? getCNPlatforms(isMobile)
+    : getINTLPlatforms(isIntlAndroidMobile, isAndroid);
+  const cnClientType = isMobile ? "安卓移动端" : "网页端";
+  const zhCnClientRules = isCN
+    ? `
+10. 当前为中国区${cnClientType}，必须严格使用该端指定的平台，不要混用其他端平台
+11. 在移动端场景，动作仅输出平台名与搜索词，由系统深链流程处理，不要输出不可控裸外链`
+    : "";
+  const enCnClientRules = isCN
+    ? `
+10. In CN region, strictly follow the platform set for the current client type (web vs Android mobile)
+11. For mobile, output platform + searchQuery and let the system deep-link flow handle final jump links`
+    : "";
+  const zhIntlClientRules = !isCN
+    ? isIntlAndroidMobile
+      ? `
+10. 当前为 INTL 移动端，平台必须严格使用 INTL 移动端目录中的 App，不可混用网页端平台
+11. 卡片点击跳转必须走系统 deep-link 流程（由系统生成 open_app/outbound 链接），不要输出裸外链`
+      : `
+10. 当前为 INTL 网页端，平台必须严格使用 INTL Web 目录中的网站，不可混用移动端 App 平台
+11. 所有平台必须来自 INTL Web 目录，不得输出目录外平台`
+    : "";
+  const enIntlClientRules = !isCN
+    ? isIntlAndroidMobile
+      ? `
+10. In INTL mobile context, platforms must come strictly from the INTL mobile app catalog above.
+11. Card click links must follow the system deep-link flow (system-generated open_app/outbound links). Do not output raw external links.`
+      : `
+10. In INTL web context, platforms must come strictly from the INTL web catalog above.
+11. Do not mix mobile-only app platforms into INTL web results.`
+    : "";
 
   const preferencesSection = userPreferences
     ? isZh
@@ -122,12 +189,14 @@ ${platforms}
 1. candidates 数组最多返回 5 个候选结果，按推荐度排序
 2. 每个候选结果的 platform 字段必须是上方平台目录中的平台名称
 3. searchQuery 字段应该是在该平台上搜索时最有效的关键词
-4. 如果用户提到距离但没有提供位置，${hasLocation ? "已获取用户位置，直接使用" : "请在 clarifyQuestions 中要求获取位置"}
+4. 如果用户提到附近/周边/就近/离我近等位置词但没有提供位置，${hasLocation ? "已获取用户位置，直接使用" : "请在 clarifyQuestions 中要求获取位置"}
 5. actions 中的 providerId 必须是平台目录中的平台名称
 6. 优先使用主流平台，确保跳转链接可用
 7. 结果要尽量真实合理，包含具体的地址、评分、价格等信息
 8. 为"追问与迭代"提供 2-3 个 followUps 建议
 9. **严格基于系统提示中的用户位置城市生成结果**，不要编造其他城市的店铺或地址。如果系统提示中包含用户城市信息，所有候选结果的地址必须属于该城市
+${zhCnClientRules}
+${zhIntlClientRules}
 ${preferencesSection}
 
 ## 重要
@@ -188,12 +257,14 @@ ${platforms}
 1. candidates array should have at most 5 results, sorted by recommendation
 2. Each candidate's platform field must be a platform name from the catalog above
 3. searchQuery should be the most effective keyword for searching on that platform
-4. If user mentions distance but no location, ${hasLocation ? "user location is available, use it directly" : "ask for location in clarifyQuestions"}
+4. If user mentions nearby/around me/close by without location, ${hasLocation ? "user location is available, use it directly" : "ask for location in clarifyQuestions"}
 5. actions' providerId must be a platform name from the catalog
 6. Prefer mainstream platforms to ensure jump links work
 7. Results should be realistic with specific addresses, ratings, prices etc.
 8. Provide 2-3 followUps suggestions for iteration
 9. **Strictly generate results based on the user's city from the system location hint**. Do not fabricate stores or addresses from other cities. All candidate addresses must belong to the user's actual city
+${enCnClientRules}
+${enIntlClientRules}
 ${preferencesSection}
 
 ## Important

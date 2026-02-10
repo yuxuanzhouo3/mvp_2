@@ -5,6 +5,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import cloudbase from "@cloudbase/node-sdk";
 import { nowISO } from "@/lib/database/cloudbase-client";
+import { consumeEmailVerificationCode } from "@/lib/auth/email-verification";
 
 const registerSchema = z
   .object({
@@ -15,6 +16,10 @@ const registerSchema = z
       .min(1, "Full name is required")
       .max(100, "Full name too long"),
     confirmPassword: z.string(),
+    verificationCode: z
+      .string()
+      .regex(/^\d{6}$/, "Verification code must be 6 digits")
+      .optional(),
   })
   .refine((data) => data.password === data.confirmPassword, {
     message: "Passwords do not match",
@@ -53,7 +58,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { email, password, fullName } = validationResult.data;
+    const { email, password, fullName, verificationCode } = validationResult.data;
+    const normalizedEmail = email.trim().toLowerCase();
 
     if (isChinaRegion()) {
       // 中国区域：使用 CloudBase
@@ -62,7 +68,9 @@ export async function POST(request: NextRequest) {
       const usersCollection = db.collection("users");
 
       // 检查邮箱是否已存在
-      const existingUserResult = await usersCollection.where({ email }).get();
+      const existingUserResult = await usersCollection
+        .where({ email: normalizedEmail })
+        .get();
 
       if (existingUserResult.data && existingUserResult.data.length > 0) {
         return NextResponse.json(
@@ -74,12 +82,45 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      if (!verificationCode) {
+        return NextResponse.json(
+          {
+            error: "Verification code is required",
+            code: "VERIFICATION_CODE_REQUIRED",
+          },
+          { status: 400 }
+        );
+      }
+
+      const consumeResult = await consumeEmailVerificationCode({
+        email: normalizedEmail,
+        purpose: "register",
+        code: verificationCode,
+      });
+
+      if (!consumeResult.success) {
+        const statusCode =
+          consumeResult.code === "CODE_INVALID" ||
+          consumeResult.code === "CODE_NOT_FOUND" ||
+          consumeResult.code === "CODE_EXPIRED"
+            ? 400
+            : 500;
+
+        return NextResponse.json(
+          {
+            error: consumeResult.message,
+            code: consumeResult.code,
+          },
+          { status: statusCode }
+        );
+      }
+
       // 加密密码
       const hashedPassword = await bcrypt.hash(password, 10);
 
       // 创建新用户
       const newUser = {
-        email,
+        email: normalizedEmail,
         password: hashedPassword,
         name: fullName,
         pro: false,
@@ -96,7 +137,7 @@ export async function POST(request: NextRequest) {
         success: true,
         user: {
           id: result.id,
-          email,
+          email: normalizedEmail,
           name: fullName,
         },
         message: "Registration successful. You can now log in.",

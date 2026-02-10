@@ -61,6 +61,7 @@ export const CloudBaseCollections = {
   // 用户相关
   USERS: 'users',
   USER_PROFILES: 'user_profiles',
+  AUTH_EMAIL_CODES: 'auth_email_codes',
 
   // 推荐系统相关
   RECOMMENDATION_HISTORY: 'recommendation_history',

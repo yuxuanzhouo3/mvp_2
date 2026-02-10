@@ -1215,48 +1215,87 @@ export function getWeightedProvidersForCategory(
   isMobile?: boolean
 ): WeightedProvider[] {
   if (region === "CN") {
+    if (isMobile) {
+      switch (category) {
+        case "food":
+          return [
+            { provider: "小红书", weight: 0.18, tier: "mainstream" },
+            { provider: "大众点评", weight: 0.18, tier: "mainstream" },
+            { provider: "美团", weight: 0.16, tier: "mainstream" },
+            { provider: "淘宝闪购", weight: 0.12, tier: "mainstream" },
+            { provider: "京东秒送", weight: 0.12, tier: "mainstream" },
+            { provider: "高德地图", weight: 0.10, tier: "mainstream" },
+            { provider: "百度地图", weight: 0.08, tier: "mainstream" },
+            { provider: "腾讯地图", weight: 0.06, tier: "mainstream" },
+          ];
+        case "shopping":
+          return [
+            { provider: "京东", weight: 0.30, tier: "mainstream" },
+            { provider: "淘宝", weight: 0.28, tier: "mainstream" },
+            { provider: "拼多多", weight: 0.22, tier: "mainstream" },
+            { provider: "唯品会", weight: 0.20, tier: "mainstream" },
+          ];
+        case "entertainment":
+          return [
+            { provider: "腾讯视频", weight: 0.16, tier: "mainstream" },
+            { provider: "优酷", weight: 0.14, tier: "mainstream" },
+            { provider: "爱奇艺", weight: 0.14, tier: "mainstream" },
+            { provider: "TapTap", weight: 0.14, tier: "mainstream" },
+            { provider: "网易云音乐", weight: 0.12, tier: "mainstream" },
+            { provider: "酷狗音乐", weight: 0.11, tier: "mainstream" },
+            { provider: "QQ音乐", weight: 0.11, tier: "mainstream" },
+            { provider: "百度", weight: 0.08, tier: "longtail" },
+          ];
+        case "travel":
+          return [
+            { provider: "携程", weight: 0.40, tier: "mainstream" },
+            { provider: "去哪儿", weight: 0.34, tier: "mainstream" },
+            { provider: "马蜂窝", weight: 0.26, tier: "mainstream" },
+          ];
+        case "fitness":
+          return [
+            { provider: "B站", weight: 0.40, tier: "mainstream" },
+            { provider: "美团", weight: 0.34, tier: "mainstream" },
+            { provider: "高德地图", weight: 0.26, tier: "mainstream" },
+          ];
+        default:
+          return [];
+      }
+    }
+
     switch (category) {
       case "food":
         return [
-          { provider: "大众点评", weight: 0.35, tier: "mainstream" },
-          { provider: "高德地图", weight: 0.25, tier: "mainstream" },
-          { provider: "百度地图", weight: 0.2, tier: "mainstream" },
-          { provider: "腾讯地图", weight: 0.2, tier: "mainstream" },
+          { provider: "下厨房", weight: 0.35, tier: "mainstream" },
+          { provider: "高德地图", weight: 0.30, tier: "mainstream" },
+          { provider: "大众点评", weight: 0.25, tier: "mainstream" },
+          { provider: "小红书", weight: 0.10, tier: "longtail" },
         ];
       case "shopping":
         return [
-          { provider: "京东", weight: 0.3, tier: "mainstream" },
-          { provider: "淘宝", weight: 0.3, tier: "mainstream" },
-          { provider: "拼多多", weight: 0.2, tier: "mainstream" },
-          { provider: "唯品会", weight: 0.2, tier: "mainstream" },
+          { provider: "京东", weight: 0.40, tier: "mainstream" },
+          { provider: "什么值得买", weight: 0.35, tier: "mainstream" },
+          { provider: "慢慢买", weight: 0.25, tier: "mainstream" },
         ];
       case "entertainment":
         return [
-          { provider: "腾讯视频", weight: 0.25, tier: "mainstream" },
-          { provider: "优酷", weight: 0.25, tier: "mainstream" },
-          { provider: "QQ音乐", weight: 0.15, tier: "mainstream" },
-          { provider: "酷狗音乐", weight: 0.1, tier: "mainstream" },
-          { provider: "网易云音乐", weight: 0.1, tier: "mainstream" },
-          { provider: "TapTap", weight: 0.15, tier: "mainstream" },
+          { provider: "腾讯视频", weight: 0.30, tier: "mainstream" },
+          { provider: "TapTap", weight: 0.25, tier: "mainstream" },
+          { provider: "Steam", weight: 0.20, tier: "mainstream" },
+          { provider: "酷狗音乐", weight: 0.15, tier: "mainstream" },
+          { provider: "笔趣阁", weight: 0.10, tier: "longtail" },
         ];
       case "travel":
         return [
-          { provider: "携程", weight: 0.25, tier: "mainstream" },
-          { provider: "去哪儿", weight: 0.2, tier: "mainstream" },
-          { provider: "小红书", weight: 0.15, tier: "mainstream" },
-          { provider: "马蜂窝", weight: 0.2, tier: "mainstream" },
-          { provider: "穷游", weight: 0.2, tier: "mainstream" },
+          { provider: "携程", weight: 0.40, tier: "mainstream" },
+          { provider: "马蜂窝", weight: 0.34, tier: "mainstream" },
+          { provider: "穷游", weight: 0.26, tier: "mainstream" },
         ];
       case "fitness":
         return [
-          { provider: "Keep", weight: 0.23, tier: "mainstream" },
-          { provider: "B站", weight: 0.18, tier: "mainstream" },
-          { provider: "优酷", weight: 0.15, tier: "mainstream" },
-          { provider: "大众点评", weight: 0.14, tier: "mainstream" },
-          { provider: "美团", weight: 0.1, tier: "mainstream" },
-          { provider: "高德地图", weight: 0.08, tier: "longtail" },
-          { provider: "百度地图", weight: 0.07, tier: "longtail" },
-          { provider: "腾讯地图", weight: 0.05, tier: "longtail" },
+          { provider: "B站", weight: 0.40, tier: "mainstream" },
+          { provider: "知乎", weight: 0.34, tier: "mainstream" },
+          { provider: "什么值得买", weight: 0.26, tier: "mainstream" },
         ];
       default:
         return [];

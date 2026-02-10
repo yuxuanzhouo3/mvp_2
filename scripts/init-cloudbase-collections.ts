@@ -53,6 +53,15 @@ const COLLECTIONS = {
       { name: 'subscription_tier_index', field: 'subscription_tier' },
     ],
   },
+  AUTH_EMAIL_CODES: {
+    name: 'auth_email_codes',
+    indexes: [
+      { name: 'email_index', field: 'email' },
+      { name: 'purpose_index', field: 'purpose' },
+      { name: 'created_at_index', field: 'createdAt', order: 'desc' },
+      { name: 'expires_at_index', field: 'expiresAt' },
+    ],
+  },
 
   // 推荐系统相关
   RECOMMENDATION_HISTORY: {

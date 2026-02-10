@@ -58,6 +58,20 @@ interface ChatInterfaceProps {
   planType: "free" | "pro" | "enterprise";
 }
 
+function detectClientType(): "app" | "web" {
+  if (typeof window === "undefined") return "web";
+  const search = new URLSearchParams(window.location.search);
+  if (search.get("app") === "1") return "app";
+  const w = window as any;
+  if (typeof w.ReactNativeWebView?.postMessage === "function") return "app";
+  if (typeof w.webkit?.messageHandlers?.native?.postMessage === "function") return "app";
+  if (typeof w.Android?.wechatLogin === "function") return "app";
+  if (typeof w.AndroidWeChatBridge?.startLogin === "function") return "app";
+  const ua = navigator.userAgent || "";
+  if (ua.includes("median") || ua.includes("gonative")) return "app";
+  return "web";
+}
+
 /**
  * 生成唯一消息 ID
  * @returns 唯一 ID 字符串
@@ -262,6 +276,7 @@ export default function ChatInterface({
           location,
           locale,
           region,
+          client: detectClientType(),
         }),
       });
 
