@@ -41,6 +41,18 @@ export async function processChat(
         locale === "zh"
           ? "你提到了“附近/周边”需求，我需要先获取你的位置，才能给出准确推荐。"
           : "You asked for nearby options. I need your location first to provide accurate recommendations.",
+      thinking:
+        locale === "zh"
+          ? [
+              "识别到用户在询问附近/周边结果",
+              "发现当前请求缺少可用位置信息",
+              "先向用户发起位置补充，再继续检索",
+            ]
+          : [
+              "Detected a nearby-intent request",
+              "No usable location context is available",
+              "Ask for location first, then continue search",
+            ],
       intent: "search_nearby",
       clarifyQuestions:
         locale === "zh"
@@ -116,6 +128,18 @@ export async function processChat(
         locale === "zh"
           ? "AI 服务暂时不可用，请稍后再试。"
           : "AI service is temporarily unavailable. Please try again later.",
+      thinking:
+        locale === "zh"
+          ? [
+              "已完成输入与上下文整理",
+              "尝试调用模型服务时发生失败",
+              "返回稳定错误提示，避免用户等待",
+            ]
+          : [
+              "Prepared user input and context",
+              "Model invocation failed unexpectedly",
+              "Returned a safe fallback error message",
+            ],
     };
   }
 
@@ -130,7 +154,30 @@ export async function processChat(
     return {
       type: "text",
       message: aiContent,
+      thinking:
+        locale === "zh"
+          ? [
+              "模型已返回内容",
+              "结构化 JSON 解析失败，自动切换为纯文本模式",
+              "保留原始回答并直接返回给用户",
+            ]
+          : [
+              "Model returned content",
+              "Structured JSON parsing failed, switched to text fallback",
+              "Preserved raw answer and returned it directly",
+            ],
     };
+  }
+
+  // 5.1 归一化 thinking 字段，保证前端可稳定展示
+  const normalizedThinking = normalizeThinkingSteps(parsed.thinking);
+  if (normalizedThinking.length > 0) {
+    parsed.thinking = normalizedThinking;
+  } else {
+    const fallbackThinking = buildFallbackThinking(parsed, locale);
+    if (fallbackThinking.length > 0) {
+      parsed.thinking = fallbackThinking;
+    }
   }
 
   // 6. 为候选结果补充真实深链
@@ -418,4 +465,95 @@ function parseAIResponseSafely(content: string, locale: "zh" | "en"): AssistantR
 
     return parsed as AssistantResponse;
   }
+}
+
+function normalizeThinkingSteps(raw: unknown): string[] {
+  if (Array.isArray(raw)) {
+    return raw
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => sanitizeThinkingStep(item))
+      .filter((item) => item.length > 0)
+      .slice(0, 8);
+  }
+
+  if (typeof raw === "string") {
+    return raw
+      .split(/\r?\n|[;；]/)
+      .map((item) => sanitizeThinkingStep(item))
+      .filter((item) => item.length > 0)
+      .slice(0, 8);
+  }
+
+  return [];
+}
+
+function sanitizeThinkingStep(value: string): string {
+  return value
+    .trim()
+    .replace(/^[-*•]+\s*/, "")
+    .replace(/^\d+[.)]\s*/, "")
+    .replace(/^第\s*\d+\s*步[:：]?\s*/, "")
+    .replace(/^Step\s*\d+[:：]?\s*/i, "")
+    .trim();
+}
+
+function buildFallbackThinking(
+  response: AssistantResponse,
+  locale: "zh" | "en"
+): string[] {
+  const thinking: string[] = [];
+
+  if (response.intent) {
+    thinking.push(
+      locale === "zh"
+        ? `识别用户意图：${response.intent}`
+        : `Identified user intent: ${response.intent}`
+    );
+  }
+
+  if (response.type === "clarify") {
+    thinking.push(
+      locale === "zh"
+        ? "当前信息不足，先向用户补充关键条件"
+        : "Missing critical context, asking for key details first"
+    );
+    return thinking.slice(0, 6);
+  }
+
+  if (response.plan && response.plan.length > 0) {
+    const planSteps = response.plan
+      .map((step) => sanitizeThinkingStep(step.description))
+      .filter((step) => step.length > 0)
+      .slice(0, 3);
+
+    if (planSteps.length > 0) {
+      thinking.push(...planSteps);
+    }
+  }
+
+  if (response.candidates && response.candidates.length > 0) {
+    thinking.push(
+      locale === "zh"
+        ? `筛选并整理 ${response.candidates.length} 个候选结果`
+        : `Filtered and organized ${response.candidates.length} candidates`
+    );
+  }
+
+  if (response.actions && response.actions.length > 0) {
+    thinking.push(
+      locale === "zh"
+        ? "补充可直接执行的下一步动作"
+        : "Prepared actionable next-step options"
+    );
+  }
+
+  if (thinking.length === 0 && response.message?.trim()) {
+    thinking.push(
+      locale === "zh"
+        ? "基于当前上下文生成回答并提供建议"
+        : "Generated a response based on current context"
+    );
+  }
+
+  return thinking.slice(0, 6);
 }

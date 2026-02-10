@@ -97,4 +97,58 @@ describe("INTL Android concrete query enforcement", () => {
 
     expect(output).toBe("Banff Lake Louise");
   });
+
+  it("aligns generic INTL Android title to concrete search query", async () => {
+    const mod = (await import(routePath)) as any;
+    const alignTitle = mod.alignIntlAndroidTitleWithSearchQuery as
+      | ((params: {
+          category: "entertainment" | "shopping" | "food" | "travel" | "fitness";
+          locale: "zh" | "en";
+          isMobile?: boolean;
+          isAndroid?: boolean;
+          title?: string | null;
+          searchQuery?: string | null;
+        }) => string)
+      | undefined;
+
+    expect(alignTitle).toBeTypeOf("function");
+
+    const output = alignTitle!({
+      category: "shopping",
+      locale: "en",
+      isMobile: true,
+      isAndroid: true,
+      title: "Best trending shopping picks",
+      searchQuery: "Stanley Quencher H2.0 40oz",
+    });
+
+    expect(output).toBe("Stanley Quencher H2.0 40oz");
+  });
+
+  it("keeps concrete title in INTL Android context", async () => {
+    const mod = (await import(routePath)) as any;
+    const alignTitle = mod.alignIntlAndroidTitleWithSearchQuery as
+      | ((params: {
+          category: "entertainment" | "shopping" | "food" | "travel" | "fitness";
+          locale: "zh" | "en";
+          isMobile?: boolean;
+          isAndroid?: boolean;
+          title?: string | null;
+          searchQuery?: string | null;
+        }) => string)
+      | undefined;
+
+    expect(alignTitle).toBeTypeOf("function");
+
+    const output = alignTitle!({
+      category: "travel",
+      locale: "en",
+      isMobile: true,
+      isAndroid: true,
+      title: "Banff Lake Louise",
+      searchQuery: "Banff Lake Louise",
+    });
+
+    expect(output).toBe("Banff Lake Louise");
+  });
 });

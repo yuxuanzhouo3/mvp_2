@@ -127,6 +127,8 @@ export interface AssistantResponse {
   type: "plan" | "results" | "clarify" | "text" | "preference_saved" | "error";
   /** 纯文本消息 */
   message: string;
+  /** AI 思考过程（高层步骤摘要） */
+  thinking?: string[];
   /** 识别的意图 */
   intent?: AssistantIntentType;
   /** 执行计划 */

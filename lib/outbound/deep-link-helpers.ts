@@ -56,6 +56,12 @@ export function getAutoTryLinks(
   candidateLink: CandidateLink,
   os: MobileOs
 ): OutboundLink[] {
+  const isPrimaryProviderCompanionLink = (link: OutboundLink): boolean => {
+    const normalizedLabel = (link.label || "").trim().toLowerCase();
+    if (!normalizedLabel) return true;
+    return normalizedLabel === "ios" || normalizedLabel === "android";
+  };
+
   const shouldKeepForOs = (link: OutboundLink): boolean => {
     if (
       link.type !== "app" &&
@@ -86,7 +92,8 @@ export function getAutoTryLinks(
 
   const fallbackTry = candidateLink.fallbacks.filter(
     (l) =>
-      l.type === "app" || l.type === "intent" || l.type === "universal_link"
+      (l.type === "app" || l.type === "intent" || l.type === "universal_link") &&
+      isPrimaryProviderCompanionLink(l)
   );
 
   const ordered = [...primaryTry, ...fallbackTry];
@@ -98,8 +105,25 @@ export function getAutoTryLinks(
     if (!shouldKeepForOs(l)) continue;
     // iOS 不支持 intent:// URL
     if (os === "ios" && l.type === "intent") continue;
-    seen.add(l.url);
-    unique.push(l);
+    const sanitizedLink =
+      os === "android" && l.type === "intent"
+        ? { ...l, url: stripIntentBrowserFallbackUrl(l.url) }
+        : l;
+    seen.add(sanitizedLink.url);
+    unique.push(sanitizedLink);
+  }
+
+  if (os === "android") {
+    const hasExplicitDeepLink = unique.some(
+      (link) => link.type === "intent" || link.type === "app"
+    );
+    if (hasExplicitDeepLink) {
+      const withoutUniversalLink = unique.filter(
+        (link) => link.type !== "universal_link"
+      );
+      unique.length = 0;
+      unique.push(...withoutUniversalLink);
+    }
   }
 
   // Android 排序：intent > app > universal_link

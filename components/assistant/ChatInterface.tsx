@@ -26,6 +26,8 @@ import {
   Bot,
   User,
   Sparkles,
+  Brain,
+  ChevronDown,
   ChevronRight,
   ExternalLink,
   Phone,
@@ -40,6 +42,11 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { useToast } from "@/hooks/use-toast";
 import { fetchWithAuth } from "@/lib/auth/fetch-with-auth";
 import type {
@@ -706,6 +713,10 @@ function AssistantBubble({
                 </div>
               )}
 
+              {sr?.thinking && sr.thinking.length > 0 && (
+                <ThinkingPanel thinking={sr.thinking} isZh={isZh} />
+              )}
+
               {/* 执行计划 */}
               {sr?.plan && sr.plan.length > 0 && (
                 <PlanSteps steps={sr.plan} isZh={isZh} />
@@ -751,6 +762,51 @@ function AssistantBubble({
         </div>
       </div>
     </div>
+  );
+}
+
+function ThinkingPanel({
+  thinking,
+  isZh,
+}: {
+  thinking: string[];
+  isZh: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <div className="bg-slate-50 border border-slate-100 rounded-xl px-3 py-2">
+        <CollapsibleTrigger asChild>
+          <button
+            type="button"
+            className="w-full inline-flex items-center justify-between text-xs font-medium text-slate-600 hover:text-slate-800 transition-colors"
+          >
+            <span className="inline-flex items-center gap-1.5">
+              <Brain className="h-3.5 w-3.5" />
+              thinking
+            </span>
+            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`} />
+          </button>
+        </CollapsibleTrigger>
+
+        <CollapsibleContent>
+          <div className="mt-2 pt-2 border-t border-slate-200 space-y-1.5">
+            <p className="text-[11px] text-slate-500">
+              {isZh ? "AI 处理过程摘要" : "AI reasoning summary"}
+            </p>
+            {thinking.map((step, index) => (
+              <p
+                key={`${index}-${step}`}
+                className="text-xs text-slate-600 leading-relaxed"
+              >
+                {index + 1}. {step}
+              </p>
+            ))}
+          </div>
+        </CollapsibleContent>
+      </div>
+    </Collapsible>
   );
 }
 

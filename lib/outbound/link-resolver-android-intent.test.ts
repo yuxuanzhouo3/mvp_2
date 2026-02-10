@@ -104,9 +104,10 @@ describe("resolveCandidateLink android intent fallback", () => {
   });
 
   it("supports MiniReview android deep link", () => {
+    const query = "indie roguelike";
     const result = resolveCandidateLink({
       title: "MiniReview Test",
-      query: "indie roguelike",
+      query,
       category: "entertainment",
       locale: "en",
       region: "INTL",
@@ -121,6 +122,9 @@ describe("resolveCandidateLink android intent fallback", () => {
     );
 
     expect(androidIntent).toBeTruthy();
+    expect(androidIntent?.url).toContain("intent://minireview.io/");
+    expect(androidIntent?.url).toContain("s=");
+    expect(androidIntent?.url).toContain(encodeURIComponent(query));
   });
 
   it("supports Fantuan Delivery android deep link with search query", () => {

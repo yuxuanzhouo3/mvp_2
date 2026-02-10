@@ -252,8 +252,8 @@ export function selectFitnessPlatform(
     if (locale === 'zh') {
         switch (fitnessType) {
             case 'nearby_place': {
-                const placePlatforms = ['大众点评', '美团', 'Keep', '百度地图健身', '高德地图健身', '腾讯地图健身'];
-                return placePlatforms.includes(currentPlatform) ? currentPlatform : '大众点评';
+                const placePlatforms = ['高德地图健身'];
+                return placePlatforms.includes(currentPlatform) ? currentPlatform : '高德地图健身';
             }
 
             case 'tutorial': {

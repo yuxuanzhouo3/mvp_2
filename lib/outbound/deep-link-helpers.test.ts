@@ -589,10 +589,9 @@ describe("getAutoTryLinks", () => {
       };
 
       const links = getAutoTryLinks(candidateLink, "android");
-      expect(links.length).toBe(3);
+      expect(links.length).toBe(2);
       expect(links[0].type).toBe("intent");
       expect(links[1].type).toBe("app");
-      expect(links[2].type).toBe("universal_link");
     });
 
     it("places multiple intents before apps on Android", () => {
@@ -772,6 +771,58 @@ describe("getAutoTryLinks", () => {
 
       const links = getAutoTryLinks(candidateLink, "android");
       expect(links.length).toBe(2);
+    });
+
+    it("does not include cross-provider app deep links in auto-try list", () => {
+      const candidateLink: CandidateLink = {
+        provider: "小红书",
+        title: "小红书探店",
+        primary: {
+          type: "app",
+          url: "xhsdiscover://search/result?keyword=%E7%81%AB%E9%94%85",
+        },
+        fallbacks: [
+          {
+            type: "app",
+            url: "imeituan://www.meituan.com/search?q=%E7%81%AB%E9%94%85",
+            label: "美团",
+          },
+          {
+            type: "intent",
+            url: "intent://www.meituan.com/search?q=%E7%81%AB%E9%94%85#Intent;scheme=imeituan;package=com.sankuai.meituan;end",
+            label: "美团",
+          },
+          {
+            type: "store",
+            url: "market://details?id=com.xingin.xhs",
+            label: "系统应用商店",
+          },
+        ],
+      };
+
+      const links = getAutoTryLinks(candidateLink, "android");
+      expect(links).toHaveLength(1);
+      expect(links[0].url).toContain("xhsdiscover://");
+      expect(links.some((link) => link.url.includes("imeituan://"))).toBe(false);
+      expect(links.some((link) => link.url.includes("com.sankuai.meituan"))).toBe(false);
+    });
+
+    it("strips browser fallback from android intent in auto-try list", () => {
+      const candidateLink: CandidateLink = {
+        provider: "腾讯视频",
+        title: "测试视频",
+        primary: {
+          type: "intent",
+          url:
+            "intent://search?keyword=test#Intent;scheme=tenvideo;package=com.tencent.qqlive;S.browser_fallback_url=https%3A%2F%2Fv.qq.com%2Fx%2Fsearch%2F%3Fq%3Dtest;end",
+        },
+        fallbacks: [],
+      };
+
+      const links = getAutoTryLinks(candidateLink, "android");
+      expect(links).toHaveLength(1);
+      expect(links[0].type).toBe("intent");
+      expect(links[0].url).not.toContain("S.browser_fallback_url=");
     });
   });
 });

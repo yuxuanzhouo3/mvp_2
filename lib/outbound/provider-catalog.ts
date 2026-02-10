@@ -952,7 +952,7 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
         `https://minireview.io/?s=${encodeURIComponent(query)}`,
       androidScheme: ({ query }) => {
         const web = `https://minireview.io/?s=${encodeURIComponent(query)}`;
-        return `intent://#Intent;action=android.intent.action.VIEW;package=minireview.best.android.games.reviews;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+        return `intent://minireview.io/?s=${encodeURIComponent(query)}#Intent;scheme=https;package=minireview.best.android.games.reviews;S.browser_fallback_url=${encodeURIComponent(web)};end`;
       },
     },
     // --- INTL 购物类目 ---

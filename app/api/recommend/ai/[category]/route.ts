@@ -49,6 +49,10 @@ import { dedupeRecommendations } from "@/lib/recommendation/dedupe";
 import { generateFallbackCandidates } from "@/lib/recommendation/fallback-generator";
 import { getUserFeedbackHistory, extractNegativeFeedbackSamples } from "@/lib/services/feedback-service";
 import { mapSearchPlatformToProvider } from "@/lib/outbound/provider-mapping";
+import {
+  normalizeCnMobileCategoryPlatform,
+  stripCnFoodGenericTerms,
+} from "@/lib/recommendation/cn-mobile-normalizer";
 
 const VALID_CATEGORIES: RecommendationCategory[] = [
   "entertainment",
@@ -999,6 +1003,39 @@ export function enforceConcreteIntlAndroidSearchQuery(params: {
   return INTL_ANDROID_CONCRETE_QUERY_FALLBACK_BY_CATEGORY[params.category] || query || title;
 }
 
+export function alignIntlAndroidTitleWithSearchQuery(params: {
+  category: RecommendationCategory;
+  locale: "zh" | "en";
+  isMobile?: boolean;
+  isAndroid?: boolean;
+  title?: string | null;
+  searchQuery?: string | null;
+}): string {
+  const normalizedTitle = normalizeQueryBase(String(params.title || ""));
+  const normalizedQuery = normalizeQueryBase(String(params.searchQuery || ""));
+
+  if (
+    !isIntlAndroidConcreteTermContext({
+      category: params.category,
+      locale: params.locale,
+      isMobile: params.isMobile,
+      isAndroid: params.isAndroid,
+    })
+  ) {
+    return normalizedTitle || normalizedQuery;
+  }
+
+  if (!normalizedQuery) {
+    return normalizedTitle;
+  }
+
+  if (isConcreteIntlAndroidSearchQuery({ category: params.category, query: normalizedTitle })) {
+    return normalizedTitle;
+  }
+
+  return normalizedQuery;
+}
+
 export function getRecommendationTargetCount(params: {
   category: RecommendationCategory;
   locale: "zh" | "en";
@@ -1947,6 +1984,16 @@ export async function GET(request: NextRequest, { params }: { params: { category
             platform = sanitizedFood.platform;
           }
 
+          platform = normalizeCnMobileCategoryPlatform({
+            category,
+            platform,
+            client,
+            isMobile,
+            locale,
+            index,
+            fitnessType: (enhancedRec as any).fitnessType,
+          });
+
           if (category === "food" && locale === "zh" && client === "web") {
             const tagsText = Array.isArray((enhancedRec as any).tags) ? (enhancedRec as any).tags.join(" ") : "";
             const text = `${enhancedRec.title || ""} ${enhancedRec.searchQuery || ""} ${tagsText}`.trim();
@@ -1966,6 +2013,10 @@ export async function GET(request: NextRequest, { params }: { params: { category
           }
 
           let searchQueryForLink = (enhancedRec.searchQuery || enhancedRec.title) as string;
+
+          if (category === "food" && locale === "zh" && isMobile) {
+            searchQueryForLink = normalizeQueryBase(searchQueryForLink || enhancedRec.title || "");
+          }
           if (category === "travel" && locale === "zh") {
             const titleText = String(enhancedRec.title || "");
             if (shouldUseTitleForTravelQuery(searchQueryForLink, titleText)) {
@@ -1983,6 +2034,10 @@ export async function GET(request: NextRequest, { params }: { params: { category
               searchQueryForLink = `${searchQueryForLink} ${budgetHint}`;
             }
           }
+
+          if (category === "shopping" && locale === "zh" && isMobile && platform === "唯品会") {
+            searchQueryForLink = normalizeQueryBase(String(enhancedRec.title || searchQueryForLink || ""));
+          }
           searchQueryForLink = sanitizeSearchQueryForLink({
             category,
             entertainmentType: enhancedRec.entertainmentType,
@@ -1993,6 +2048,21 @@ export async function GET(request: NextRequest, { params }: { params: { category
             isMobile,
             isAndroid,
           });
+
+          const alignedTitle = alignIntlAndroidTitleWithSearchQuery({
+            category,
+            locale,
+            isMobile,
+            isAndroid,
+            title: String(enhancedRec.title || ""),
+            searchQuery: searchQueryForLink,
+          });
+          if (alignedTitle && alignedTitle !== enhancedRec.title) {
+            enhancedRec = {
+              ...enhancedRec,
+              title: alignedTitle,
+            };
+          }
 
           let searchLink = generateSearchLink(
             enhancedRec.title,
@@ -2597,7 +2667,8 @@ function sanitizeSearchQueryForLink(params: {
 
   if (category === "food" && locale === "zh") {
     let query = base;
-    query = stripQueryTokens(query, ["美食", "餐厅"]);
+    query = stripQueryTokens(query, ["美食", "餐厅", "推荐", "附近"]);
+    query = stripCnFoodGenericTerms(query);
     return query || normalizeQueryBase(title) || base;
   }
   if (category !== "entertainment" || !entertainmentType) return base;
@@ -2832,6 +2903,16 @@ async function generateFallbackRecommendations(params: {
       platform = sanitizedFood.platform;
     }
 
+    platform = normalizeCnMobileCategoryPlatform({
+      category,
+      platform,
+      client,
+      isMobile,
+      locale,
+      index,
+      fitnessType: fallbackRec.fitnessType,
+    });
+
     if (category === "food" && locale === "zh" && client === "web") {
       const tagsText = Array.isArray((enhancedRec as any).tags) ? (enhancedRec as any).tags.join(" ") : "";
       const text = `${enhancedRec.title || ""} ${enhancedRec.searchQuery || ""} ${tagsText}`.trim();
@@ -2851,6 +2932,12 @@ async function generateFallbackRecommendations(params: {
     }
 
     let searchQueryForLink = enhancedRec.searchQuery || enhancedRec.title;
+
+    if (category === "food" && locale === "zh" && isMobile) {
+      searchQueryForLink = normalizeQueryBase(
+        String(searchQueryForLink || enhancedRec.title || "")
+      );
+    }
     if (category === "travel" && locale === "zh") {
       const titleText = String(enhancedRec.title || "");
       if (shouldUseTitleForTravelQuery(searchQueryForLink as string, titleText)) {
@@ -2859,6 +2946,10 @@ async function generateFallbackRecommendations(params: {
       if (platform === "\u7a77\u6e38") {
         searchQueryForLink = extractTravelLandmark(searchQueryForLink as string);
       }
+    }
+
+    if (category === "shopping" && locale === "zh" && isMobile && platform === "唯品会") {
+      searchQueryForLink = normalizeQueryBase(String(enhancedRec.title || searchQueryForLink || ""));
     }
 
     searchQueryForLink = sanitizeSearchQueryForLink({
@@ -2871,6 +2962,21 @@ async function generateFallbackRecommendations(params: {
       isMobile,
       isAndroid,
     });
+
+    const alignedTitle = alignIntlAndroidTitleWithSearchQuery({
+      category,
+      locale,
+      isMobile,
+      isAndroid,
+      title: String(enhancedRec.title || ""),
+      searchQuery: String(searchQueryForLink || ""),
+    });
+    if (alignedTitle && alignedTitle !== enhancedRec.title) {
+      enhancedRec = {
+        ...enhancedRec,
+        title: alignedTitle,
+      };
+    }
 
     let searchLink = generateSearchLink(
       String(enhancedRec.title || ""),

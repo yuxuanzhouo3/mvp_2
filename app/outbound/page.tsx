@@ -30,6 +30,8 @@ import {
 type OpenState = "idle" | "trying" | "opened" | "failed";
 type InstallChoice = "none" | "asking" | "yes" | "no";
 const STORE_RETURN_SESSION_KEY = "outbound:store-return";
+const WEB_FALLBACK_RETURN_SESSION_KEY = "outbound:web-fallback-return";
+const WEB_FALLBACK_RETURN_TTL_MS = 15_000;
 
 /* ---- helpers ---- */
 
@@ -116,7 +118,13 @@ async function attemptOpenUrl(
     };
 
     const onBlur = () => {
-      finish(true);
+      // 某些浏览器会在权限弹窗时触发 blur，不能直接判定为唤起成功
+      // 仅在短时间内页面真实进入 hidden 时才认定成功
+      window.setTimeout(() => {
+        if (document.visibilityState === "hidden") {
+          finish(true);
+        }
+      }, 120);
     };
 
     document.addEventListener("visibilitychange", onVisibilityChange);
@@ -182,6 +190,7 @@ export default function OutboundPage() {
   const appOpenedRef = useRef(false);
   const isHandlingStoreReturnRef = useRef(false);
   const isNavigatingBackRef = useRef(false);
+  const shouldSkipAutoTryRef = useRef(false);
 
   /**
    * 导航回推荐结果页
@@ -213,11 +222,60 @@ export default function OutboundPage() {
 
   const navigateToWebFallback = useCallback(() => {
     if (webLinkUrl) {
+      try {
+        sessionStorage.setItem(
+          WEB_FALLBACK_RETURN_SESSION_KEY,
+          JSON.stringify({ ts: Date.now() })
+        );
+      } catch {
+        /* ignore */
+      }
       window.location.href = webLinkUrl;
       return;
     }
     handleBack();
   }, [handleBack, webLinkUrl]);
+
+  // 从网页版返回本中间页时，避免再次自动唤起/跳网页导致循环
+  useEffect(() => {
+    if (!decoded.candidateLink) return;
+
+    let shouldSkip = false;
+    try {
+      const raw = sessionStorage.getItem(WEB_FALLBACK_RETURN_SESSION_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as { ts?: number };
+        const ts = typeof parsed?.ts === "number" ? parsed.ts : 0;
+        if (ts > 0 && Date.now() - ts <= WEB_FALLBACK_RETURN_TTL_MS) {
+          shouldSkip = true;
+        }
+      }
+    } catch {
+      /* ignore */
+    } finally {
+      try {
+        sessionStorage.removeItem(WEB_FALLBACK_RETURN_SESSION_KEY);
+      } catch {
+        /* ignore */
+      }
+    }
+
+    shouldSkipAutoTryRef.current = shouldSkip;
+    if (!shouldSkip) return;
+
+    setOpenState("failed");
+    setInstallChoice("none");
+
+    const timer = window.setTimeout(() => {
+      if (document.visibilityState === "visible") {
+        handleBack();
+      }
+    }, 900);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [decoded.candidateLink, handleBack]);
 
   /**
    * 点击商店链接下载 App
@@ -267,6 +325,7 @@ export default function OutboundPage() {
   // 自动尝试打开 App
   useEffect(() => {
     if (!decoded.candidateLink || hasTriedRef.current) return;
+    if (shouldSkipAutoTryRef.current) return;
     hasTriedRef.current = true;
 
     const os = detectMobileOs();
@@ -307,10 +366,10 @@ export default function OutboundPage() {
       if (appOpenedRef.current) {
         appOpenedRef.current = false;
         isNavigatingBackRef.current = true;
-        // 短暂延迟，确保页面完全可见
+        // 适当延迟，避免返回节奏过快造成感知“闪回”
         window.setTimeout(() => {
           handleBack();
-        }, 300);
+        }, 800);
       }
     };
 
@@ -337,12 +396,8 @@ export default function OutboundPage() {
    */
   const handleInstallNo = useCallback(() => {
     setInstallChoice("no");
-    if (webLinkUrl) {
-      window.location.href = webLinkUrl;
-    } else {
-      handleBack();
-    }
-  }, [webLinkUrl, handleBack]);
+    navigateToWebFallback();
+  }, [navigateToWebFallback]);
 
   /**
    * 点击商店链接下载 App
@@ -362,6 +417,7 @@ export default function OutboundPage() {
   // 从应用商店返回后：先尝试重新打开 App，失败则跳转网页版
   useEffect(() => {
     if (!decoded.candidateLink) return;
+    if (shouldSkipAutoTryRef.current) return;
 
     const shouldHandleStoreReturn = (): boolean => {
       try {
