@@ -14,9 +14,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { reverseGeocode } from "@/lib/assistant/reverse-geocode";
 
+type GeocodeRequestBody = {
+  lat?: unknown;
+  lng?: unknown;
+  locale?: unknown;
+  region?: unknown;
+};
+
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    const body = (await request.json()) as GeocodeRequestBody;
     const { lat, lng, locale } = body;
 
     // 校验 lat 和 lng 是否为数字
@@ -55,8 +62,15 @@ export async function POST(request: NextRequest) {
     const validLocale: "zh" | "en" =
       locale === "en" ? "en" : "zh";
 
+    // 校验 region 参数（可选）
+    const deploymentRegion: "CN" | "INTL" =
+      process.env.NEXT_PUBLIC_DEPLOYMENT_REGION === "CN" ? "CN" : "INTL";
+
+    const validRegion: "CN" | "INTL" =
+      body.region === "CN" || body.region === "INTL" ? body.region : deploymentRegion;
+
     // 调用反向地理编码
-    const result = await reverseGeocode(lat, lng, validLocale);
+    const result = await reverseGeocode(lat, lng, validLocale, validRegion);
 
     if (result && result.displayName) {
       return NextResponse.json({

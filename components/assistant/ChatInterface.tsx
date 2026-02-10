@@ -80,6 +80,17 @@ function generateId(): string {
   return `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 }
 
+function formatCoordinates(lat: number, lng: number, locale: "zh" | "en"): string {
+  const roundedLat = lat.toFixed(5);
+  const roundedLng = lng.toFixed(5);
+
+  if (locale === "zh") {
+    return `纬度 ${roundedLat}，经度 ${roundedLng}`;
+  }
+
+  return `lat ${roundedLat}, lng ${roundedLng}`;
+}
+
 export default function ChatInterface({
   locale,
   region,
@@ -122,7 +133,8 @@ export default function ChatInterface({
         const coords = JSON.parse(cached);
         if (coords.lat && coords.lng) {
           setLocation(coords);
-          fetchLocationName(coords.lat, coords.lng);
+          setLocationName(formatCoordinates(coords.lat, coords.lng, locale));
+          void fetchLocationName(coords.lat, coords.lng);
         }
       } catch { /* 忽略 */ }
     }
@@ -158,7 +170,24 @@ export default function ChatInterface({
             createdAt: c.createdAt,
           })
         );
-        setMessages(restored);
+        setMessages(
+          [...restored].sort((left, right) => {
+            const leftTime = Date.parse(left.createdAt);
+            const rightTime = Date.parse(right.createdAt);
+
+            const normalizedLeftTime = Number.isNaN(leftTime) ? 0 : leftTime;
+            const normalizedRightTime = Number.isNaN(rightTime) ? 0 : rightTime;
+            if (normalizedLeftTime !== normalizedRightTime) {
+              return normalizedLeftTime - normalizedRightTime;
+            }
+
+            if (left.role !== right.role) {
+              return left.role === "user" ? -1 : 1;
+            }
+
+            return left.id.localeCompare(right.id);
+          })
+        );
       }
     } catch { /* 忽略 */ }
     setHistoryLoaded(true);
@@ -181,20 +210,26 @@ export default function ChatInterface({
   /**
    * 调用反向地理编码 API，将经纬度转换为可读位置名称
    */
-  async function fetchLocationName(lat: number, lng: number) {
+  async function fetchLocationName(lat: number, lng: number): Promise<string | null> {
     try {
       const res = await fetch("/api/assistant/geocode", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lat, lng, locale }),
+        body: JSON.stringify({ lat, lng, locale, region }),
       });
+
+      if (!res.ok) return null;
+
       const data = await res.json();
       if (data.success && data.displayName) {
         setLocationName(data.displayName);
+        return data.displayName;
       }
     } catch {
       console.warn("[ChatInterface] Reverse geocode failed");
     }
+
+    return null;
   }
 
   /**
@@ -213,12 +248,19 @@ export default function ChatInterface({
         lat: position.coords.latitude,
         lng: position.coords.longitude,
       };
+
+      const fallbackLocation = formatCoordinates(coords.lat, coords.lng, locale);
+
       setLocation(coords);
+      setLocationName(fallbackLocation);
       localStorage.setItem("geo-coords", JSON.stringify(coords));
-      fetchLocationName(coords.lat, coords.lng);
+      const resolvedLocation = await fetchLocationName(coords.lat, coords.lng);
+
       toast({
         title: isZh ? "定位成功" : "Location obtained",
-        description: isZh ? "已获取您的位置" : "Your location has been obtained",
+        description: isZh
+          ? `当前位置：${resolvedLocation || fallbackLocation}`
+          : `Current location: ${resolvedLocation || fallbackLocation}`,
       });
     } catch {
       toast({
@@ -453,11 +495,17 @@ export default function ChatInterface({
             )}
             <span className="truncate">
               {location
-                ? (locationName || (isZh ? "已定位" : "Located"))
+                ? (isZh ? "已定位" : "Located")
                 : (isZh ? "点击定位" : "Get location")
               }
             </span>
           </button>
+
+          {location && locationName && (
+            <span className="text-[11px] text-gray-500 break-all">
+              {locationName}
+            </span>
+          )}
         </div>
 
         {/* 输入框 */}

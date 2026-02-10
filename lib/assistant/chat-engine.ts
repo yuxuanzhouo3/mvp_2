@@ -122,7 +122,7 @@ export async function processChat(
   // 5. 解析 AI 响应
   let parsed: AssistantResponse;
   try {
-    parsed = parseAIResponse(aiContent);
+    parsed = parseAIResponseSafely(aiContent, locale);
   } catch (error) {
     console.error("[ChatEngine] Failed to parse AI response:", error);
     console.error("[ChatEngine] Raw content:", aiContent);
@@ -328,4 +328,94 @@ function mapCategoryToRecommendation(
 
   // 默认使用 shopping 作为兜底（最通用）
   return "shopping";
+}
+
+function stripMarkdownCodeFence(content: string): string {
+  let cleaned = content.trim();
+  if (!cleaned.startsWith("```")) return cleaned;
+
+  const firstNewline = cleaned.indexOf("\n");
+  if (firstNewline !== -1) {
+    cleaned = cleaned.substring(firstNewline + 1);
+  }
+  if (cleaned.endsWith("```")) {
+    cleaned = cleaned.substring(0, cleaned.length - 3);
+  }
+
+  return cleaned.trim();
+}
+
+function extractJsonObjectSegment(content: string): string {
+  const firstBrace = content.indexOf("{");
+  const lastBrace = content.lastIndexOf("}");
+
+  if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
+    return content;
+  }
+
+  return content.slice(firstBrace, lastBrace + 1);
+}
+
+function repairCommonJsonIssues(content: string): string {
+  return content
+    .replace(/,\s*"\{/g, ",{")
+    .replace(/\}"\s*(?=[,\]])/g, "}")
+    .replace(/,\s*([}\]])/g, "$1");
+}
+
+function parseJsonWithTolerance(content: string): unknown {
+  const cleaned = stripMarkdownCodeFence(content);
+  const extracted = extractJsonObjectSegment(cleaned);
+
+  const candidates = [
+    cleaned,
+    extracted,
+    repairCommonJsonIssues(cleaned),
+    repairCommonJsonIssues(extracted),
+  ];
+
+  let lastError: unknown;
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(candidate);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError || new Error("Invalid JSON response");
+}
+
+function parseAIResponseSafely(content: string, locale: "zh" | "en"): AssistantResponse {
+  try {
+    return parseAIResponse(content);
+  } catch {
+    const parsed = parseJsonWithTolerance(content) as Partial<AssistantResponse>;
+
+    if (!parsed || typeof parsed !== "object") {
+      throw new Error("AI response is not a JSON object");
+    }
+
+    if (!parsed.type) {
+      parsed.type = parsed.candidates && parsed.candidates.length > 0 ? "results" : "text";
+    }
+
+    const validTypes = ["plan", "results", "clarify", "text", "preference_saved", "error"];
+    if (!validTypes.includes(parsed.type)) {
+      parsed.type = "text";
+    }
+
+    if (!parsed.message || !parsed.message.trim()) {
+      if (parsed.type === "results" && parsed.candidates && parsed.candidates.length > 0) {
+        parsed.message =
+          locale === "zh"
+            ? `找到 ${parsed.candidates.length} 个候选结果：`
+            : `Found ${parsed.candidates.length} candidates:`;
+      } else {
+        parsed.message = locale === "zh" ? "已为你整理好结果。" : "I prepared the result for you.";
+      }
+    }
+
+    return parsed as AssistantResponse;
+  }
 }

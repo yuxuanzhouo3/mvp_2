@@ -5,8 +5,9 @@
  * 用于给 AI 提供用户所在城市上下文，避免 AI 凭空猜测位置
  *
  * 策略：
- * 1. 优先使用 Nominatim (OpenStreetMap) 免费 API
- * 2. 失败时回退到坐标直接传递（附带提示让 AI 不要猜测城市）
+ * 1. CN/中国境内坐标优先使用高德地图（可选 API Key）
+ * 2. 回退到 Nominatim (OpenStreetMap) 免费 API
+ * 3. 全部失败时回退到坐标直接传递（附带提示让 AI 不要猜测城市）
  */
 
 interface GeocodedLocation {
@@ -22,27 +23,163 @@ interface GeocodedLocation {
   displayName: string;
 }
 
+export type GeocodeRegion = "CN" | "INTL";
+
+interface NominatimResponse {
+  address?: {
+    city?: string;
+    town?: string;
+    municipality?: string;
+    county?: string;
+    state_district?: string;
+    suburb?: string;
+    district?: string;
+    neighbourhood?: string;
+    quarter?: string;
+    state?: string;
+    province?: string;
+    country?: string;
+  };
+  display_name?: string;
+}
+
+interface AmapResponse {
+  status?: string;
+  info?: string;
+  regeocode?: {
+    formatted_address?: string;
+    addressComponent?: {
+      country?: string;
+      province?: string;
+      city?: string | string[];
+      district?: string;
+    };
+  };
+}
+
+let hasWarnedMissingAmapKey = false;
+
+function isLikelyInChina(lat: number, lng: number): boolean {
+  return lat >= 3.8 && lat <= 53.6 && lng >= 73.5 && lng <= 135.1;
+}
+
+function shouldPreferAmap(region: GeocodeRegion | undefined, lat: number, lng: number): boolean {
+  return region === "CN" || isLikelyInChina(lat, lng);
+}
+
+function getAmapApiKey(): string | undefined {
+  return (
+    process.env.AMAP_WEB_SERVICE_KEY ||
+    process.env.AMAP_API_KEY ||
+    process.env.GAODE_WEB_SERVICE_KEY
+  );
+}
+
+async function runProvider(
+  providerName: "Amap" | "Nominatim",
+  runner: () => Promise<GeocodedLocation | null>
+): Promise<GeocodedLocation | null> {
+  try {
+    return await runner();
+  } catch (error) {
+    console.warn(`[ReverseGeocode] ${providerName} failed:`, error);
+    return null;
+  }
+}
+
 /**
  * 反向地理编码：经纬度 → 城市/区域
  *
  * @param lat - 纬度
  * @param lng - 经度
  * @param locale - 语言 zh|en
+ * @param region - 部署区域 CN|INTL（可选）
  * @returns 地理位置信息，失败返回 null
  */
 export async function reverseGeocode(
   lat: number,
   lng: number,
-  locale: "zh" | "en" = "zh"
+  locale: "zh" | "en" = "zh",
+  region?: GeocodeRegion
 ): Promise<GeocodedLocation | null> {
-  try {
-    const result = await nominatimReverse(lat, lng, locale);
-    if (result) return result;
-  } catch (error) {
-    console.warn("[ReverseGeocode] Nominatim failed:", error);
+  const preferAmap = shouldPreferAmap(region, lat, lng);
+
+  if (preferAmap) {
+    const amapResult = await runProvider("Amap", () => amapReverse(lat, lng, locale));
+    if (amapResult) return amapResult;
+  }
+
+  const nominatimTimeout = preferAmap ? 2500 : 5000;
+  const nominatimResult = await runProvider("Nominatim", () =>
+    nominatimReverse(lat, lng, locale, nominatimTimeout)
+  );
+  if (nominatimResult) return nominatimResult;
+
+  if (!preferAmap) {
+    const amapResult = await runProvider("Amap", () => amapReverse(lat, lng, locale));
+    if (amapResult) return amapResult;
   }
 
   return null;
+}
+
+/**
+ * 使用高德地图反向地理编码
+ * 说明：高德在 CN 网络可达性更高，需要配置 API Key。
+ */
+async function amapReverse(
+  lat: number,
+  lng: number,
+  locale: "zh" | "en"
+): Promise<GeocodedLocation | null> {
+  const key = getAmapApiKey();
+  if (!key) {
+    if (!hasWarnedMissingAmapKey) {
+      hasWarnedMissingAmapKey = true;
+      console.warn(
+        "[ReverseGeocode] Amap key is missing. Set AMAP_WEB_SERVICE_KEY (or AMAP_API_KEY)."
+      );
+    }
+    return null;
+  }
+
+  const language = locale === "en" ? "en" : "zh_cn";
+  const location = `${lng},${lat}`;
+  const url =
+    `https://restapi.amap.com/v3/geocode/regeo?key=${encodeURIComponent(key)}` +
+    `&location=${encodeURIComponent(location)}` +
+    `&extensions=base&radius=1000&language=${language}&output=JSON`;
+
+  const response = await fetch(url, {
+    cache: "no-store",
+    signal: AbortSignal.timeout(3500),
+  });
+
+  if (!response.ok) return null;
+
+  const data = (await response.json()) as AmapResponse;
+  if (!data || data.status !== "1" || !data.regeocode?.addressComponent) return null;
+
+  const address = data.regeocode.addressComponent;
+  const province = address.province || "";
+  const district = address.district || "";
+  const cityRaw = Array.isArray(address.city) ? address.city[0] : address.city;
+  const city = cityRaw || district || province || "";
+  const country = address.country || (locale === "zh" ? "中国" : "China");
+
+  const formattedAddress = data.regeocode.formatted_address || "";
+  const fallbackDisplayName =
+    locale === "zh"
+      ? [country, province, city, district].filter(Boolean).join("")
+      : [district, city, province, country].filter(Boolean).join(", ");
+
+  return {
+    city,
+    district,
+    province,
+    country,
+    displayName: formattedAddress || fallbackDisplayName,
+  };
 }
 
 /**
@@ -52,7 +189,8 @@ export async function reverseGeocode(
 async function nominatimReverse(
   lat: number,
   lng: number,
-  locale: string
+  locale: "zh" | "en",
+  timeoutMs: number
 ): Promise<GeocodedLocation | null> {
   const acceptLang = locale === "zh" ? "zh-CN,zh" : "en";
   const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=${acceptLang}&zoom=18`;
@@ -61,12 +199,13 @@ async function nominatimReverse(
     headers: {
       "User-Agent": "ChenHuiApp/1.0",
     },
-    signal: AbortSignal.timeout(5000),
+    cache: "no-store",
+    signal: AbortSignal.timeout(timeoutMs),
   });
 
   if (!response.ok) return null;
 
-  const data = await response.json();
+  const data = (await response.json()) as NominatimResponse;
   if (!data || !data.address) return null;
 
   const addr = data.address;
@@ -117,14 +256,16 @@ async function nominatimReverse(
  * @param lat - 纬度
  * @param lng - 经度
  * @param locale - 语言
+ * @param region - 部署区域 CN|INTL（可选）
  * @returns 可读的位置描述字符串
  */
 export async function buildLocationContext(
   lat: number,
   lng: number,
-  locale: "zh" | "en" = "zh"
+  locale: "zh" | "en" = "zh",
+  region?: GeocodeRegion
 ): Promise<string> {
-  const geo = await reverseGeocode(lat, lng, locale);
+  const geo = await reverseGeocode(lat, lng, locale, region);
 
   if (geo && geo.city) {
     if (locale === "zh") {

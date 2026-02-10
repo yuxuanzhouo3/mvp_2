@@ -52,13 +52,14 @@ export async function saveConversationMessage(
   role: "user" | "assistant",
   content: string,
   structuredResponse?: AssistantResponse,
-  metadata?: Record<string, unknown>
+  metadata?: Record<string, unknown>,
+  createdAt?: string
 ): Promise<void> {
   try {
     if (isChinaDeployment()) {
-      await saveMessageCN(userId, role, content, structuredResponse, metadata);
+      await saveMessageCN(userId, role, content, structuredResponse, metadata, createdAt);
     } else {
-      await saveMessageINTL(userId, role, content, structuredResponse, metadata);
+      await saveMessageINTL(userId, role, content, structuredResponse, metadata, createdAt);
     }
   } catch (error) {
     // 对话保存失败不应阻断主流程
@@ -71,7 +72,8 @@ async function saveMessageINTL(
   role: string,
   content: string,
   structuredResponse?: AssistantResponse,
-  metadata?: Record<string, unknown>
+  metadata?: Record<string, unknown>,
+  createdAt?: string
 ): Promise<void> {
   const supabase = getSupabaseAdmin();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -81,7 +83,7 @@ async function saveMessageINTL(
     content,
     structured_response: structuredResponse || null,
     metadata: metadata || {},
-    created_at: new Date().toISOString(),
+    created_at: createdAt || new Date().toISOString(),
   });
 }
 
@@ -90,7 +92,8 @@ async function saveMessageCN(
   role: string,
   content: string,
   structuredResponse?: AssistantResponse,
-  metadata?: Record<string, unknown>
+  metadata?: Record<string, unknown>,
+  createdAt?: string
 ): Promise<void> {
   const db = await getCloudBaseDb();
   await db.collection("assistant_conversations").add({
@@ -99,7 +102,7 @@ async function saveMessageCN(
     content,
     structured_response: structuredResponse || null,
     metadata: metadata || {},
-    created_at: new Date().toISOString(),
+    created_at: createdAt || new Date().toISOString(),
   });
 }
 
@@ -113,6 +116,30 @@ export interface ConversationRecord {
   content: string;
   structuredResponse?: AssistantResponse;
   createdAt: string;
+}
+
+const CONVERSATION_ROLE_ORDER: Record<ConversationRecord["role"], number> = {
+  user: 0,
+  assistant: 1,
+};
+
+function parseConversationTime(createdAt: string): number {
+  const parsed = Date.parse(createdAt);
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function sortConversationRecordsChronologically(
+  records: ConversationRecord[]
+): ConversationRecord[] {
+  return [...records].sort((left, right) => {
+    const timeDelta = parseConversationTime(left.createdAt) - parseConversationTime(right.createdAt);
+    if (timeDelta !== 0) return timeDelta;
+
+    const roleDelta = CONVERSATION_ROLE_ORDER[left.role] - CONVERSATION_ROLE_ORDER[right.role];
+    if (roleDelta !== 0) return roleDelta;
+
+    return left.id.localeCompare(right.id);
+  });
 }
 
 /**
@@ -150,7 +177,7 @@ async function getRecentConversationsINTL(
 
   if (error || !data) return [];
 
-  return data
+  const records = data
     .reverse() // 按时间正序
     .map((row: Record<string, unknown>) => ({
       id: row.id as string,
@@ -159,6 +186,8 @@ async function getRecentConversationsINTL(
       structuredResponse: row.structured_response as AssistantResponse | undefined,
       createdAt: row.created_at as string,
     }));
+
+  return sortConversationRecordsChronologically(records);
 }
 
 async function getRecentConversationsCN(
@@ -175,7 +204,7 @@ async function getRecentConversationsCN(
 
   if (!result.data) return [];
 
-  return result.data
+  const records = result.data
     .reverse()
     .map((row: Record<string, unknown>) => ({
       id: (row._id as string) || "",
@@ -184,6 +213,8 @@ async function getRecentConversationsCN(
       structuredResponse: row.structured_response as AssistantResponse | undefined,
       createdAt: row.created_at as string,
     }));
+
+  return sortConversationRecordsChronologically(records);
 }
 
 /**

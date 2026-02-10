@@ -172,6 +172,18 @@ const COLLECTIONS = {
       { name: 'created_at_index', field: 'created_at', order: 'desc' },
     ],
   },
+  ASSISTANT_NEARBY_STORES: {
+    name: 'assistant_nearby_stores',
+    indexes: [
+      { name: 'region_index', field: 'region' },
+      { name: 'city_index', field: 'city' },
+      { name: 'category_index', field: 'category' },
+      { name: 'is_active_index', field: 'is_active' },
+      { name: 'region_category_active_index', fields: ['region', 'category', 'is_active'] },
+      { name: 'latitude_index', field: 'latitude' },
+      { name: 'longitude_index', field: 'longitude' },
+    ],
+  },
 };
 
 async function initCloudBase() {

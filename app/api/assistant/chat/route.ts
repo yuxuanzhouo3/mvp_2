@@ -92,14 +92,20 @@ export async function POST(request: NextRequest) {
     }
 
     // 6. 持久化对话（异步，不阻断响应）
-    saveConversationMessage(userId, "user", message.trim()).catch(() => {});
-    saveConversationMessage(
-      userId,
-      "assistant",
-      response.message,
-      response,
-      { intent: response.intent, type: response.type }
-    ).catch(() => {});
+    const userCreatedAt = new Date().toISOString();
+    const assistantCreatedAt = new Date(Date.now() + 1).toISOString();
+    saveConversationMessage(userId, "user", message.trim(), undefined, undefined, userCreatedAt)
+      .then(() => saveConversationMessage(
+        userId,
+        "assistant",
+        response.message,
+        response,
+        { intent: response.intent, type: response.type },
+        assistantCreatedAt
+      ))
+      .catch(() => {
+        // 瀵硅瘽淇濆瓨澶辫触涓嶅簲闃绘柇涓绘祦绋?
+      });
 
     // 7. 获取最新使用统计
     const usage = await getAssistantUsageStats(userId);
