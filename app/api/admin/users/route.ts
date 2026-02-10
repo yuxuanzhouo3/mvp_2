@@ -39,6 +39,21 @@ type UsersResponse = {
   sources: SourceInfo[];
 };
 
+type UsersPatchInput = {
+  source: DataSource;
+  id: string;
+  name?: string | null;
+  subscriptionTier?: string | null;
+  subscriptionStatus?: string | null;
+};
+
+type UsersPatchResponse = {
+  success: boolean;
+  source: DataSource;
+  mode: SourceMode;
+  item: UserRow | null;
+};
+
 function parseSource(value: string | null): UsersSource {
   const normalized = String(value || "").toUpperCase();
   if (normalized === "CN" || normalized === "INTL") return normalized;
@@ -49,6 +64,134 @@ function parsePositiveInt(value: string | null, fallback: number): number {
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) return fallback;
   return Math.floor(n);
+}
+
+function normalizeOptionalText(
+  value: unknown,
+  options: { maxLength: number; allowEmpty: boolean; label: string }
+): { ok: true; value: string | null | undefined } | { ok: false; message: string } {
+  if (value === undefined) return { ok: true, value: undefined };
+  if (value === null) return { ok: true, value: null };
+  const text = String(value).trim();
+  if (!text) {
+    if (options.allowEmpty) return { ok: true, value: null };
+    return { ok: false, message: `${options.label} 不能为空` };
+  }
+  if (text.length > options.maxLength) {
+    return { ok: false, message: `${options.label} 过长（最大 ${options.maxLength}）` };
+  }
+  return { ok: true, value: text };
+}
+
+function normalizeTagLike(
+  value: unknown,
+  options: { maxLength: number; label: string }
+): { ok: true; value: string | null | undefined } | { ok: false; message: string } {
+  const normalized = normalizeOptionalText(value, {
+    maxLength: options.maxLength,
+    allowEmpty: false,
+    label: options.label,
+  });
+  if (!normalized.ok || normalized.value == null || normalized.value === undefined) {
+    return normalized;
+  }
+  const token = normalized.value.toLowerCase();
+  if (!/^[a-z0-9_-]+$/.test(token)) {
+    return { ok: false, message: `${options.label} 仅支持字母数字/下划线/中划线` };
+  }
+  return { ok: true, value: token };
+}
+
+async function parsePatchBody(request: NextRequest): Promise<
+  | { ok: true; payload: UsersPatchInput }
+  | { ok: false; response: NextResponse }
+> {
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: "请求体必须为 JSON" }, { status: 400 }),
+    };
+  }
+
+  const sourceRaw = String(body?.source || "").toUpperCase();
+  if (sourceRaw !== "CN" && sourceRaw !== "INTL") {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: "source 仅支持 CN 或 INTL" }, { status: 400 }),
+    };
+  }
+  const source = sourceRaw as DataSource;
+
+  const id = String(body?.id || "").trim();
+  if (!id) {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: "id 不能为空" }, { status: 400 }),
+    };
+  }
+
+  const name = normalizeOptionalText(body?.name, {
+    maxLength: 100,
+    allowEmpty: true,
+    label: "name",
+  });
+  if (!name.ok) {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: name.message }, { status: 400 }),
+    };
+  }
+
+  const subscriptionTier = normalizeTagLike(body?.subscriptionTier, {
+    maxLength: 32,
+    label: "subscriptionTier",
+  });
+  if (!subscriptionTier.ok) {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: subscriptionTier.message }, { status: 400 }),
+    };
+  }
+
+  const subscriptionStatus = normalizeTagLike(body?.subscriptionStatus, {
+    maxLength: 32,
+    label: "subscriptionStatus",
+  });
+  if (!subscriptionStatus.ok) {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: subscriptionStatus.message }, { status: 400 }),
+    };
+  }
+
+  const payload: UsersPatchInput = {
+    source,
+    id,
+  };
+
+  if (name.value !== undefined) payload.name = name.value;
+  if (subscriptionTier.value !== undefined) payload.subscriptionTier = subscriptionTier.value;
+  if (subscriptionStatus.value !== undefined) payload.subscriptionStatus = subscriptionStatus.value;
+
+  const hasAnyField =
+    payload.name !== undefined ||
+    payload.subscriptionTier !== undefined ||
+    payload.subscriptionStatus !== undefined;
+
+  if (!hasAnyField) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { error: "至少提供一个可更新字段：name/subscriptionTier/subscriptionStatus" },
+        { status: 400 }
+      ),
+    };
+  }
+
+  return { ok: true, payload };
 }
 
 function hasCnDbConfig(): boolean {
@@ -92,6 +235,32 @@ function sortByCreatedAtDesc(a: UserRow, b: UserRow): number {
   return bv.localeCompare(av);
 }
 
+function mapCnUserRecord(u: any): UserRow {
+  return {
+    id: String(u._id),
+    email: u.email ?? null,
+    name: u.name ?? null,
+    subscriptionTier: u.subscription_plan ?? "free",
+    subscriptionStatus: u.subscription_status ?? "active",
+    createdAt: u.createdAt ?? u.created_at ?? null,
+    updatedAt: u.updatedAt ?? u.updated_at ?? null,
+    source: "CN" as const,
+  };
+}
+
+function mapIntlUserRecord(u: any): UserRow {
+  return {
+    id: String(u.id),
+    email: u.email ?? null,
+    name: u.full_name ?? null,
+    subscriptionTier: u.subscription_tier ?? "free",
+    subscriptionStatus: u.subscription_status ?? "active",
+    createdAt: u.created_at ?? null,
+    updatedAt: u.updated_at ?? null,
+    source: "INTL" as const,
+  };
+}
+
 async function fetchCnUsers(params: {
   skip: number;
   limit: number;
@@ -107,16 +276,7 @@ async function fetchCnUsers(params: {
     const countRes = await query.count();
     const total = Number(countRes.total) || 0;
     const listRes = await query.limit(1).get();
-    const rows = ((listRes.data || []) as any[]).map((u: any) => ({
-      id: String(u._id),
-      email: u.email ?? null,
-      name: u.name ?? null,
-      subscriptionTier: u.subscription_plan ?? "free",
-      subscriptionStatus: u.subscription_status ?? "active",
-      createdAt: u.createdAt ?? u.created_at ?? null,
-      updatedAt: u.updatedAt ?? u.updated_at ?? null,
-      source: "CN" as const,
-    }));
+    const rows = ((listRes.data || []) as any[]).map(mapCnUserRecord);
     return { rows, total };
   }
 
@@ -136,16 +296,7 @@ async function fetchCnUsers(params: {
       listRes = await query.orderBy("created_at", "desc").skip(params.skip).limit(params.limit).get();
     }
 
-    const rows = ((listRes.data || []) as any[]).map((u: any) => ({
-      id: String(u._id),
-      email: u.email ?? null,
-      name: u.name ?? null,
-      subscriptionTier: u.subscription_plan ?? "free",
-      subscriptionStatus: u.subscription_status ?? "active",
-      createdAt: u.createdAt ?? u.created_at ?? null,
-      updatedAt: u.updatedAt ?? u.updated_at ?? null,
-      source: "CN" as const,
-    }));
+    const rows = ((listRes.data || []) as any[]).map(mapCnUserRecord);
     return { rows, total };
   };
 
@@ -184,16 +335,7 @@ async function fetchIntlUsers(params: {
 
   const { data, error } = await listQuery;
   if (error) throw error;
-  const rows = ((data || []) as any[]).map((u: any) => ({
-    id: String(u.id),
-    email: u.email ?? null,
-    name: u.full_name ?? null,
-    subscriptionTier: u.subscription_tier ?? "free",
-    subscriptionStatus: u.subscription_status ?? "active",
-    createdAt: u.created_at ?? null,
-    updatedAt: u.updated_at ?? null,
-    source: "INTL" as const,
-  }));
+  const rows = ((data || []) as any[]).map(mapIntlUserRecord);
   return { rows, total };
 }
 
@@ -216,6 +358,94 @@ async function proxyFetch(
     pathWithQuery: `/api/admin/users?${search.toString()}`,
     token,
   });
+}
+
+async function patchCnUser(payload: UsersPatchInput): Promise<UserRow> {
+  const db = getCloudBaseDatabase();
+  const collection = db.collection(CloudBaseCollections.USERS);
+  const nowIso = new Date().toISOString();
+
+  const updateDoc: Record<string, unknown> = {
+    updatedAt: nowIso,
+    updated_at: nowIso,
+  };
+  if (payload.name !== undefined) updateDoc.name = payload.name;
+  if (payload.subscriptionTier !== undefined) updateDoc.subscription_plan = payload.subscriptionTier;
+  if (payload.subscriptionStatus !== undefined) updateDoc.subscription_status = payload.subscriptionStatus;
+
+  await collection.doc(payload.id).update(updateDoc);
+
+  const readRes = await collection.where({ _id: payload.id }).limit(1).get();
+  const row = (readRes.data || [])[0];
+  if (!row) throw new Error("更新后未找到用户记录");
+  return mapCnUserRecord(row);
+}
+
+async function patchIntlUser(payload: UsersPatchInput): Promise<UserRow> {
+  const supabase = getSupabaseAdmin();
+  const nowIso = new Date().toISOString();
+
+  const updateDoc: Record<string, unknown> = {
+    updated_at: nowIso,
+  };
+  if (payload.name !== undefined) updateDoc.full_name = payload.name;
+  if (payload.subscriptionTier !== undefined) updateDoc.subscription_tier = payload.subscriptionTier;
+  if (payload.subscriptionStatus !== undefined) updateDoc.subscription_status = payload.subscriptionStatus;
+
+  const { error: updateError } = await supabase
+    .from("user_profiles")
+    .update(updateDoc)
+    .eq("id", payload.id);
+  if (updateError) throw updateError;
+
+  const { data, error } = await supabase
+    .from("user_profiles")
+    .select("id,email,full_name,subscription_tier,subscription_status,created_at,updated_at")
+    .eq("id", payload.id)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error("更新后未找到用户记录");
+
+  if (payload.name !== undefined) {
+    await supabase.auth.admin
+      .updateUserById(payload.id, { user_metadata: { full_name: payload.name ?? null } })
+      .catch(() => null);
+  }
+
+  return mapIntlUserRecord(data);
+}
+
+async function proxyPatchUser(origin: string, payload: UsersPatchInput, token?: string | null): Promise<UsersPatchResponse> {
+  const secret = getProxySecret();
+  if (!secret) throw new Error("未配置 ADMIN_PROXY_SECRET，无法跨环境代理更新");
+
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    "x-admin-proxy-hop": "1",
+    "x-admin-proxy-secret": secret,
+  };
+  if (token) {
+    headers.cookie = `${getAdminSessionCookieName()}=${token}`;
+  }
+
+  const url = `${origin.replace(/\/$/, "")}/api/admin/users`;
+  const res = await fetch(url, {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify(payload),
+    cache: "no-store",
+  });
+
+  const bodyText = await res.text().catch(() => "");
+  if (!res.ok) {
+    throw new Error(`Proxy failed: HTTP ${res.status}${bodyText ? `: ${bodyText}` : ""}`);
+  }
+
+  try {
+    return JSON.parse(bodyText) as UsersPatchResponse;
+  } catch {
+    throw new Error("代理返回了不可解析的 JSON");
+  }
 }
 
 export async function GET(request: NextRequest) {
@@ -382,4 +612,97 @@ export async function GET(request: NextRequest) {
     pagination: { page: effectivePage, pageSize: effectivePageSize, total, totalPages },
     sources,
   } satisfies UsersResponse);
+}
+
+export async function PATCH(request: NextRequest) {
+  if (!(await isAuthorized(request))) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const parsed = await parsePatchBody(request);
+  if (!parsed.ok) return parsed.response;
+
+  const payload = parsed.payload;
+  const internalProxy = isInternalProxyRequest(request);
+  const cookieToken = request.cookies.get(getAdminSessionCookieName())?.value || null;
+
+  const cnOrigin = process.env.CN_APP_ORIGIN || "";
+  const intlOrigin = process.env.INTL_APP_ORIGIN || "";
+
+  const targetIsCn = payload.source === "CN";
+  const hasDirect = targetIsCn ? hasCnDbConfig() : hasIntlDbConfig();
+  const targetOrigin = targetIsCn ? cnOrigin : intlOrigin;
+  const canProxy = !internalProxy && !!targetOrigin && !!getProxySecret();
+
+  const patchDirect = async (): Promise<UsersPatchResponse> => {
+    const item = targetIsCn ? await patchCnUser(payload) : await patchIntlUser(payload);
+    return {
+      success: true,
+      source: payload.source,
+      mode: "direct",
+      item,
+    };
+  };
+
+  if (hasDirect) {
+    try {
+      const res = await patchDirect();
+      return NextResponse.json(res satisfies UsersPatchResponse);
+    } catch (e: any) {
+      if (canProxy) {
+        try {
+          const proxied = await proxyPatchUser(targetOrigin, payload, cookieToken);
+          return NextResponse.json({ ...proxied, mode: "proxy" } satisfies UsersPatchResponse);
+        } catch (pe: any) {
+          return NextResponse.json(
+            {
+              error: "用户更新失败",
+              details: {
+                direct: e?.message ? String(e.message) : "direct_failed",
+                proxy: pe?.message ? String(pe.message) : "proxy_failed",
+              },
+            },
+            { status: 500 }
+          );
+        }
+      }
+      return NextResponse.json(
+        {
+          error: "用户更新失败",
+          details: e?.message ? String(e.message) : "direct_failed",
+        },
+        { status: 500 }
+      );
+    }
+  }
+
+  if (canProxy) {
+    try {
+      const proxied = await proxyPatchUser(targetOrigin, payload, cookieToken);
+      return NextResponse.json({ ...proxied, mode: "proxy" } satisfies UsersPatchResponse);
+    } catch (e: any) {
+      return NextResponse.json(
+        {
+          error: "跨环境代理更新失败",
+          details: e?.message ? String(e.message) : "proxy_failed",
+        },
+        { status: 500 }
+      );
+    }
+  }
+
+  const missing: string[] = [];
+  if (internalProxy) missing.push("内部代理请求禁止二次代理");
+  if (!targetOrigin) missing.push(targetIsCn ? "缺少 CN_APP_ORIGIN" : "缺少 INTL_APP_ORIGIN");
+  if (!getProxySecret()) missing.push("缺少 ADMIN_PROXY_SECRET");
+
+  return NextResponse.json(
+    {
+      error: "目标数据源不可用",
+      details: targetIsCn
+        ? `未配置 CloudBase 直连${missing.length ? `，且${missing.join("，")}` : ""}`
+        : `未配置 Supabase 直连${missing.length ? `，且${missing.join("，")}` : ""}`,
+    },
+    { status: 400 }
+  );
 }

@@ -26,6 +26,7 @@ import {
 
 type OrdersSource = "ALL" | "CN" | "INTL";
 type OrdersStatus = "all" | "pending" | "completed" | "failed" | "refunded";
+type OrdersMutableStatus = "pending" | "completed" | "failed" | "refunded" | "cancelled";
 
 type OrderRow = {
   id: string;
@@ -62,6 +63,13 @@ type OrdersResponse = {
     revenue30dUsd: number;
   };
   sources: Array<{ source: "CN" | "INTL"; ok: boolean; mode: string; message?: string }>;
+};
+
+type OrderPatchResponse = {
+  success: boolean;
+  source: "CN" | "INTL";
+  mode: "direct" | "proxy" | "missing";
+  item: OrderRow | null;
 };
 
 /**
@@ -164,6 +172,7 @@ export default function AdminOrdersPage() {
   const [loading, setLoading] = React.useState(true);
   const [data, setData] = React.useState<OrdersResponse | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const [updatingOrderId, setUpdatingOrderId] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -225,6 +234,39 @@ export default function AdminOrdersPage() {
               .join("；")}`,
           }
       : null;
+
+  const patchOrderStatus = async (order: OrderRow, nextStatus: OrdersMutableStatus) => {
+    if (updatingOrderId) return;
+    setUpdatingOrderId(`${order.source}:${order.id}`);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/orders", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ source: order.source, id: order.id, status: nextStatus }),
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        throw new Error(`HTTP ${res.status}${body ? `: ${body}` : ""}`);
+      }
+
+      const json = (await res.json()) as OrderPatchResponse;
+      if (!json?.item) {
+        throw new Error("更新返回为空");
+      }
+
+      const key = `${order.source}:${order.id}`;
+      setData((prev) => {
+        if (!prev) return prev;
+        const nextItems = prev.items.map((it) => (`${it.source}:${it.id}` === key ? json.item! : it));
+        return { ...prev, items: nextItems };
+      });
+    } catch (e: any) {
+      setError(e?.message ? String(e.message) : "更新订单状态失败");
+    } finally {
+      setUpdatingOrderId(null);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -400,6 +442,7 @@ export default function AdminOrdersPage() {
                 <TableHead>金额</TableHead>
                 <TableHead>币种</TableHead>
                 <TableHead>状态</TableHead>
+                <TableHead>状态操作</TableHead>
                 <TableHead>渠道</TableHead>
                 <TableHead>创建时间</TableHead>
                 <TableHead>完成时间</TableHead>
@@ -408,6 +451,8 @@ export default function AdminOrdersPage() {
             <TableBody>
               {(data?.items || []).map((o) => {
                 const view = getStatusView(o.status);
+                const rowKey = `${o.source}:${o.id}`;
+                const rowUpdating = updatingOrderId === rowKey;
                 return (
                   <TableRow key={`${o.source}-${o.id}`}>
                     <TableCell>{o.source}</TableCell>
@@ -418,6 +463,45 @@ export default function AdminOrdersPage() {
                     <TableCell>{o.currency ?? "-"}</TableCell>
                     <TableCell>
                       <Badge variant={view.variant}>{view.label}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      <select
+                        className="h-8 rounded-md border bg-background px-2 text-xs"
+                        value={
+                          (() => {
+                            const normalized = (o.status || "").toLowerCase();
+                            if (
+                              normalized === "pending" ||
+                              normalized === "completed" ||
+                              normalized === "failed" ||
+                              normalized === "refunded" ||
+                              normalized === "cancelled"
+                            ) {
+                              return normalized;
+                            }
+                            return "pending";
+                          })()
+                        }
+                        disabled={rowUpdating || loading}
+                        onChange={(e) => {
+                          const value = String(e.target.value).toLowerCase();
+                          if (
+                            value === "pending" ||
+                            value === "completed" ||
+                            value === "failed" ||
+                            value === "refunded" ||
+                            value === "cancelled"
+                          ) {
+                            patchOrderStatus(o, value);
+                          }
+                        }}
+                      >
+                        <option value="pending">待支付</option>
+                        <option value="completed">已完成</option>
+                        <option value="failed">失败</option>
+                        <option value="refunded">已退款</option>
+                        <option value="cancelled">已取消</option>
+                      </select>
                     </TableCell>
                     <TableCell>{o.paymentMethod ?? "-"}</TableCell>
                     <TableCell className="font-mono text-xs">
@@ -431,7 +515,7 @@ export default function AdminOrdersPage() {
               })}
               {!loading && (data?.items || []).length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={10} className="text-center text-sm text-muted-foreground">
+                  <TableCell colSpan={11} className="text-center text-sm text-muted-foreground">
                     暂无数据
                   </TableCell>
                 </TableRow>

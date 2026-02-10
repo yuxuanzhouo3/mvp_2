@@ -49,6 +49,15 @@ type ReleasesResponse = {
   sources: Array<{ source: DataSource; ok: boolean; mode: string; message?: string }>;
 };
 
+type UploadReleaseResponse = {
+  ok: boolean;
+  source: DataSource;
+  id: string;
+  version: string;
+  platform: string;
+  fileName?: string | null;
+};
+
 function parseQuery(params: URLSearchParams): {
   source: ReleasesSource;
   platform: string;
@@ -133,6 +142,10 @@ export default function AdminReleasesPage() {
   const [uploadActive, setUploadActive] = React.useState(true);
   const [uploading, setUploading] = React.useState(false);
   const fileRef = React.useRef<HTMLInputElement | null>(null);
+  const rowRefs = React.useRef<Record<string, HTMLTableRowElement | null>>({});
+  const [highlightRowKey, setHighlightRowKey] = React.useState<string | null>(null);
+  const highlightTimerRef = React.useRef<number | null>(null);
+  const highlightScrolledKeyRef = React.useRef<string | null>(null);
 
   const reload = React.useCallback(() => {
     const url = new URL("/api/admin/releases", window.location.origin);
@@ -162,6 +175,42 @@ export default function AdminReleasesPage() {
   React.useEffect(() => {
     reload();
   }, [reload]);
+
+  React.useEffect(() => {
+    if (!highlightRowKey) {
+      highlightScrolledKeyRef.current = null;
+      if (highlightTimerRef.current != null) {
+        window.clearTimeout(highlightTimerRef.current);
+        highlightTimerRef.current = null;
+      }
+      return;
+    }
+
+    if (highlightTimerRef.current != null) {
+      window.clearTimeout(highlightTimerRef.current);
+    }
+    highlightTimerRef.current = window.setTimeout(() => {
+      setHighlightRowKey(null);
+    }, 8000);
+
+    return () => {
+      if (highlightTimerRef.current != null) {
+        window.clearTimeout(highlightTimerRef.current);
+        highlightTimerRef.current = null;
+      }
+    };
+  }, [highlightRowKey]);
+
+  React.useEffect(() => {
+    if (!highlightRowKey) return;
+    if (highlightScrolledKeyRef.current === highlightRowKey) return;
+
+    const row = rowRefs.current[highlightRowKey];
+    if (!row) return;
+
+    highlightScrolledKeyRef.current = highlightRowKey;
+    row.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [data, highlightRowKey]);
 
   const totalPages = data?.pagination.totalPages || 0;
   const items = buildPageItems(Math.max(1, totalPages || 1), page);
@@ -204,10 +253,41 @@ export default function AdminReleasesPage() {
         const body = await res.text().catch(() => "");
         throw new Error(`HTTP ${res.status}${body ? `: ${body}` : ""}`);
       }
+
+      const uploaded = (await res.json()) as UploadReleaseResponse;
+      const uploadedSource: DataSource = uploaded?.source === "INTL" ? "INTL" : "CN";
+      const uploadedPlatform = String(uploaded?.platform || uploadPlatform).trim();
+      const uploadedVersion = String(uploaded?.version || uploadVersion).trim();
+      const uploadedFileName = String(uploaded?.fileName || f.name || "").trim();
+      const uploadedId = String(uploaded?.id || "").trim();
+
+      if (uploadedId) {
+        setHighlightRowKey(`${uploadedSource}-${uploadedId}`);
+      }
+
+      const normalizedQ = q.trim().toLowerCase();
+      const qExcluded =
+        !!normalizedQ &&
+        !uploadedVersion.toLowerCase().includes(normalizedQ) &&
+        !uploadedFileName.toLowerCase().includes(normalizedQ);
+
+      const patch: Record<string, string | null> = {};
+      if (source !== "ALL" && source !== uploadedSource) patch.source = uploadedSource;
+      if (platform && platform !== uploadedPlatform) patch.platform = uploadedPlatform;
+      if (qExcluded) patch.q = null;
+
+      const needResetPage = page !== 1;
+      const needQueryUpdate = needResetPage || Object.keys(patch).length > 0;
+
       if (fileRef.current) fileRef.current.value = "";
       setUploadVersion("");
       setUploadNotes("");
-      reload();
+
+      if (needQueryUpdate) {
+        updateQuery(router, new URLSearchParams(searchParams.toString()), patch, true);
+      } else {
+        reload();
+      }
     } catch (err: any) {
       setError(err?.message ? String(err.message) : "上传失败");
     } finally {
@@ -459,10 +539,32 @@ export default function AdminReleasesPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {(data?.items || []).map((r) => (
-                <TableRow key={`${r.source}-${r.id}`}>
+              {(data?.items || []).map((r) => {
+                const rowKey = `${r.source}-${r.id}`;
+                const highlighted = highlightRowKey === rowKey;
+                return (
+                <TableRow
+                  key={rowKey}
+                  ref={(node) => {
+                    rowRefs.current[rowKey] = node;
+                  }}
+                  className={
+                    highlighted
+                      ? "bg-emerald-50/90 dark:bg-emerald-900/20 transition-colors"
+                      : undefined
+                  }
+                >
                   <TableCell>{r.source}</TableCell>
-                  <TableCell className="font-mono text-xs">{r.version || "-"}</TableCell>
+                  <TableCell className="font-mono text-xs">
+                    <span className="inline-flex items-center gap-2">
+                      <span>{r.version || "-"}</span>
+                      {highlighted ? (
+                        <Badge variant="outline" className="border-emerald-300 text-emerald-700 dark:text-emerald-300">
+                          NEW
+                        </Badge>
+                      ) : null}
+                    </span>
+                  </TableCell>
                   <TableCell className="font-mono text-xs">{r.platform || "-"}</TableCell>
                   <TableCell className="font-mono text-xs">{r.arch || "-"}</TableCell>
                   <TableCell className="font-mono text-xs max-w-[320px] truncate" title={r.fileName || ""}>
@@ -496,7 +598,8 @@ export default function AdminReleasesPage() {
                     </Button>
                   </TableCell>
                 </TableRow>
-              ))}
+                );
+              })}
               {!loading && (data?.items || []).length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={9} className="text-center text-sm text-muted-foreground">
@@ -575,4 +678,3 @@ export default function AdminReleasesPage() {
     </div>
   );
 }
-

@@ -61,6 +61,21 @@ type OrdersResponse = {
   sources: SourceInfo[];
 };
 
+type OrdersMutableStatus = "pending" | "completed" | "failed" | "refunded" | "cancelled";
+
+type OrdersPatchInput = {
+  source: DataSource;
+  id: string;
+  status: OrdersMutableStatus;
+};
+
+type OrdersPatchResponse = {
+  success: boolean;
+  source: DataSource;
+  mode: SourceMode;
+  item: OrderRow | null;
+};
+
 function normalizeEmailFilter(value: string | null): string | null {
   const v = (value || "").trim();
   return v || null;
@@ -98,6 +113,68 @@ function parsePositiveInt(value: string | null, fallback: number): number {
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) return fallback;
   return Math.floor(n);
+}
+
+function parsePatchStatus(value: unknown): OrdersMutableStatus | null {
+  const v = String(value || "").trim().toLowerCase();
+  if (
+    v === "pending" ||
+    v === "completed" ||
+    v === "failed" ||
+    v === "refunded" ||
+    v === "cancelled"
+  ) {
+    return v;
+  }
+  return null;
+}
+
+async function parsePatchBody(request: NextRequest): Promise<
+  | { ok: true; payload: OrdersPatchInput }
+  | { ok: false; response: NextResponse }
+> {
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: "请求体必须为 JSON" }, { status: 400 }),
+    };
+  }
+
+  const sourceRaw = String(body?.source || "").toUpperCase();
+  if (sourceRaw !== "CN" && sourceRaw !== "INTL") {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: "source 仅支持 CN 或 INTL" }, { status: 400 }),
+    };
+  }
+  const source = sourceRaw as DataSource;
+
+  const id = String(body?.id || "").trim();
+  if (!id) {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: "id 不能为空" }, { status: 400 }),
+    };
+  }
+
+  const status = parsePatchStatus(body?.status);
+  if (!status) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { error: "status 仅支持 pending/completed/failed/refunded/cancelled" },
+        { status: 400 }
+      ),
+    };
+  }
+
+  return {
+    ok: true,
+    payload: { source, id, status },
+  };
 }
 
 /**
@@ -427,6 +504,127 @@ async function fetchIntlOrders(params: {
   return { rows, total };
 }
 
+async function fetchCnOrderById(id: string): Promise<OrderRow | null> {
+  const db = getCloudBaseDatabase();
+  const collection = db.collection("payments");
+  const listRes = await collection.where({ _id: id }).limit(1).get();
+  const p = (listRes.data || [])[0];
+  if (!p) return null;
+
+  const createdAt = normalizeIso(p.created_at ?? p.createdAt ?? null);
+  const completedAt = normalizeIso(p.completed_at ?? p.completedAt ?? null);
+  const rawStatus = p.status ?? null;
+  const status = normalizeStatus(rawStatus);
+  const amount = typeof p.amount === "number" ? p.amount : p.amount != null ? Number(p.amount) : null;
+  const userEmail =
+    p?.metadata?.userEmail ?? p?.metadata?.user_email ?? p?.metadata?.email ?? p?.user_email ?? null;
+
+  return {
+    id: String(p._id ?? p.id ?? p.payment_id ?? p.paymentId ?? p.transaction_id ?? id),
+    userId: p.user_id ?? null,
+    userEmail: userEmail ? String(userEmail) : null,
+    amount: Number.isFinite(amount as number) ? (amount as number) : null,
+    currency: p.currency ?? "CNY",
+    status,
+    paymentMethod: p.payment_method ?? null,
+    transactionId: p.transaction_id ?? null,
+    createdAt,
+    completedAt,
+    source: "CN",
+  };
+}
+
+async function fetchIntlOrderById(id: string): Promise<OrderRow | null> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("payments")
+    .select("id,user_id,amount,currency,status,payment_method,transaction_id,created_at,completed_at,metadata")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+
+  const userId = data.user_id ? String(data.user_id) : null;
+  let profileEmail: string | null = null;
+  if (userId) {
+    const loadEmail = async (table: "profiles" | "user_profiles"): Promise<string | null | undefined> => {
+      const { data: profile, error: profileError } = await supabase
+        .from(table)
+        .select("email")
+        .eq("id", userId)
+        .maybeSingle();
+      if (profileError) return undefined;
+      return (profile?.email as string | null | undefined) ?? null;
+    };
+    const first = await loadEmail("profiles");
+    if (first !== undefined) {
+      profileEmail = first;
+    } else {
+      const second = await loadEmail("user_profiles");
+      profileEmail = second === undefined ? null : second;
+    }
+  }
+
+  const createdAt = normalizeIso(data.created_at ?? null);
+  const completedAt = normalizeIso(data.completed_at ?? null);
+  const rawStatus = data.status ?? null;
+  const status = normalizeStatus(rawStatus);
+  const amount =
+    typeof data.amount === "number" ? data.amount : data.amount != null ? Number(data.amount) : null;
+  const userEmail = profileEmail ?? data?.metadata?.userEmail ?? data?.metadata?.email ?? null;
+
+  return {
+    id: String(data.id),
+    userId,
+    userEmail: userEmail ? String(userEmail) : null,
+    amount: Number.isFinite(amount as number) ? (amount as number) : null,
+    currency: data.currency ?? "USD",
+    status,
+    paymentMethod: data.payment_method ?? null,
+    transactionId: data.transaction_id ?? null,
+    createdAt,
+    completedAt,
+    source: "INTL",
+  };
+}
+
+async function patchCnOrderStatus(payload: OrdersPatchInput): Promise<OrderRow | null> {
+  const db = getCloudBaseDatabase();
+  const collection = db.collection("payments");
+  const nowIso = new Date().toISOString();
+
+  const updateDoc: Record<string, unknown> = {
+    status: payload.status,
+    updated_at: nowIso,
+    updatedAt: nowIso,
+  };
+  if (payload.status === "completed") {
+    updateDoc.completed_at = nowIso;
+    updateDoc.completedAt = nowIso;
+  }
+
+  await collection.doc(payload.id).update(updateDoc);
+  return await fetchCnOrderById(payload.id);
+}
+
+async function patchIntlOrderStatus(payload: OrdersPatchInput): Promise<OrderRow | null> {
+  const supabase = getSupabaseAdmin();
+  const nowIso = new Date().toISOString();
+
+  const updateDoc: Record<string, unknown> = {
+    status: payload.status,
+    updated_at: nowIso,
+  };
+  if (payload.status === "completed") {
+    updateDoc.completed_at = nowIso;
+  }
+
+  const { error } = await supabase.from("payments").update(updateDoc).eq("id", payload.id);
+  if (error) throw error;
+
+  return await fetchIntlOrderById(payload.id);
+}
+
 /**
  * 统计单侧订单状态分布与近 30 天收入。
  */
@@ -572,6 +770,41 @@ async function proxyFetch(
     pathWithQuery: `/api/admin/orders?${search.toString()}`,
     token,
   });
+}
+
+async function proxyPatchOrder(origin: string, payload: OrdersPatchInput, token?: string | null): Promise<OrdersPatchResponse> {
+  const secret = getProxySecret();
+  if (!secret) {
+    throw new Error("未配置 ADMIN_PROXY_SECRET，无法跨环境代理更新");
+  }
+
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    "x-admin-proxy-hop": "1",
+    "x-admin-proxy-secret": secret,
+  };
+  if (token) {
+    headers.cookie = `${getAdminSessionCookieName()}=${token}`;
+  }
+
+  const url = `${origin.replace(/\/$/, "")}/api/admin/orders`;
+  const res = await fetch(url, {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify(payload),
+    cache: "no-store",
+  });
+
+  const bodyText = await res.text().catch(() => "");
+  if (!res.ok) {
+    throw new Error(`Proxy failed: HTTP ${res.status}${bodyText ? `: ${bodyText}` : ""}`);
+  }
+
+  try {
+    return JSON.parse(bodyText) as OrdersPatchResponse;
+  } catch {
+    throw new Error("代理返回了不可解析的 JSON");
+  }
 }
 
 /**
@@ -818,4 +1051,99 @@ export async function GET(request: NextRequest) {
     stats,
     sources,
   } satisfies OrdersResponse);
+}
+
+export async function PATCH(request: NextRequest) {
+  if (!(await isAuthorized(request))) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const parsed = await parsePatchBody(request);
+  if (!parsed.ok) return parsed.response;
+
+  const payload = parsed.payload;
+  const internalProxy = isInternalProxyRequest(request);
+  const cookieToken = request.cookies.get(getAdminSessionCookieName())?.value || null;
+
+  const cnOrigin = process.env.CN_APP_ORIGIN || "";
+  const intlOrigin = process.env.INTL_APP_ORIGIN || "";
+
+  const targetIsCn = payload.source === "CN";
+  const hasDirect = targetIsCn ? hasCnDbConfig() : hasIntlDbConfig();
+  const targetOrigin = targetIsCn ? cnOrigin : intlOrigin;
+  const canProxy = !internalProxy && !!targetOrigin && !!getProxySecret();
+
+  const patchDirect = async (): Promise<OrdersPatchResponse> => {
+    const item = targetIsCn
+      ? await patchCnOrderStatus(payload)
+      : await patchIntlOrderStatus(payload);
+    return {
+      success: true,
+      source: payload.source,
+      mode: "direct",
+      item,
+    };
+  };
+
+  if (hasDirect) {
+    try {
+      const result = await patchDirect();
+      return NextResponse.json(result satisfies OrdersPatchResponse);
+    } catch (e: any) {
+      if (canProxy) {
+        try {
+          const proxied = await proxyPatchOrder(targetOrigin, payload, cookieToken);
+          return NextResponse.json({ ...proxied, mode: "proxy" } satisfies OrdersPatchResponse);
+        } catch (pe: any) {
+          return NextResponse.json(
+            {
+              error: "订单状态更新失败",
+              details: {
+                direct: e?.message ? String(e.message) : "direct_failed",
+                proxy: pe?.message ? String(pe.message) : "proxy_failed",
+              },
+            },
+            { status: 500 }
+          );
+        }
+      }
+      return NextResponse.json(
+        {
+          error: "订单状态更新失败",
+          details: e?.message ? String(e.message) : "direct_failed",
+        },
+        { status: 500 }
+      );
+    }
+  }
+
+  if (canProxy) {
+    try {
+      const proxied = await proxyPatchOrder(targetOrigin, payload, cookieToken);
+      return NextResponse.json({ ...proxied, mode: "proxy" } satisfies OrdersPatchResponse);
+    } catch (e: any) {
+      return NextResponse.json(
+        {
+          error: "跨环境代理更新失败",
+          details: e?.message ? String(e.message) : "proxy_failed",
+        },
+        { status: 500 }
+      );
+    }
+  }
+
+  const missing: string[] = [];
+  if (internalProxy) missing.push("内部代理请求禁止二次代理");
+  if (!targetOrigin) missing.push(targetIsCn ? "缺少 CN_APP_ORIGIN" : "缺少 INTL_APP_ORIGIN");
+  if (!getProxySecret()) missing.push("缺少 ADMIN_PROXY_SECRET");
+
+  return NextResponse.json(
+    {
+      error: "目标数据源不可用",
+      details: targetIsCn
+        ? `未配置 CloudBase 直连${missing.length ? `，且${missing.join("，")}` : ""}`
+        : `未配置 Supabase 直连${missing.length ? `，且${missing.join("，")}` : ""}`,
+    },
+    { status: 400 }
+  );
 }

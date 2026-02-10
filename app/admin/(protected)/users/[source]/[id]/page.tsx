@@ -26,6 +26,13 @@ type UsersResponse = {
   sources: Array<{ source: DataSource; ok: boolean; mode: string; message?: string }>;
 };
 
+type UserPatchResponse = {
+  success: boolean;
+  source: DataSource;
+  mode: "direct" | "proxy" | "missing";
+  item: UserRow | null;
+};
+
 function getSourceView(source: DataSource): { label: string; className: string } {
   if (source === "CN") {
     return {
@@ -57,6 +64,11 @@ export default function AdminUserDetailPage({
   const [user, setUser] = React.useState<UserRow | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [sources, setSources] = React.useState<UsersResponse["sources"]>([]);
+  const [saving, setSaving] = React.useState(false);
+  const [saveMessage, setSaveMessage] = React.useState<string | null>(null);
+  const [nameDraft, setNameDraft] = React.useState("");
+  const [tierDraft, setTierDraft] = React.useState("");
+  const [statusDraft, setStatusDraft] = React.useState("");
 
   React.useEffect(() => {
     let cancelled = false;
@@ -81,7 +93,11 @@ export default function AdminUserDetailPage({
       .then((json) => {
         if (cancelled) return;
         setSources(json.sources || []);
-        setUser((json.items || [])[0] || null);
+        const first = (json.items || [])[0] || null;
+        setUser(first);
+        setNameDraft(first?.name || "");
+        setTierDraft(first?.subscriptionTier || "");
+        setStatusDraft(first?.subscriptionStatus || "");
       })
       .catch((e: any) => {
         if (cancelled) return;
@@ -102,6 +118,63 @@ export default function AdminUserDetailPage({
   const email = user?.email || "";
   const ordersHref = email ? `/admin/orders?source=ALL&email=${encodeURIComponent(email)}` : "";
 
+  const canEdit = Boolean(user && typedSource && !loading);
+
+  const onSave = async () => {
+    if (!user || !typedSource || saving) return;
+    setSaveMessage(null);
+    setSaving(true);
+    setError(null);
+    try {
+      const body: Record<string, string> = {
+        source: typedSource,
+        id: user.id,
+      };
+
+      const normalizedName = nameDraft.trim();
+      const normalizedTier = tierDraft.trim().toLowerCase();
+      const normalizedStatus = statusDraft.trim().toLowerCase();
+
+      if (normalizedName !== (user.name || "")) {
+        body.name = normalizedName;
+      }
+      if (normalizedTier !== (user.subscriptionTier || "").toLowerCase()) {
+        body.subscriptionTier = normalizedTier;
+      }
+      if (normalizedStatus !== (user.subscriptionStatus || "").toLowerCase()) {
+        body.subscriptionStatus = normalizedStatus;
+      }
+
+      if (Object.keys(body).length <= 2) {
+        setSaveMessage("未检测到变更");
+        return;
+      }
+
+      const res = await fetch("/api/admin/users", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) {
+        const bodyText = await res.text().catch(() => "");
+        throw new Error(`HTTP ${res.status}${bodyText ? `: ${bodyText}` : ""}`);
+      }
+
+      const json = (await res.json()) as UserPatchResponse;
+      if (!json?.item) throw new Error("更新返回为空");
+      setUser(json.item);
+      setNameDraft(json.item.name || "");
+      setTierDraft(json.item.subscriptionTier || "");
+      setStatusDraft(json.item.subscriptionStatus || "");
+      setSaveMessage(`保存成功（${json.mode}）`);
+    } catch (e: any) {
+      setError(e?.message ? String(e.message) : "保存失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
@@ -115,6 +188,9 @@ export default function AdminUserDetailPage({
           </Button>
           <Button variant="outline" onClick={() => router.refresh()}>
             刷新
+          </Button>
+          <Button onClick={onSave} disabled={!canEdit || saving}>
+            {saving ? "保存中…" : "保存修改"}
           </Button>
         </div>
       </div>
@@ -137,6 +213,7 @@ export default function AdminUserDetailPage({
         </CardHeader>
         <CardContent className="space-y-4">
           {error ? <div className="text-sm text-red-600">{error}</div> : null}
+          {saveMessage ? <div className="text-sm text-emerald-600">{saveMessage}</div> : null}
           {loading ? <div className="text-sm text-muted-foreground">加载中…</div> : null}
           {!loading && !error && !user ? (
             <div className="text-sm text-muted-foreground">未找到该用户</div>
@@ -159,15 +236,39 @@ export default function AdminUserDetailPage({
                 </TableRow>
                 <TableRow>
                   <TableCell className="w-40 text-muted-foreground">姓名</TableCell>
-                  <TableCell>{user.name || "-"}</TableCell>
+                  <TableCell>
+                    <input
+                      className="h-9 w-full max-w-sm rounded-md border bg-background px-3 text-sm"
+                      value={nameDraft}
+                      onChange={(e) => setNameDraft(e.target.value)}
+                      disabled={!canEdit || saving}
+                      placeholder="姓名（可留空）"
+                    />
+                  </TableCell>
                 </TableRow>
                 <TableRow>
                   <TableCell className="w-40 text-muted-foreground">订阅</TableCell>
-                  <TableCell>{user.subscriptionTier || "-"}</TableCell>
+                  <TableCell>
+                    <input
+                      className="h-9 w-full max-w-sm rounded-md border bg-background px-3 text-sm"
+                      value={tierDraft}
+                      onChange={(e) => setTierDraft(e.target.value)}
+                      disabled={!canEdit || saving}
+                      placeholder="如 free / pro / enterprise"
+                    />
+                  </TableCell>
                 </TableRow>
                 <TableRow>
                   <TableCell className="w-40 text-muted-foreground">订阅状态</TableCell>
-                  <TableCell>{user.subscriptionStatus || "-"}</TableCell>
+                  <TableCell>
+                    <input
+                      className="h-9 w-full max-w-sm rounded-md border bg-background px-3 text-sm"
+                      value={statusDraft}
+                      onChange={(e) => setStatusDraft(e.target.value)}
+                      disabled={!canEdit || saving}
+                      placeholder="如 active / cancelled / expired"
+                    />
+                  </TableCell>
                 </TableRow>
                 <TableRow>
                   <TableCell className="w-40 text-muted-foreground">创建时间</TableCell>
@@ -213,4 +314,3 @@ export default function AdminUserDetailPage({
     </div>
   );
 }
-

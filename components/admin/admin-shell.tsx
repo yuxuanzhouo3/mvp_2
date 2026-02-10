@@ -9,6 +9,7 @@ import {
   CreditCard,
   LayoutDashboard,
   Menu,
+  MonitorSmartphone,
   Package,
   ShoppingCart,
   User,
@@ -27,12 +28,55 @@ type AdminNavItem = {
 const NAV_ITEMS: AdminNavItem[] = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/stats", label: "数据统计", icon: BarChart3 },
+  { href: "/admin/device-stats", label: "设备统计", icon: MonitorSmartphone },
   { href: "/admin/orders", label: "交易订单", icon: ShoppingCart },
   { href: "/admin/users", label: "用户管理", icon: Users },
   { href: "/admin/payments", label: "支付分析", icon: CreditCard },
   { href: "/admin/releases", label: "版本管理", icon: Package },
   { href: "/admin/analytics", label: "行为分析", icon: Activity },
 ];
+
+const ADMIN_BLUE_THEME_STYLE: React.CSSProperties = {
+  ["--background" as string]: "210 100% 97%",
+  ["--foreground" as string]: "216 40% 18%",
+  ["--card" as string]: "210 100% 99%",
+  ["--card-foreground" as string]: "216 40% 18%",
+  ["--popover" as string]: "210 100% 99%",
+  ["--popover-foreground" as string]: "216 40% 18%",
+  ["--primary" as string]: "206 100% 46%",
+  ["--primary-foreground" as string]: "0 0% 100%",
+  ["--secondary" as string]: "208 100% 93%",
+  ["--secondary-foreground" as string]: "214 56% 24%",
+  ["--muted" as string]: "210 80% 94%",
+  ["--muted-foreground" as string]: "215 22% 42%",
+  ["--accent" as string]: "206 100% 92%",
+  ["--accent-foreground" as string]: "214 56% 24%",
+  ["--border" as string]: "208 45% 84%",
+  ["--input" as string]: "208 45% 84%",
+  ["--ring" as string]: "206 100% 46%",
+};
+
+const ADMIN_BLUE_THEME_DARK_STYLE = `
+.admin-blue-theme.dark {
+  --background: 214 30% 11%;
+  --foreground: 210 40% 96%;
+  --card: 214 28% 14%;
+  --card-foreground: 210 40% 96%;
+  --popover: 214 28% 14%;
+  --popover-foreground: 210 40% 96%;
+  --primary: 202 100% 70%;
+  --primary-foreground: 214 45% 14%;
+  --secondary: 214 25% 20%;
+  --secondary-foreground: 210 40% 92%;
+  --muted: 214 22% 19%;
+  --muted-foreground: 213 17% 74%;
+  --accent: 206 42% 24%;
+  --accent-foreground: 210 40% 96%;
+  --border: 214 24% 25%;
+  --input: 214 24% 25%;
+  --ring: 202 100% 70%;
+}
+`;
 
 export function AdminShell({
   username,
@@ -87,8 +131,9 @@ export function AdminShell({
   };
 
   return (
-    <div className="min-h-screen bg-white dark:bg-slate-900">
-      <header className="fixed top-0 left-0 right-0 h-16 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 z-50">
+    <div className="admin-blue-theme min-h-screen bg-background text-foreground" style={ADMIN_BLUE_THEME_STYLE}>
+      <style>{ADMIN_BLUE_THEME_DARK_STYLE}</style>
+      <header className="fixed top-0 left-0 right-0 h-16 bg-card/95 backdrop-blur border-b border-border z-50">
         <div className="h-full flex items-center justify-between px-4 sm:px-6">
           <div className="flex items-center gap-3">
             <Button
@@ -119,7 +164,7 @@ export function AdminShell({
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="text-slate-600 dark:text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+                className="text-muted-foreground hover:text-primary hover:bg-accent"
                 onClick={handleLogout}
                 disabled={logoutPending}
               >
@@ -130,7 +175,7 @@ export function AdminShell({
         </div>
       </header>
 
-      <aside className="hidden md:flex fixed left-0 top-16 bottom-0 w-64 bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 flex-col">
+      <aside className="hidden md:flex fixed left-0 top-16 bottom-0 w-64 bg-card border-r border-border flex-col">
         <nav className="flex-1 p-3 md:p-4 space-y-4 overflow-y-auto overscroll-contain mt-4">
           <div className="space-y-1">
             {NAV_ITEMS.map((item) => {
@@ -143,8 +188,8 @@ export function AdminShell({
                   className={cn(
                     "flex items-center gap-3 px-3 md:px-4 py-2.5 md:py-3 rounded-lg transition-colors",
                     active
-                      ? "bg-primary/10 text-primary font-medium"
-                      : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"
+                      ? "bg-primary/12 text-primary font-medium"
+                      : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                   )}
                 >
                   <Icon className="h-5 w-5 flex-shrink-0" />
@@ -162,10 +207,10 @@ export function AdminShell({
             className="absolute inset-0 bg-black/50 transition-opacity"
             onClick={() => setMobileOpen(false)}
           />
-          <aside className="absolute left-0 top-16 bottom-16 w-72 bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 flex flex-col z-50 animate-in slide-in-from-left duration-200 shadow-xl">
+          <aside className="absolute left-0 top-16 bottom-16 w-72 bg-card border-r border-border flex flex-col z-50 animate-in slide-in-from-left duration-200 shadow-xl">
             <nav className="flex-1 p-3 md:p-4 space-y-4 overflow-y-auto overscroll-contain mt-4">
               <div className="flex items-center justify-between px-3">
-                <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                   菜单
                 </div>
                 <Button
@@ -190,8 +235,8 @@ export function AdminShell({
                       className={cn(
                         "flex items-center gap-3 px-3 md:px-4 py-2.5 md:py-3 rounded-lg transition-colors",
                         active
-                          ? "bg-primary/10 text-primary font-medium"
-                          : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"
+                          ? "bg-primary/12 text-primary font-medium"
+                          : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                       )}
                     >
                       <Icon className="h-5 w-5 flex-shrink-0" />
@@ -205,7 +250,7 @@ export function AdminShell({
         </div>
       ) : null}
 
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 z-50">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-card border-t border-border z-50">
         <div className="flex items-center justify-around h-full px-2 pb-[env(safe-area-inset-bottom)]">
           {NAV_ITEMS.slice(0, 5).map((item) => {
             const Icon = item.icon;
@@ -218,7 +263,7 @@ export function AdminShell({
                   "flex flex-col items-center justify-center gap-1 px-3 py-2 rounded-lg transition-colors min-w-[60px]",
                   active
                     ? "text-primary"
-                    : "text-slate-500 dark:text-slate-400 active:bg-slate-100 dark:active:bg-slate-700"
+                    : "text-muted-foreground active:bg-accent"
                 )}
               >
                 <Icon className={cn("h-5 w-5", active && "text-primary")} />

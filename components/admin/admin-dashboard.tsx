@@ -14,7 +14,14 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Activity, BarChart3, CreditCard, ShoppingCart, Users } from "lucide-react";
+import {
+  Activity,
+  BarChart3,
+  CreditCard,
+  MonitorSmartphone,
+  ShoppingCart,
+  Users,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -302,6 +309,13 @@ export function AdminDashboard() {
         `AI调用：${loading ? "-" : totalAiCalls}（活跃用户 ${loading ? "-" : totalAiActive}）`,
         `Onboarding：CN ${loading ? "-" : formatPct(cnSide?.onboarding.overview?.completionRate || 0)} / INTL ${loading ? "-" : formatPct(intlSide?.onboarding.overview?.completionRate || 0)}`,
       ],
+    },
+    {
+      href: "/admin/device-stats",
+      label: "设备统计",
+      desc: "设备、操作系统与浏览器趋势",
+      icon: MonitorSmartphone,
+      lines: ["查看 CN + INTL 设备可视化", `支持最近 ${days} 天趋势与 Top 分布`],
     },
   ] as const;
 
