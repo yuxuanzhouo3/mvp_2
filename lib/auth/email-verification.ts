@@ -219,33 +219,6 @@ function getTransporter(config: {
   return cachedTransporter;
 }
 
-function buildEmailContent(
-  purpose: EmailVerificationPurpose,
-  code: string
-): {
-  subject: string;
-  text: string;
-  html: string;
-} {
-  const isRegister = purpose === "register";
-  const subject = isRegister
-    ? "【Random Life】注册验证码"
-    : "【Random Life】找回密码验证码";
-  const actionText = isRegister ? "注册账号" : "重置密码";
-  const minutes = CODE_EXPIRE_MINUTES;
-
-  const text = `您正在进行${actionText}操作，验证码为 ${code}，${minutes} 分钟内有效。若非本人操作，请忽略本邮件。`;
-  const html = `<div style="font-family: Arial, Helvetica, sans-serif; color: #222;">
-  <p>您好，</p>
-  <p>您正在进行<strong>${actionText}</strong>操作，验证码如下：</p>
-  <p style="font-size: 24px; font-weight: 700; letter-spacing: 4px; margin: 16px 0;">${code}</p>
-  <p>验证码 <strong>${minutes} 分钟</strong>内有效，请勿泄露给他人。</p>
-  <p style="color: #666;">若非本人操作，请忽略本邮件。</p>
-</div>`;
-
-  return { subject, text, html };
-}
-
 function buildCnEmailContent(
   purpose: EmailVerificationPurpose,
   code: string

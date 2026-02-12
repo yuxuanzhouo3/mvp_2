@@ -9,18 +9,49 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getRecommendationAdapter } from '@/lib/database';
 import { isValidUserId } from '@/lib/utils';
+import { requireAuth } from '@/lib/auth/auth';
+import { getAuthUserId, hasOwnershipAccess } from '@/lib/auth/ownership';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   try {
+    const authResult = await requireAuth(request);
+    if (!authResult) {
+      return NextResponse.json(
+        { error: '未登录', success: false },
+        { status: 401 }
+      );
+    }
+
     const body = await request.json();
     const { userId, recommendationId, timeAway } = body;
+
+    const actorUserId = getAuthUserId(authResult);
+    if (!actorUserId) {
+      return NextResponse.json(
+        { error: '未登录', success: false },
+        { status: 401 }
+      );
+    }
 
     if (!userId || !isValidUserId(userId)) {
       return NextResponse.json(
         { error: '无效的用户ID', success: false },
         { status: 400 }
+      );
+    }
+
+    if (
+      !hasOwnershipAccess({
+        actorUserId,
+        targetUserId: userId,
+        permissionKey: 'recommend:track-return',
+      })
+    ) {
+      return NextResponse.json(
+        { error: '无权限写入该用户数据', success: false },
+        { status: 403 }
       );
     }
 

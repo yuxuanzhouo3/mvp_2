@@ -284,6 +284,7 @@ function enrichActionsWithDeepLinks(
             : `Open ${candidateLink.metadata?.providerDisplayName || candidate.platform} for "${candidate.name}"`,
         payload: outboundUrl,
         providerId: candidate.platform,
+        candidateId: candidate.id,
         icon: "external-link",
       });
     } catch (err) {

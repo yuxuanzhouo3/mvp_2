@@ -363,11 +363,10 @@ export default function AdminReleasesPage() {
               >
                 <option value="">全部</option>
                 <option value="windows">Windows</option>
-                <option value="mac">Mac</option>
+                <option value="macos">macOS</option>
                 <option value="android">Android</option>
                 <option value="ios">iOS</option>
                 <option value="linux">Linux</option>
-                <option value="web">Web</option>
               </select>
             </div>
 
@@ -460,11 +459,10 @@ export default function AdminReleasesPage() {
                 onChange={(e) => setUploadPlatform(e.target.value)}
               >
                 <option value="windows">Windows</option>
-                <option value="mac">Mac</option>
+                <option value="macos">macOS</option>
                 <option value="android">Android</option>
                 <option value="ios">iOS</option>
                 <option value="linux">Linux</option>
-                <option value="web">Web</option>
               </select>
             </div>
 

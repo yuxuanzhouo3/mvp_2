@@ -1,5 +1,5 @@
 {
-  "buildCommand": "pnpm run build",
+  "buildCommand": "pnpm run verify:env && pnpm run build",
   "installCommand": "pnpm install",
   "framework": "nextjs"
 }

@@ -143,7 +143,9 @@ async function getPaymentHistoryINTL(userId: string, page: number, pageSize: num
     console.warn(`[Payment History INTL DEBUG] Failed to fetch all payments for user ${userId}:`, allError);
   }
 
-  console.log(`[Payment History INTL DEBUG] All payments for user ${userId}:`, JSON.stringify(allPayments, null, 2));
+  if (allPayments?.length) {
+    console.log(`[Payment History INTL] Raw payment rows fetched: ${allPayments.length}`);
+  }
 
   // 查询支付记录 - 显示completed状态和PayPal的pending状态（可能需要手动确认）
   const { data: payments, error } = await supabaseAdmin
@@ -223,28 +225,11 @@ async function getPaymentHistoryINTL(userId: string, page: number, pageSize: num
     .eq("user_id", userId)
     .eq("status", "completed");
 
-  // 统计各状态的数量
-  const statusCounts = (allPayments || []).reduce((acc: Record<string, number>, p: any) => {
-    acc[p.status] = (acc[p.status] || 0) + 1;
-    return acc;
-  }, {});
-
   return NextResponse.json({
     page,
     pageSize,
     count: records.length,
     totalCount: totalCount || 0,
     records,
-    debug: {
-      allPaymentsCount: allPayments?.length || 0,
-      statusCounts,
-      paymentMethods: (allPayments || []).map((p: any) => ({
-        id: p.id,
-        method: p.payment_method,
-        status: p.status,
-        amount: p.amount,
-        date: p.created_at,
-      })),
-    },
   });
 }

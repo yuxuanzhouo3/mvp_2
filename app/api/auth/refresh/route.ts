@@ -3,6 +3,7 @@ import { isChinaRegion } from "@/lib/config/region";
 import * as jwt from "jsonwebtoken";
 import cloudbase from "@cloudbase/node-sdk";
 import { z } from "zod";
+import { getJwtSecret } from "@/lib/auth/secrets";
 
 const refreshSchema = z.object({
   refreshToken: z.string().min(1, "Refresh token is required"),
@@ -26,6 +27,7 @@ function getCloudBaseApp() {
 
 export async function POST(request: NextRequest) {
   try {
+    const jwtSecret = getJwtSecret();
     const body = await request.json();
 
     const validationResult = refreshSchema.safeParse(body);
@@ -47,7 +49,7 @@ export async function POST(request: NextRequest) {
       try {
         payload = jwt.verify(
           refreshToken,
-          process.env.JWT_SECRET || "fallback-secret-key-for-development-only"
+          jwtSecret
         );
       } catch (error) {
         console.error("[/api/auth/refresh] JWT verification failed:", error);
@@ -83,14 +85,14 @@ export async function POST(request: NextRequest) {
       // 生成新的 access token
       const newAccessToken = jwt.sign(
         { userId, email, region: "china" },
-        process.env.JWT_SECRET || "fallback-secret-key-for-development-only",
+        jwtSecret,
         { expiresIn: "1h" }
       );
 
       // 生成新的 refresh token
       const newRefreshToken = jwt.sign(
         { userId, email, region: "china", type: "refresh" },
-        process.env.JWT_SECRET || "fallback-secret-key-for-development-only",
+        jwtSecret,
         { expiresIn: "7d" }
       );
 

@@ -142,6 +142,8 @@ function main() {
 
   let hasError = false;
   let hasWarning = false;
+  const missingRequired: string[] = [];
+  const warningItems: string[] = [];
 
   // 4. 验证通用配置
   log.section("通用配置");
@@ -152,6 +154,7 @@ function main() {
     } else {
       log.error(`${key} 未配置（必需）`);
       hasError = true;
+      missingRequired.push(key);
     }
   }
 
@@ -160,6 +163,7 @@ function main() {
       log.success(`${key} 已配置`);
     } else {
       log.warn(`${key} 未配置（可选）`);
+      warningItems.push(`${key}:optional`);
     }
   }
 
@@ -178,6 +182,7 @@ function main() {
       } else {
         log.error(`${key} 未配置（必需）`);
         hasError = true;
+        missingRequired.push(key);
       }
     }
 
@@ -191,12 +196,14 @@ function main() {
       log.success("微信支付配置已添加");
     } else {
       log.info("微信支付未配置（待后续实现）");
+      warningItems.push("CN_WECHAT_PAY_NOT_CONFIGURED");
     }
 
     if (hasAlipay) {
       log.success("支付宝配置已添加");
     } else {
       log.info("支付宝未配置（待后续实现）");
+      warningItems.push("CN_ALIPAY_NOT_CONFIGURED");
     }
 
   } else {
@@ -211,6 +218,7 @@ function main() {
       } else {
         log.error(`${key} 未配置（必需）`);
         hasError = true;
+        missingRequired.push(key);
       }
     }
 
@@ -228,6 +236,7 @@ function main() {
       log.error("至少需要配置一个 AI 服务密钥");
       console.log(`   可选: ${ENV_CONFIG.INTL.ai.oneOf.join(", ")}`);
       hasError = true;
+      missingRequired.push(`oneOf:${ENV_CONFIG.INTL.ai.oneOf.join("|")}`);
     }
 
     // 支付服务验证
@@ -240,8 +249,10 @@ function main() {
     } else if (stripeConfigured.length > 0) {
       log.warn(`Stripe 支付部分配置 (${stripeConfigured.length}/${ENV_CONFIG.INTL.payment.stripe.length})`);
       hasWarning = true;
+      warningItems.push("INTL_STRIPE_PARTIAL");
     } else {
       log.info("Stripe 支付未配置");
+      warningItems.push("INTL_STRIPE_NOT_CONFIGURED");
     }
 
     // PayPal
@@ -251,14 +262,17 @@ function main() {
     } else if (paypalConfigured.length > 0) {
       log.warn(`PayPal 支付部分配置 (${paypalConfigured.length}/${ENV_CONFIG.INTL.payment.paypal.length})`);
       hasWarning = true;
+      warningItems.push("INTL_PAYPAL_PARTIAL");
     } else {
       log.info("PayPal 支付未配置");
+      warningItems.push("INTL_PAYPAL_NOT_CONFIGURED");
     }
 
     // 至少需要一个支付方式
     if (stripeConfigured.length === 0 && paypalConfigured.length === 0) {
       log.warn("未配置任何支付方式（支付功能将不可用）");
       hasWarning = true;
+      warningItems.push("INTL_PAYMENT_NOT_CONFIGURED");
     }
   }
 
@@ -284,6 +298,7 @@ function main() {
       : "缺少 CloudBase 直连配置，且未配置 CN_APP_ORIGIN";
     log.error(`CN 数据源不可用：${detail}`);
     hasError = true;
+    missingRequired.push("CN_ADMIN_DATA_SOURCE");
   }
 
   if (intlDbConfigured || intlProxyReady) {
@@ -294,6 +309,7 @@ function main() {
       : "缺少 Supabase 直连配置，且未配置 INTL_APP_ORIGIN";
     log.error(`INTL 数据源不可用：${detail}`);
     hasError = true;
+    missingRequired.push("INTL_ADMIN_DATA_SOURCE");
   }
 
   const needsProxy = (isValidKey(cnOrigin) && !cnDbConfigured) || (isValidKey(intlOrigin) && !intlDbConfigured);
@@ -302,20 +318,46 @@ function main() {
   } else if (needsProxy) {
     log.error("ADMIN_PROXY_SECRET 未配置（必需：跨环境 /admin/orders 代理查询需要）");
     hasError = true;
+    missingRequired.push("ADMIN_PROXY_SECRET");
   } else {
     log.info("ADMIN_PROXY_SECRET 未配置（当前配置不依赖跨环境代理）");
+    warningItems.push("ADMIN_PROXY_SECRET_NOT_CONFIGURED");
   }
 
   // 6. 总结
   log.title("📊 验证结果");
 
   if (hasError) {
+    console.log(
+      `ENV_VERIFY_JSON=${JSON.stringify({
+        ok: false,
+        deploymentRegion,
+        missingRequired,
+        warnings: warningItems,
+      })}`
+    );
     log.error("配置验证失败，请修复上述错误后重试");
     process.exit(1);
   } else if (hasWarning) {
+    console.log(
+      `ENV_VERIFY_JSON=${JSON.stringify({
+        ok: true,
+        deploymentRegion,
+        missingRequired,
+        warnings: warningItems,
+      })}`
+    );
     log.warn("配置验证通过，但有一些警告");
     log.info("部分功能可能不可用，请根据需要补充配置");
   } else {
+    console.log(
+      `ENV_VERIFY_JSON=${JSON.stringify({
+        ok: true,
+        deploymentRegion,
+        missingRequired,
+        warnings: warningItems,
+      })}`
+    );
     log.success("配置验证通过！");
   }
 

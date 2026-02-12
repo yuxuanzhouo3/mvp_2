@@ -35,36 +35,14 @@ export default function DownloadPage() {
    * 生成下载链接
    */
   const getDownloadLink = (download: DownloadItem): string => {
-    if (isChina && download.fileID) {
-      // CN环境: 调用API下载
-      const params = new URLSearchParams({
-        platform: download.platform,
-        region: "CN",
-      });
-      if (download.arch) {
-        params.append("arch", download.arch);
-      }
-      return `/api/downloads?${params.toString()}`;
+    const params = new URLSearchParams({
+      platform: download.platform,
+      region: isChina ? "CN" : "INTL",
+    });
+    if (download.arch) {
+      params.append("arch", download.arch);
     }
-
-    // INTL环境: 检查URL类型
-    if (!isChina && download.url) {
-      // 如果是Supabase Storage路径,通过API路由下载
-      if (download.url.startsWith("supabase://")) {
-        const params = new URLSearchParams({
-          platform: download.platform,
-          region: "INTL",
-        });
-        if (download.arch) {
-          params.append("arch", download.arch);
-        }
-        return `/api/downloads?${params.toString()}`;
-      }
-      // 外部URL直接返回
-      return download.url;
-    }
-
-    return "#";
+    return `/api/downloads?${params.toString()}`;
   };
 
   /**

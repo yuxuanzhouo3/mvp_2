@@ -89,6 +89,8 @@ export interface AssistantAction {
   payload: string;
   /** 关联平台 ID（用于深链解析） */
   providerId?: string;
+  /** 关联候选结果 ID（用于卡片与跳转一一对应） */
+  candidateId?: string;
   /** 图标名称 */
   icon?: string;
 }

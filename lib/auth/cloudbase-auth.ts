@@ -8,6 +8,7 @@
 import cloudbase from '@cloudbase/node-sdk'
 import bcrypt from 'bcryptjs'
 import * as jwt from 'jsonwebtoken'
+import { getJwtSecret } from '@/lib/auth/secrets'
 
 interface CloudBaseUser {
   _id?: string
@@ -48,6 +49,7 @@ export async function cloudbaseSignInWithEmail(
   password: string
 ): Promise<{ success: boolean; user?: CloudBaseUser; message: string; token?: string }> {
   try {
+    const jwtSecret = getJwtSecret()
     const app = initCloudBase()
     const db = app.database()
     const usersCollection = db.collection('users')
@@ -71,7 +73,7 @@ export async function cloudbaseSignInWithEmail(
     // 生成 JWT Token
     const token = jwt.sign(
       { userId: user._id, email: user.email, region: 'china' },
-      process.env.JWT_SECRET || 'fallback-secret-key-for-development-only',
+      jwtSecret,
       { expiresIn: user.pro ? '90d' : '30d' }
     )
 
@@ -101,6 +103,7 @@ export async function cloudbaseSignUpWithEmail(
   password: string
 ): Promise<{ success: boolean; user?: CloudBaseUser; message: string; token?: string }> {
   try {
+    const jwtSecret = getJwtSecret()
     const app = initCloudBase()
     const db = app.database()
     const usersCollection = db.collection('users')
@@ -131,7 +134,7 @@ export async function cloudbaseSignUpWithEmail(
     // 生成 JWT Token
     const token = jwt.sign(
       { userId: result.id, email, region: 'china' },
-      process.env.JWT_SECRET || 'fallback-secret-key-for-development-only',
+      jwtSecret,
       { expiresIn: '30d' }
     )
 
@@ -160,6 +163,7 @@ export async function cloudbaseRefreshToken(
   userId: string
 ): Promise<{ success: boolean; token?: string; message: string }> {
   try {
+    const jwtSecret = getJwtSecret()
     const app = initCloudBase()
     const db = app.database()
     const usersCollection = db.collection('users')
@@ -176,7 +180,7 @@ export async function cloudbaseRefreshToken(
     // 生成新的 JWT Token
     const token = jwt.sign(
       { userId: user._id, email: user.email, region: 'china' },
-      process.env.JWT_SECRET || 'fallback-secret-key-for-development-only',
+      jwtSecret,
       { expiresIn: user.pro ? '90d' : '30d' }
     )
 
@@ -205,6 +209,7 @@ export async function cloudbaseSignInWithWechat(params: {
   tokenMeta?: { accessTokenExpiresIn: number; refreshTokenExpiresIn: number }
 }> {
   try {
+    const jwtSecret = getJwtSecret()
     const { openid, unionid, nickname, avatar } = params
     const app = initCloudBase()
     const db = app.database()
@@ -289,13 +294,13 @@ export async function cloudbaseSignInWithWechat(params: {
 
     const accessToken = jwt.sign(
       { userId: user._id, email: user.email, region: 'CN', wechatOpenId: openid },
-      process.env.JWT_SECRET || 'fallback-secret-key-for-development-only',
+      jwtSecret,
       { expiresIn: accessTokenExpiresIn }
     )
 
     const refreshToken = jwt.sign(
       { userId: user._id, type: 'refresh', region: 'CN' },
-      process.env.JWT_SECRET || 'fallback-secret-key-for-development-only',
+      jwtSecret,
       { expiresIn: refreshTokenExpiresIn }
     )
 

@@ -1,3 +1,5 @@
+import { getRequiredSecret } from "@/lib/auth/secrets";
+
 const COOKIE_NAME = "admin_session";
 
 type AdminSessionPayload = {
@@ -7,12 +9,12 @@ type AdminSessionPayload = {
   exp: number;
 };
 
+const ADMIN_SESSION_SECRET = getRequiredSecret("ADMIN_SESSION_SECRET", {
+  minLength: 16,
+});
+
 function getAdminSessionSecret(): string {
-  return (
-    process.env.ADMIN_SESSION_SECRET ||
-    process.env.JWT_SECRET ||
-    "dev-admin-session-secret"
-  );
+  return ADMIN_SESSION_SECRET;
 }
 
 function utf8Encode(value: string): Uint8Array {

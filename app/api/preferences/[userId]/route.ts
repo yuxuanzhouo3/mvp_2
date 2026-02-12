@@ -15,6 +15,8 @@ import {
 } from "@/lib/services/recommendation-service";
 import { isValidUserId } from "@/lib/utils";
 import type { UserPreferencesResponse, RecommendationCategory } from "@/lib/types/recommendation";
+import { requireAuth } from "@/lib/auth/auth";
+import { getAuthUserId, hasOwnershipAccess } from "@/lib/auth/ownership";
 
 export async function GET(
   request: NextRequest,
@@ -116,7 +118,44 @@ export async function PUT(
   { params }: { params: { userId: string } }
 ) {
   try {
+    const authResult = await requireAuth(request);
+    if (!authResult) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Unauthorized",
+        },
+        { status: 401 }
+      );
+    }
+
     const { userId } = params;
+    const actorUserId = getAuthUserId(authResult);
+    if (!actorUserId) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Unauthorized",
+        },
+        { status: 401 }
+      );
+    }
+
+    if (
+      !hasOwnershipAccess({
+        actorUserId,
+        targetUserId: userId,
+        permissionKey: "preferences:write",
+      })
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Forbidden",
+        },
+        { status: 403 }
+      );
+    }
 
     // 验证用户 ID 是否是有效 UUID
     if (!isValidUserId(userId)) {
@@ -187,7 +226,44 @@ export async function DELETE(
   { params }: { params: { userId: string } }
 ) {
   try {
+    const authResult = await requireAuth(request);
+    if (!authResult) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Unauthorized",
+        },
+        { status: 401 }
+      );
+    }
+
     const { userId } = params;
+    const actorUserId = getAuthUserId(authResult);
+    if (!actorUserId) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Unauthorized",
+        },
+        { status: 401 }
+      );
+    }
+
+    if (
+      !hasOwnershipAccess({
+        actorUserId,
+        targetUserId: userId,
+        permissionKey: "preferences:write",
+      })
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Forbidden",
+        },
+        { status: 403 }
+      );
+    }
 
     // 验证用户 ID 是否是有效 UUID
     if (!isValidUserId(userId)) {

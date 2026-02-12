@@ -4,6 +4,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import * as jwt from "jsonwebtoken";
 import cloudbase from "@cloudbase/node-sdk";
+import { getJwtSecret } from "@/lib/auth/secrets";
 
 const loginSchema = z.object({
   email: z.string().email("Invalid email format"),
@@ -28,6 +29,7 @@ function getCloudBaseApp() {
 
 export async function POST(request: NextRequest) {
   try {
+    const jwtSecret = getJwtSecret();
     const body = await request.json();
 
     const validationResult = loginSchema.safeParse(body);
@@ -69,13 +71,13 @@ export async function POST(request: NextRequest) {
       // 生成 JWT Token
       const accessToken = jwt.sign(
         { userId: user._id, email: user.email, region: "china" },
-        process.env.JWT_SECRET || "fallback-secret-key-for-development-only",
+        jwtSecret,
         { expiresIn: "1h" }
       );
 
       const refreshToken = jwt.sign(
         { userId: user._id, email: user.email, region: "china", type: "refresh" },
-        process.env.JWT_SECRET || "fallback-secret-key-for-development-only",
+        jwtSecret,
         { expiresIn: "7d" }
       );
 

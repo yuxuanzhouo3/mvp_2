@@ -8,6 +8,7 @@ import { supabase } from "@/lib/integrations/supabase";
 import cloudbase from "@cloudbase/node-sdk";
 import * as jwt from "jsonwebtoken";
 import { NextRequest } from "next/server";
+import { getJwtSecret } from "@/lib/auth/secrets";
 
 let cachedApp: any = null;
 
@@ -43,12 +44,13 @@ export async function verifyAuthToken(token: string): Promise<{
     const region = isChinaRegion() ? "CN" : "INTL";
 
     if (region === "CN") {
+      const jwtSecret = getJwtSecret();
       // 中国区域：CloudBase JWT 验证
       let payload: any;
       try {
         payload = jwt.verify(
           token,
-          process.env.JWT_SECRET || "fallback-secret-key-for-development-only"
+          jwtSecret
         );
       } catch (error) {
         console.error("[Auth Utils] JWT verification failed:", error);

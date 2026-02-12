@@ -11,7 +11,7 @@ import {
   MacOSArchType,
   getDownloadConfig,
 } from "@/lib/config/download.config";
-import { getCloudBaseDatabase } from "@/lib/database/cloudbase-client";
+import { getCloudBaseDatabase, getDbCommand } from "@/lib/database/cloudbase-client";
 import { getSupabaseAdmin } from "@/lib/integrations/supabase-admin";
 import { downloadFileFromCloudBase } from "@/lib/services/cloudbase-download";
 import { downloadFileFromSupabase } from "@/lib/services/supabase-download";
@@ -55,6 +55,52 @@ function hasIntlDbConfig(): boolean {
   return Boolean(url && serviceRoleKey);
 }
 
+function normalizePlatformValue(value: unknown): PlatformType | null {
+  const raw = value != null ? String(value).trim().toLowerCase() : "";
+  if (!raw) return null;
+  if (["android"].includes(raw)) return "android";
+  if (["ios", "iphone", "ipad"].includes(raw)) return "ios";
+  if (["windows", "win", "win32", "win64"].includes(raw)) return "windows";
+  if (["macos", "mac", "darwin", "osx", "mac-os"].includes(raw)) return "macos";
+  if (["linux"].includes(raw)) return "linux";
+  return null;
+}
+
+function getPlatformCandidates(platform: PlatformType): string[] {
+  switch (platform) {
+    case "windows":
+      return ["windows", "win", "win32", "win64"];
+    case "macos":
+      return ["macos", "mac", "darwin", "osx", "mac-os"];
+    default:
+      return [platform];
+  }
+}
+
+function normalizeMacArch(value: unknown): MacOSArchType | null {
+  const raw = value != null ? String(value).trim().toLowerCase() : "";
+  if (!raw) return null;
+  const normalized = raw.replaceAll("_", "-").replaceAll(" ", "-");
+  if (
+    [
+      "apple-silicon",
+      "applesilicon",
+      "arm",
+      "arm64",
+      "aarch64",
+      "m1",
+      "m2",
+      "m3",
+    ].includes(normalized)
+  ) {
+    return "apple-silicon";
+  }
+  if (["intel", "x64", "x86-64", "amd64", "x86_64"].includes(normalized)) {
+    return "intel";
+  }
+  return null;
+}
+
 type DbReleaseRow = {
   platform: string | null;
   arch: string | null;
@@ -92,35 +138,43 @@ async function findActiveReleaseFromDb(params: {
   platform: PlatformType;
   arch?: MacOSArchType;
 }): Promise<DbReleaseRow | null> {
-  const wantArch = params.arch || null;
+  const wantArch = normalizeMacArch(params.arch);
   const isMac = params.platform === "macos";
+  const platformCandidates = getPlatformCandidates(params.platform);
 
   if (params.region === "CN") {
     if (!hasCnDbConfig()) return null;
     const db = getCloudBaseDatabase();
+    const cmd = getDbCommand();
     const collection = db.collection("releases");
+    const where: any = {
+      platform: platformCandidates.length === 1 ? platformCandidates[0] : cmd.in(platformCandidates),
+      active: true,
+    };
     let listRes: any;
     try {
       listRes = await collection
-        .where({ platform: params.platform, active: true })
+        .where(where)
         .orderBy("created_at", "desc")
         .limit(50)
         .get();
     } catch {
       listRes = await collection
-        .where({ platform: params.platform, active: true })
+        .where(where)
         .orderBy("createdAt", "desc")
         .limit(50)
         .get();
     }
-    const rows = (listRes?.data || []).map(normalizeDbRow);
+    const rows: DbReleaseRow[] = ((listRes?.data || []) as any[])
+      .map(normalizeDbRow)
+      .filter((r) => normalizePlatformValue(r.platform) === params.platform);
 
-    const pick = (candidateArch: string | null): DbReleaseRow | null => {
+    const pick = (candidateArch: MacOSArchType | null): DbReleaseRow | null => {
       for (const r of rows) {
         if (!r.storageRef) continue;
-        const a = (r.arch || "").trim();
+        const a = normalizeMacArch(r.arch);
         if (candidateArch == null) {
-          if (!a) return r;
+          if (a == null) return r;
         } else {
           if (a === candidateArch) return r;
         }
@@ -128,11 +182,13 @@ async function findActiveReleaseFromDb(params: {
       return null;
     };
 
+    const pickAny = (): DbReleaseRow | null => rows.find((r) => !!r.storageRef) || null;
+
     if (isMac) {
-      if (wantArch) return pick(wantArch);
-      return pick("apple-silicon") || pick("intel") || pick(null);
+      if (wantArch) return pick(wantArch) || pick(null) || pickAny();
+      return pick("apple-silicon") || pick("intel") || pick(null) || pickAny();
     }
-    return pick(null);
+    return pick(null) || pickAny();
   }
 
   if (!hasIntlDbConfig()) return null;
@@ -140,20 +196,22 @@ async function findActiveReleaseFromDb(params: {
   const q = supabase
     .from("releases")
     .select("platform,arch,file_name,storage_ref,active,created_at")
-    .eq("platform", params.platform)
+    .in("platform", platformCandidates)
     .eq("active", true)
     .order("created_at", { ascending: false })
     .limit(50);
   const { data, error } = await q;
   if (error) return null;
-  const rows = (data || []).map(normalizeDbRow);
+  const rows: DbReleaseRow[] = ((data || []) as any[])
+    .map(normalizeDbRow)
+    .filter((r) => normalizePlatformValue(r.platform) === params.platform);
 
-  const pick = (candidateArch: string | null): DbReleaseRow | null => {
+  const pick = (candidateArch: MacOSArchType | null): DbReleaseRow | null => {
     for (const r of rows) {
       if (!r.storageRef) continue;
-      const a = (r.arch || "").trim();
+      const a = normalizeMacArch(r.arch);
       if (candidateArch == null) {
-        if (!a) return r;
+        if (a == null) return r;
       } else {
         if (a === candidateArch) return r;
       }
@@ -161,11 +219,13 @@ async function findActiveReleaseFromDb(params: {
     return null;
   };
 
+  const pickAny = (): DbReleaseRow | null => rows.find((r) => !!r.storageRef) || null;
+
   if (isMac) {
-    if (wantArch) return pick(wantArch);
-    return pick("apple-silicon") || pick("intel") || pick(null);
+    if (wantArch) return pick(wantArch) || pick(null) || pickAny();
+    return pick("apple-silicon") || pick("intel") || pick(null) || pickAny();
   }
-  return pick(null);
+  return pick(null) || pickAny();
 }
 
 /**
@@ -178,9 +238,11 @@ async function findActiveReleaseFromDb(params: {
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
-    const platform = searchParams.get("platform") as PlatformType | null;
-    const region = (searchParams.get("region") as "CN" | "INTL") || "CN";
-    const arch = searchParams.get("arch") as MacOSArchType | undefined;
+    const platformRaw = searchParams.get("platform");
+    const platform = normalizePlatformValue(platformRaw);
+    const regionRaw = String(searchParams.get("region") || "CN").toUpperCase();
+    const region: "CN" | "INTL" = regionRaw === "INTL" ? "INTL" : "CN";
+    const arch = normalizeMacArch(searchParams.get("arch"));
 
     // 参数验证
     if (!platform) {
@@ -190,29 +252,17 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const validPlatforms: PlatformType[] = [
-      "android",
-      "ios",
-      "windows",
-      "macos",
-      "linux",
-    ];
-    if (!validPlatforms.includes(platform)) {
-      return NextResponse.json(
-        { error: `无效的平台: ${platform}` },
-        { status: 400 }
-      );
-    }
+    const resolvedArch = platform === "macos" ? (arch ?? undefined) : undefined;
 
     console.log(
-      `[Download API] 收到下载请求: platform=${platform}, region=${region}, arch=${arch}`
+      `[Download API] 收到下载请求: platform=${platform}, region=${region}, arch=${resolvedArch}`
     );
 
     // 根据区域处理下载
     if (region === "CN") {
-      return await handleChinaDownload(platform, arch);
+      return await handleChinaDownload(platform, resolvedArch);
     } else {
-      return await handleIntlDownload(platform, arch);
+      return await handleIntlDownload(platform, resolvedArch);
     }
   } catch (error) {
     console.error("[Download API] 处理请求失败:", error);

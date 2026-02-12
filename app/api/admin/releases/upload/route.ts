@@ -7,6 +7,8 @@ import { getSupabaseAdmin } from "@/lib/integrations/supabase-admin";
 export const dynamic = "force-dynamic";
 
 type DataSource = "CN" | "INTL";
+type PlatformType = "android" | "ios" | "windows" | "macos" | "linux";
+type MacOSArchType = "intel" | "apple-silicon";
 
 function getProxySecret(): string | null {
   return process.env["ADMIN_PROXY_SECRET"] || process.env["AI_STATS_PROXY_SECRET"] || null;
@@ -47,6 +49,41 @@ function normalizeText(value: unknown): string {
 function normalizeArch(value: unknown): string | null {
   const v = normalizeText(value);
   return v ? v : null;
+}
+
+function normalizePlatform(value: unknown): PlatformType | null {
+  const raw = normalizeText(value).toLowerCase();
+  if (!raw) return null;
+  if (["android"].includes(raw)) return "android";
+  if (["ios", "iphone", "ipad"].includes(raw)) return "ios";
+  if (["windows", "win", "win32", "win64"].includes(raw)) return "windows";
+  if (["macos", "mac", "darwin", "osx", "mac-os"].includes(raw)) return "macos";
+  if (["linux"].includes(raw)) return "linux";
+  return null;
+}
+
+function normalizeMacArch(value: unknown): MacOSArchType | null {
+  const raw = normalizeText(value).toLowerCase();
+  if (!raw) return null;
+  const normalized = raw.replaceAll("_", "-").replaceAll(" ", "-");
+  if (
+    [
+      "apple-silicon",
+      "applesilicon",
+      "arm",
+      "arm64",
+      "aarch64",
+      "m1",
+      "m2",
+      "m3",
+    ].includes(normalized)
+  ) {
+    return "apple-silicon";
+  }
+  if (["intel", "x64", "x86-64", "amd64", "x86_64"].includes(normalized)) {
+    return "intel";
+  }
+  return null;
 }
 
 function normalizeBool(value: unknown): boolean {
@@ -101,14 +138,19 @@ export async function POST(request: NextRequest) {
   const sourceRaw = normalizeText(form.get("source"));
   const source: DataSource = sourceRaw.toUpperCase() === "INTL" ? "INTL" : "CN";
   const version = normalizeText(form.get("version"));
-  const platform = normalizeText(form.get("platform"));
-  const arch = normalizeArch(form.get("arch"));
+  const platform = normalizePlatform(form.get("platform"));
+  const archInput = normalizeArch(form.get("arch"));
+  const arch = platform === "macos" ? normalizeMacArch(archInput) : null;
   const notes = normalizeText(form.get("notes")) || null;
   const active = normalizeBool(form.get("active"));
   const file = form.get("file");
 
   if (!version || !platform || !file || !(file instanceof File)) {
     return NextResponse.json({ error: "Bad Request" }, { status: 400 });
+  }
+
+  if (platform === "macos" && archInput && !arch) {
+    return NextResponse.json({ error: "Invalid macOS arch" }, { status: 400 });
   }
 
   if (source === "CN" && !hasCnConfig()) {

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { callAI } from "@/lib/ai/client";
+import { resolveCandidateLink } from "@/lib/outbound/link-resolver";
 
 const malformedResultsJson =
   '{"type":"results","message":"找到了以下候选结果：","intent":"search_nearby","candidates":[{"id":"1","name":"门店A","description":"描述A","category":"汽车服务","distance":"1.2km","rating":4.6,"priceRange":"¥30-80","platform":"高德地图","searchQuery":"洗车 店"},"{"id":"2","name":"门店B","description":"描述B","category":"汽车服务","distance":"2.8km","rating":4.4,"priceRange":"¥25-60","platform":"大众点评","searchQuery":"洗车 店"}],"followUps":[{"text":"要不要更近一点？","type":"refine"}]}'
@@ -74,6 +75,76 @@ vi.mock("@/lib/ai/client", () => ({
 import { processChat } from "./chat-engine";
 
 describe("processChat JSON tolerant parsing", () => {
+  it("binds open_app action to each candidate via candidateId", async () => {
+    const resolveMock = vi.mocked(resolveCandidateLink);
+    resolveMock
+      .mockReturnValueOnce({
+        provider: "Google Maps",
+        title: "Store A",
+        primary: { type: "web", url: "https://example.com/a" },
+        fallbacks: [],
+        metadata: {
+          region: "INTL",
+          locale: "en",
+          category: "shopping",
+          providerDisplayName: "Google Maps",
+        },
+      } as any)
+      .mockReturnValueOnce({
+        provider: "Google Maps",
+        title: "Store B",
+        primary: { type: "web", url: "https://example.com/b" },
+        fallbacks: [],
+        metadata: {
+          region: "INTL",
+          locale: "en",
+          category: "shopping",
+          providerDisplayName: "Google Maps",
+        },
+      } as any);
+
+    vi.mocked(callAI).mockResolvedValueOnce({
+      model: "qwen-flash",
+      content: JSON.stringify({
+        type: "results",
+        message: "Found 2 candidates",
+        intent: "search_nearby",
+        candidates: [
+          {
+            id: "c1",
+            name: "Store A",
+            description: "A",
+            category: "shopping",
+            platform: "Google Maps",
+            searchQuery: "query-a",
+          },
+          {
+            id: "c2",
+            name: "Store B",
+            description: "B",
+            category: "shopping",
+            platform: "Google Maps",
+            searchQuery: "query-b",
+          },
+        ],
+      }),
+    });
+
+    const response = await processChat(
+      {
+        message: "find stores",
+        locale: "en",
+        region: "INTL",
+      },
+      "test-user"
+    );
+
+    const openActions = (response.actions || []).filter((a) => a.type === "open_app");
+    expect(openActions).toHaveLength(2);
+    expect(openActions[0]?.candidateId).toBe("c1");
+    expect(openActions[1]?.candidateId).toBe("c2");
+  });
+
   it("repairs malformed candidate array JSON and keeps structured cards", async () => {
     const response = await processChat(
       {

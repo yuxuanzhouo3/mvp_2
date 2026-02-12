@@ -316,7 +316,7 @@ export async function searchNearbyStores(
       ? await fetchNearbyStoresFromCloudBase(params.region, inferredCategory)
       : await fetchNearbyStoresFromSupabase(params.region, inferredCategory);
 
-  let result = mapRowsToCandidates(primaryRows, params, radiusKm, limit);
+  const result = mapRowsToCandidates(primaryRows, params, radiusKm, limit);
   result.category = inferredCategory;
 
   if (result.candidates.length >= Math.min(3, limit) || !inferredCategory) {

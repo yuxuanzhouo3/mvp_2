@@ -865,6 +865,8 @@ function CandidateCards({
       {candidates.map((c, idx) => {
         // 找到对应的 open_app action
         const openAction = actions.find(
+          (a) => a.type === "open_app" && a.candidateId === c.id
+        ) || actions.find(
           (a) => a.type === "open_app" && a.providerId === c.platform
         );
         const callAction = actions.find(
@@ -886,6 +888,10 @@ function CandidateCards({
                 </div>
                 <p className="text-[11px] text-gray-500 mb-2 line-clamp-2">
                   {c.description}
+                </p>
+                <p className="text-[10px] text-purple-600/80 mb-2 break-all">
+                  {isZh ? "搜索词：" : "Search:"}
+                  {(c.searchQuery || c.name).trim()}
                 </p>
 
                 {/* 元数据标签 */}

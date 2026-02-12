@@ -158,9 +158,6 @@ import type { CandidateLink } from "@/lib/types/recommendation";
 // Generators for Property 2
 // ---------------------------------------------------------------------------
 
-/** Link types that getAutoTryLinks considers as auto-try candidates */
-const autoTryCandidateTypes = ["app", "intent", "universal_link"] as const;
-
 /** All possible link types for generating realistic CandidateLinks */
 const allLinkTypes = [
   "app",
@@ -327,9 +324,6 @@ import { getGooglePlayLink } from "./deep-link-helpers";
 // ---------------------------------------------------------------------------
 // Generators for Property 3
 // ---------------------------------------------------------------------------
-
-/** Store link types that getGooglePlayLink may encounter */
-const storeLinkTypes: CandidateLinkType[] = ["store", "web", "intent", "app"];
 
 /**
  * Generate an intent:// link with com.android.vending (Google Play intent).

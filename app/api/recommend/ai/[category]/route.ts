@@ -556,7 +556,7 @@ function isIntlMobileEntertainmentContext(params: {
   return category === "entertainment" && locale === "en" && Boolean(isMobile);
 }
 
-export function isIntlAndroidShoppingContext(params: {
+function isIntlAndroidShoppingContext(params: {
   category: RecommendationCategory;
   locale: "zh" | "en";
   isMobile?: boolean;
@@ -571,7 +571,7 @@ export function isIntlAndroidShoppingContext(params: {
   );
 }
 
-export function isIntlAndroidFoodContext(params: {
+function isIntlAndroidFoodContext(params: {
   category: RecommendationCategory;
   locale: "zh" | "en";
   isMobile?: boolean;
@@ -586,7 +586,7 @@ export function isIntlAndroidFoodContext(params: {
   );
 }
 
-export function isIntlAndroidTravelContext(params: {
+function isIntlAndroidTravelContext(params: {
   category: RecommendationCategory;
   locale: "zh" | "en";
   isMobile?: boolean;
@@ -601,7 +601,7 @@ export function isIntlAndroidTravelContext(params: {
   );
 }
 
-export function isIntlAndroidFitnessContext(params: {
+function isIntlAndroidFitnessContext(params: {
   category: RecommendationCategory;
   locale: "zh" | "en";
   isMobile?: boolean;
@@ -738,7 +738,6 @@ const INTL_ANDROID_FOOD_FALLBACK_DISHES_BY_PLATFORM: Record<string, IntlAndroidF
 
 function resolveIntlAndroidFoodPlatform(platform: string, index: number): string {
   if (INTL_ANDROID_FOOD_ALLOWED_PLATFORMS.has(platform)) return platform;
-  if (REQUIRED_FOOD_PLATFORMS_INTL_ANDROID.length === 0) return "DoorDash";
   return REQUIRED_FOOD_PLATFORMS_INTL_ANDROID[Math.abs(index) % REQUIRED_FOOD_PLATFORMS_INTL_ANDROID.length] || "DoorDash";
 }
 
@@ -776,7 +775,7 @@ function isValidIntlAndroidFoodDishTerm(value: string): boolean {
   });
 }
 
-export function sanitizeIntlAndroidFoodRecommendation(params: {
+function sanitizeIntlAndroidFoodRecommendation(params: {
   title?: string | null;
   query?: string | null;
   tags?: string[] | null;
@@ -928,7 +927,7 @@ const GLOBAL_GENERIC_QUERY_TERMS = new Set([
   "me",
 ]);
 
-export function isIntlAndroidConcreteTermContext(params: {
+function isIntlAndroidConcreteTermContext(params: {
   category: RecommendationCategory;
   locale: "zh" | "en";
   isMobile?: boolean;
@@ -943,7 +942,7 @@ export function isIntlAndroidConcreteTermContext(params: {
   );
 }
 
-export function isConcreteIntlAndroidSearchQuery(params: {
+function isConcreteIntlAndroidSearchQuery(params: {
   category: RecommendationCategory;
   query: string;
 }): boolean {
@@ -978,7 +977,7 @@ export function isConcreteIntlAndroidSearchQuery(params: {
   return false;
 }
 
-export function enforceConcreteIntlAndroidSearchQuery(params: {
+function enforceConcreteIntlAndroidSearchQuery(params: {
   category: RecommendationCategory;
   platform: string;
   title?: string | null;
@@ -1003,7 +1002,7 @@ export function enforceConcreteIntlAndroidSearchQuery(params: {
   return INTL_ANDROID_CONCRETE_QUERY_FALLBACK_BY_CATEGORY[params.category] || query || title;
 }
 
-export function alignIntlAndroidTitleWithSearchQuery(params: {
+function alignIntlAndroidTitleWithSearchQuery(params: {
   category: RecommendationCategory;
   locale: "zh" | "en";
   isMobile?: boolean;
@@ -1036,7 +1035,7 @@ export function alignIntlAndroidTitleWithSearchQuery(params: {
   return normalizedQuery;
 }
 
-export function getRecommendationTargetCount(params: {
+function getRecommendationTargetCount(params: {
   category: RecommendationCategory;
   locale: "zh" | "en";
   isMobile?: boolean;
@@ -1076,7 +1075,7 @@ function getEntertainmentPlatformOverride(params: {
   return index < max ? REQUIRED_ENTERTAINMENT_PLATFORMS_INTL_MOBILE[index] : null;
 }
 
-export function getShoppingPlatformOverride(params: {
+function getShoppingPlatformOverride(params: {
   category: RecommendationCategory;
   locale: "zh" | "en";
   client: "app" | "web";
@@ -1097,7 +1096,7 @@ export function getShoppingPlatformOverride(params: {
   return index < max ? REQUIRED_SHOPPING_PLATFORMS_CN_WEB[index] : null;
 }
 
-export function getFoodPlatformOverride(params: {
+function getFoodPlatformOverride(params: {
   category: RecommendationCategory;
   locale: "zh" | "en";
   isMobile?: boolean;
@@ -1114,7 +1113,7 @@ export function getFoodPlatformOverride(params: {
   return index < max ? REQUIRED_FOOD_PLATFORMS_INTL_ANDROID[index] : null;
 }
 
-export function getTravelPlatformOverride(params: {
+function getTravelPlatformOverride(params: {
   category: RecommendationCategory;
   locale: "zh" | "en";
   isMobile?: boolean;
@@ -1131,7 +1130,7 @@ export function getTravelPlatformOverride(params: {
   return index < max ? REQUIRED_TRAVEL_PLATFORMS_INTL_ANDROID[index] : null;
 }
 
-export function getFitnessPlatformOverride(params: {
+function getFitnessPlatformOverride(params: {
   category: RecommendationCategory;
   locale: "zh" | "en";
   isMobile?: boolean;

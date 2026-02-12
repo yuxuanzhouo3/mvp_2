@@ -31,11 +31,11 @@ docs/                # 架构、优化、验证文档
    ```bash
    pnpm install
    ```
-2) 配置环境变量  
+2) 配置环境变量（必做）  
    ```bash
    cp .env.example .env.local
    # 按需填写 INTL 或 CN 所需变量
-   pnpm run verify:env   # 可选，检查必填项
+   pnpm run verify:env   # 必跑：检查必填项
    ```
    - INTL：`NEXT_PUBLIC_SUPABASE_URL`、`NEXT_PUBLIC_SUPABASE_ANON_KEY`、`SUPABASE_SERVICE_ROLE_KEY`、AI 密钥（至少配置 OpenAI/Mistral 之一）、Stripe/PayPal 密钥。  
    - CN：`NEXT_PUBLIC_WECHAT_CLOUDBASE_ID`、`CLOUDBASE_SECRET_ID`、`CLOUDBASE_SECRET_KEY`、`ZHIPU_API_KEY`，可选支付宝/微信支付、微信 OAuth。  
@@ -49,8 +49,18 @@ docs/                # 架构、优化、验证文档
    ```
 5) 生产构建
    ```bash
-   pnpm build && pnpm start
+   pnpm run verify:env && pnpm build && pnpm start
    ```
+
+## 支付与推荐接口迁移（P0）
+- 已废弃（返回 `410 Gone`）：
+  - `POST /api/recommend/[category]`
+  - `POST /api/stripe/create-checkout`
+  - `POST /api/paypal/create-subscription`
+- 推荐替代接口：
+  - `GET /api/recommend/ai/[category]`
+- 支付替代接口：
+  - `POST /api/payment/create`
 
 ## 常用脚本
 - `pnpm dev`：本地开发
@@ -64,4 +74,3 @@ docs/                # 架构、优化、验证文档
 - 区域切换：`NEXT_PUBLIC_DEPLOYMENT_REGION=INTL|CN` 控制 Auth/DB/支付/AI 的适配逻辑，相关说明见 `docs/2025-12-19/DUAL_ENVIRONMENT_GUIDE.md`。
 - 下载入口：INTL 使用 `NEXT_PUBLIC_INTL_*_URL` 外链，CN 使用 `CN_*_FILE_ID` CloudBase 文件 ID。
 - 演示账户：`LOGIN_INFO.md` 提供 Free/Pro/Enterprise 示例账号（如需本地验证可按文档补充数据）。
-
