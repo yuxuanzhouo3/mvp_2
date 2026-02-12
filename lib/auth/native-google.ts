@@ -51,9 +51,16 @@ function getNativeGoogleSignInFn(): NativeGoogleSignInFn | null {
 }
 
 function isNativeGoogleSignInEnabled(): boolean {
-  const raw = process.env.NEXT_PUBLIC_ENABLE_NATIVE_GOOGLE_SIGN_IN || ""
+  const raw = process.env.NEXT_PUBLIC_ENABLE_NATIVE_GOOGLE_SIGN_IN
+  if (!raw) return true
+
   const value = raw.trim().toLowerCase()
-  return value === "1" || value === "true"
+  return !(
+    value === "0" ||
+    value === "false" ||
+    value === "off" ||
+    value === "no"
+  )
 }
 
 function getGoogleServerClientId(): string {
