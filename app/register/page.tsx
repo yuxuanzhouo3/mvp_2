@@ -15,7 +15,10 @@ import { useIsIPhone, useIsMobile } from '@/hooks/use-device'
 import { useLanguage } from '@/components/language-provider'
 import { useTranslations } from '@/lib/i18n'
 import { isAppContainer } from '@/lib/app/app-container'
-import { signInWithNativeGoogleForSupabase } from '@/lib/auth/native-google'
+import {
+  canUseNativeGoogleSignIn,
+  signInWithNativeGoogleForSupabase,
+} from '@/lib/auth/native-google'
 
 export default function RegisterPage() {
   const router = useRouter()
@@ -200,11 +203,24 @@ export default function RegisterPage() {
     setError(null)
 
     try {
-      if (provider === 'google' && !isChina && isAppContainer()) {
-        await signInWithNativeGoogleForSupabase()
-        router.push('/')
-        router.refresh()
-        return
+      const inAppContainer = isAppContainer()
+      if (provider === 'google' && !isChina) {
+        if (canUseNativeGoogleSignIn()) {
+          await signInWithNativeGoogleForSupabase()
+          router.push('/')
+          router.refresh()
+          return
+        }
+
+        if (inAppContainer) {
+          setError(
+            isChineseLanguage
+              ? '应用内 Google 登录暂不可用，请稍后重试或升级到最新版本。'
+              : 'Google sign-in is currently unavailable inside the app. Please try again later or update the app.'
+          )
+          setOauthLoading(null)
+          return
+        }
       }
 
       const baseUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin

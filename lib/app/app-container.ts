@@ -4,6 +4,9 @@ export function isAppContainer(): boolean {
   if (search.get("app") === "1") return true;
 
   const w = window as any;
+  if (typeof w.JSBridge?.postMessage === "function") return true;
+  if (typeof w.median?.auth?.googleSignIn === "function") return true;
+  if (typeof w.gonative?.auth?.googleSignIn === "function") return true;
   if (typeof w.ReactNativeWebView?.postMessage === "function") return true;
   if (typeof w.webkit?.messageHandlers?.wechatLogin?.postMessage === "function") return true;
   if (typeof w.webkit?.messageHandlers?.native?.postMessage === "function") return true;
