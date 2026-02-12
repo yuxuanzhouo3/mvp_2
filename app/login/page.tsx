@@ -22,6 +22,7 @@ import {
 } from '@/lib/wechat-mp'
 import { isAppContainer } from '@/lib/app/app-container'
 import { saveAuthState } from '@/lib/auth/auth-state-manager'
+import { signInWithNativeGoogleForSupabase } from '@/lib/auth/native-google'
 
 type LoginMode = 'password' | 'reset'
 
@@ -351,6 +352,13 @@ export default function LoginPage() {
     setError(null)
 
     try {
+      if (provider === 'google' && !isChina && isAppContainer()) {
+        await signInWithNativeGoogleForSupabase()
+        router.push('/')
+        router.refresh()
+        return
+      }
+
       const baseUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin
       const callbackUrl = new URL('/auth/callback', baseUrl)
       callbackUrl.searchParams.set('redirect', '/')

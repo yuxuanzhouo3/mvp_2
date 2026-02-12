@@ -9,12 +9,10 @@ type AdminSessionPayload = {
   exp: number;
 };
 
-const ADMIN_SESSION_SECRET = getRequiredSecret("ADMIN_SESSION_SECRET", {
-  minLength: 16,
-});
-
 function getAdminSessionSecret(): string {
-  return ADMIN_SESSION_SECRET;
+  return getRequiredSecret("ADMIN_SESSION_SECRET", {
+    minLength: 16,
+  });
 }
 
 function utf8Encode(value: string): Uint8Array {

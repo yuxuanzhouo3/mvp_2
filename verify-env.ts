@@ -85,6 +85,7 @@ const ENV_CONFIG = {
       "NEXT_PUBLIC_SUPABASE_ANON_KEY",
       "SUPABASE_SERVICE_ROLE_KEY",
     ],
+    optional: ["NEXT_PUBLIC_GOOGLE_WEB_CLIENT_ID"],
     ai: {
       // 至少需要一个 AI 服务
       oneOf: ["OPENAI_API_KEY", "MISTRAL_API_KEY", "GROQ_API_KEY", "GOOGLE_AI_API_KEY"],
@@ -219,6 +220,16 @@ function main() {
         log.error(`${key} 未配置（必需）`);
         hasError = true;
         missingRequired.push(key);
+      }
+    }
+
+    for (const key of ENV_CONFIG.INTL.optional) {
+      const value = getEnvValue(key);
+      if (isValidKey(value)) {
+        log.success(`${key} 已配置 (${value!.slice(0, 12)}...)`);
+      } else {
+        log.info(`${key} 未配置（可选：Android 原生 Google 登录将不可用）`);
+        warningItems.push(`${key}:optional`);
       }
     }
 

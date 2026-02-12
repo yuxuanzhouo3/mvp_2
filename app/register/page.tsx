@@ -15,6 +15,7 @@ import { useIsIPhone, useIsMobile } from '@/hooks/use-device'
 import { useLanguage } from '@/components/language-provider'
 import { useTranslations } from '@/lib/i18n'
 import { isAppContainer } from '@/lib/app/app-container'
+import { signInWithNativeGoogleForSupabase } from '@/lib/auth/native-google'
 
 export default function RegisterPage() {
   const router = useRouter()
@@ -199,6 +200,13 @@ export default function RegisterPage() {
     setError(null)
 
     try {
+      if (provider === 'google' && !isChina && isAppContainer()) {
+        await signInWithNativeGoogleForSupabase()
+        router.push('/')
+        router.refresh()
+        return
+      }
+
       const baseUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin
       const callbackUrl = new URL('/auth/callback', baseUrl)
       callbackUrl.searchParams.set('redirect', '/')
