@@ -203,7 +203,6 @@ export default function RegisterPage() {
     setError(null)
 
     try {
-      const inAppContainer = isAppContainer()
       if (provider === 'google' && !isChina) {
         if (canUseNativeGoogleSignIn()) {
           await signInWithNativeGoogleForSupabase()
@@ -212,15 +211,6 @@ export default function RegisterPage() {
           return
         }
 
-        if (inAppContainer) {
-          setError(
-            isChineseLanguage
-              ? '应用内 Google 登录暂不可用，请稍后重试或升级到最新版本。'
-              : 'Google sign-in is currently unavailable inside the app. Please try again later or update the app.'
-          )
-          setOauthLoading(null)
-          return
-        }
       }
 
       const baseUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin

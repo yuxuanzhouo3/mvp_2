@@ -50,6 +50,12 @@ function getNativeGoogleSignInFn(): NativeGoogleSignInFn | null {
   return null
 }
 
+function isNativeGoogleSignInEnabled(): boolean {
+  const raw = process.env.NEXT_PUBLIC_ENABLE_NATIVE_GOOGLE_SIGN_IN || ""
+  const value = raw.trim().toLowerCase()
+  return value === "1" || value === "true"
+}
+
 function getGoogleServerClientId(): string {
   return (
     process.env.NEXT_PUBLIC_GOOGLE_WEB_CLIENT_ID ||
@@ -73,7 +79,11 @@ function getNativeErrorMessage(result: NativeGoogleSignInResult): string {
 }
 
 export function canUseNativeGoogleSignIn(): boolean {
-  return isAppContainer() && Boolean(getNativeGoogleSignInFn())
+  return (
+    isNativeGoogleSignInEnabled() &&
+    isAppContainer() &&
+    Boolean(getNativeGoogleSignInFn())
+  )
 }
 
 export async function signInWithNativeGoogleForSupabase(): Promise<void> {
@@ -155,4 +165,3 @@ export async function signInWithNativeGoogleForSupabase(): Promise<void> {
     console.warn("[native-google] failed to refresh profile cache:", error)
   }
 }
-
