@@ -32,6 +32,32 @@ const log = {
 
 const envPath = path.resolve(".env.local");
 
+function normalizeEnvValue(value: string): string {
+  return value.trim().replace(/^["']|["']$/g, "");
+}
+
+function parseEnvFile(content: string): Record<string, string> {
+  const entries: Record<string, string> = {};
+
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) {
+      continue;
+    }
+
+    const eqIndex = line.indexOf("=");
+    if (eqIndex <= 0) {
+      continue;
+    }
+
+    const key = line.slice(0, eqIndex).trim();
+    const value = line.slice(eqIndex + 1);
+    entries[key] = normalizeEnvValue(value);
+  }
+
+  return entries;
+}
+
 // 环境变量配置定义
 const ENV_CONFIG = {
   // 通用必需变量
@@ -104,28 +130,30 @@ const ENV_CONFIG = {
 function main() {
   log.title("🔍 双环境配置验证");
 
-  // 1. 检查文件存在
-  if (!fs.existsSync(envPath)) {
-    log.error(".env.local 文件不存在");
-    console.log("\n💡 创建方法:");
-    console.log("   1. 复制项目根目录的环境变量模板");
-    console.log("   2. 或手动创建 .env.local 文件并配置环境变量");
-    console.log("\n📖 参考文档: docs/2025-12-19/DUAL_ENVIRONMENT_GUIDE.md");
-    process.exit(1);
+  const hasEnvFile = fs.existsSync(envPath);
+  let envFromFile: Record<string, string> = {};
+
+  // 1. 加载环境变量来源
+  if (hasEnvFile) {
+    envFromFile = parseEnvFile(fs.readFileSync(envPath, "utf-8"));
+    log.success(".env.local 文件存在（本地文件模式）");
+  } else {
+    log.warn(".env.local 文件不存在，将使用进程环境变量（适用于 Vercel/CI）");
   }
 
-  log.success(".env.local 文件存在");
-
-  // 2. 读取文件
-  const envContent = fs.readFileSync(envPath, "utf-8");
-  const lines = envContent.split("\n");
-
+  // 2. 统一获取环境变量：process.env 优先，其次 .env.local
   const getEnvValue = (key: string): string | null => {
-    const line = lines.find((l) => l.trim().startsWith(`${key}=`));
-    if (!line) return null;
-    const value = line.slice(key.length + 1).trim();
-    // 移除引号
-    return value.replace(/^["']|["']$/g, "");
+    const processValue = process.env[key];
+    if (typeof processValue === "string" && processValue.trim() !== "") {
+      return normalizeEnvValue(processValue);
+    }
+
+    const fileValue = envFromFile[key];
+    if (typeof fileValue === "string" && fileValue.trim() !== "") {
+      return fileValue;
+    }
+
+    return null;
   };
 
   const isValidKey = (value: string | null): boolean =>
