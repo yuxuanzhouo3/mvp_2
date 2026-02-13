@@ -179,7 +179,7 @@ describe("processChat INTL nearby flow", () => {
     expect(response.candidates?.[0]?.name).toBe("Apple Store Fifth Avenue");
   });
 
-  it("keeps clarify flow but removes location questions when seed is empty", async () => {
+  it("returns fallback results instead of clarify when seed is empty", async () => {
     vi.mocked(searchNearbyStores).mockResolvedValueOnce({
       source: "overpass",
       radiusKm: 10,
@@ -211,10 +211,10 @@ describe("processChat INTL nearby flow", () => {
       "test-user"
     );
 
-    expect(response.type).toBe("clarify");
-    expect(response.message.toLowerCase()).toContain("already have your location");
-    const questions = response.clarifyQuestions || [];
-    expect(questions.some((q) => q.toLowerCase().includes("location"))).toBe(false);
-    expect(questions.some((q) => q.toLowerCase().includes("price"))).toBe(true);
+    expect(response.type).toBe("results");
+    expect(response.message.toLowerCase()).toContain("prepared a nearby search");
+    expect(response.clarifyQuestions).toBeUndefined();
+    expect(response.candidates?.[0]?.name).toContain("Search on map");
+    expect(response.candidates?.[0]?.platform).toBe("Google Maps");
   });
 });

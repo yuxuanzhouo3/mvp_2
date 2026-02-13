@@ -214,6 +214,8 @@ export async function processChat(
   parsed = preventRedundantLocationClarify(
     parsed,
     effectiveLocale,
+    region,
+    message,
     hasLocation,
     nearbyIntent,
     intlNearbySeed
@@ -284,19 +286,49 @@ function normalizeLocation(
   return { lat, lng };
 }
 
-function asksForLocation(text: string | undefined): boolean {
-  if (!text) return false;
+function sanitizeNearbySearchQuery(message: string): string {
+  const trimmed = message.trim();
+  if (!trimmed) {
+    return "nearby stores";
+  }
 
-  const normalized = text.toLowerCase();
-  const enPattern =
-    /\b(current location|your location|share (?:your )?location|location permission|where are you|which city|your city|coordinates?|latitude|longitude|lat\b|lng\b)\b/;
-  const zhPattern = /(位置|定位|坐标|经纬|城市|地区|在哪|哪里|所在地|所在城市)/;
-  return enPattern.test(normalized) || zhPattern.test(text);
+  const stripped = trimmed
+    .replace(/\bwithin\s+\d+(?:\.\d+)?\s*(?:km|kilometers?|kilometres?|miles?|meters?|m)\b/gi, " ")
+    .replace(/\b(nearby|near me|around me|close by|nearest)\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return stripped.length > 0 ? stripped : trimmed;
+}
+
+function buildFallbackNearbyCandidates(
+  message: string,
+  locale: "zh" | "en",
+  region: "CN" | "INTL"
+): CandidateResult[] {
+  const query = sanitizeNearbySearchQuery(message);
+  const platform = region === "CN" ? "高德地图" : "Google Maps";
+
+  return [
+    {
+      id: "nearby_fallback_map_search",
+      name: locale === "zh" ? `地图搜索：${query}` : `Search on map: ${query}`,
+      description:
+        locale === "zh"
+          ? "已基于你当前位置准备地图搜索入口，可直接查看附近门店。"
+          : "I used your current location and prepared a direct nearby map search.",
+      category: locale === "zh" ? "数码/电脑" : "Electronics",
+      platform,
+      searchQuery: query,
+    },
+  ];
 }
 
 function preventRedundantLocationClarify(
   response: AssistantResponse,
   locale: "zh" | "en",
+  region: "CN" | "INTL",
+  message: string,
   hasLocation: boolean,
   nearbyIntent: boolean,
   nearbySeed?: NearbySearchResult | null
@@ -305,20 +337,7 @@ function preventRedundantLocationClarify(
     return response;
   }
 
-  const asksInMessage = asksForLocation(response.message);
-  const asksInQuestions = (response.clarifyQuestions || []).some((question) =>
-    asksForLocation(question)
-  );
-  if (!asksInMessage && !asksInQuestions) {
-    return response;
-  }
-
-  const filteredQuestions = (response.clarifyQuestions || []).filter(
-    (question) => !asksForLocation(question)
-  );
-  const filteredFollowUps = (response.followUps || [])
-    .filter((followUp) => !asksForLocation(followUp.text))
-    .slice(0, 3);
+  const followUps = (response.followUps || []).slice(0, 3);
 
   if (nearbySeed && nearbySeed.candidates.length > 0) {
     const topCandidates = nearbySeed.candidates.slice(0, 5);
@@ -336,41 +355,25 @@ function preventRedundantLocationClarify(
           : buildDefaultNearbyPlan(locale),
       candidates: topCandidates,
       clarifyQuestions: undefined,
-      followUps:
-        filteredFollowUps.length > 0
-          ? filteredFollowUps
-          : buildDefaultNearbyFollowUps(locale),
+      followUps: followUps.length > 0 ? followUps : buildDefaultNearbyFollowUps(locale),
     };
   }
 
   return {
     ...response,
+    type: "results",
     intent: response.intent || "search_nearby",
     message:
       locale === "zh"
-        ? "已获取你的位置。请告诉我品牌、营业时间或预算偏好，我会继续筛选。"
-        : "I already have your location. Share brand, opening-hours, or budget preferences and I will refine the results.",
-    clarifyQuestions:
-      filteredQuestions.length > 0
-        ? filteredQuestions
-        : locale === "zh"
-          ? ["你更偏好苹果授权店还是普通电脑店？", "是否有营业时间或预算要求？"]
-          : [
-              "Do you prefer Apple-authorized stores or any computer shop?",
-              "Any preference on opening hours or budget?",
-            ],
-    followUps:
-      filteredFollowUps.length > 0
-        ? filteredFollowUps
-        : locale === "zh"
-          ? [
-              { text: "只看苹果授权店", type: "refine" },
-              { text: "按 10km 内且评分高优先", type: "refine" },
-            ]
-          : [
-              { text: "Only Apple-authorized stores", type: "refine" },
-              { text: "Keep results within 10km and prioritize higher ratings", type: "refine" },
-            ],
+        ? "已根据你当前位置准备好附近搜索入口，可直接点击查看。"
+        : "I used your current location and prepared a nearby search you can open directly.",
+    plan:
+      response.plan && response.plan.length > 0
+        ? response.plan
+        : buildDefaultNearbyPlan(locale),
+    candidates: buildFallbackNearbyCandidates(message, locale, region),
+    clarifyQuestions: undefined,
+    followUps: followUps.length > 0 ? followUps : buildDefaultNearbyFollowUps(locale),
   };
 }
 
