@@ -179,6 +179,110 @@ describe("processChat INTL nearby flow", () => {
     expect(response.candidates?.[0]?.name).toBe("Apple Store Fifth Avenue");
   });
 
+  it("returns 5 concrete store names when nearby seed has enough places", async () => {
+    vi.mocked(searchNearbyStores).mockResolvedValueOnce({
+      source: "overpass",
+      radiusKm: 10,
+      matchedCount: 8,
+      category: "shopping",
+      candidates: [
+        {
+          id: "osm_node_11",
+          name: "Apple Digital Plaza",
+          description: "120m away, electronics and repair service",
+          category: "shopping",
+          distance: "120m",
+          rating: 4.7,
+          address: "Jiangbin Rd 599, Pingnan",
+          platform: "Google Maps",
+          searchQuery: "Apple Digital Plaza, Jiangbin Rd 599, Pingnan",
+        },
+        {
+          id: "osm_node_12",
+          name: "Suning Electronics Pingnan",
+          description: "180m away, appliance and laptop section",
+          category: "shopping",
+          distance: "180m",
+          rating: 4.5,
+          address: "Chengxi Rd 27, Pingnan",
+          platform: "Google Maps",
+          searchQuery: "Suning Electronics Pingnan, Chengxi Rd 27, Pingnan",
+        },
+        {
+          id: "osm_node_13",
+          name: "Haidatong Communications",
+          description: "220m away, phones and accessories",
+          category: "shopping",
+          distance: "220m",
+          rating: 4.4,
+          address: "Chengxi Rd 31, Pingnan",
+          platform: "Google Maps",
+          searchQuery: "Haidatong Communications, Chengxi Rd 31, Pingnan",
+        },
+        {
+          id: "osm_node_14",
+          name: "Yongxin Computer Shop",
+          description: "260m away, desktop and laptop accessories",
+          category: "shopping",
+          distance: "260m",
+          rating: 4.3,
+          address: "Xianlu St 12, Pingnan",
+          platform: "Google Maps",
+          searchQuery: "Yongxin Computer Shop, Xianlu St 12, Pingnan",
+        },
+        {
+          id: "osm_node_15",
+          name: "Jingdong Appliance Service Point",
+          description: "340m away, delivery and pickup",
+          category: "shopping",
+          distance: "340m",
+          rating: 4.2,
+          address: "Chengdong Rd 200, Pingnan",
+          platform: "Google Maps",
+          searchQuery: "Jingdong Appliance Service Point, Chengdong Rd 200, Pingnan",
+        },
+        {
+          id: "osm_node_16",
+          name: "Huawei Experience Corner",
+          description: "410m away, mobile and wearables",
+          category: "shopping",
+          distance: "410m",
+          rating: 4.6,
+          address: "Chengdong Rd 210, Pingnan",
+          platform: "Google Maps",
+          searchQuery: "Huawei Experience Corner, Chengdong Rd 210, Pingnan",
+        },
+      ],
+    });
+
+    vi.mocked(callAI).mockResolvedValueOnce({
+      model: "mock",
+      content: JSON.stringify({
+        type: "clarify",
+        message: "Could you confirm your location?",
+        intent: "search_nearby",
+        clarifyQuestions: ["What is your location?"],
+      }),
+    });
+
+    const response = await processChat(
+      {
+        message: "Find Mac computer stores within 10km",
+        locale: "en",
+        region: "INTL",
+        location: { lat: 23.54, lng: 110.39 },
+      },
+      "test-user"
+    );
+
+    expect(response.type).toBe("results");
+    expect(response.clarifyQuestions).toBeUndefined();
+    expect(response.candidates).toHaveLength(5);
+    expect(response.candidates?.every((candidate) => candidate.name && candidate.name !== "Store")).toBe(
+      true
+    );
+  });
+
   it("returns fallback results instead of clarify when seed is empty", async () => {
     vi.mocked(searchNearbyStores).mockResolvedValueOnce({
       source: "overpass",

@@ -75,6 +75,12 @@ const OVERPASS_USER_AGENT =
   process.env.OVERPASS_USER_AGENT ||
   process.env.NOMINATIM_USER_AGENT ||
   "ProjectOneAssistant/1.0 (+https://project-one.app)";
+const AMAP_PLACE_AROUND_ENDPOINT =
+  process.env.AMAP_PLACE_AROUND_ENDPOINT || "https://restapi.amap.com/v3/place/around";
+const AMAP_PLACE_TIMEOUT_MS = Math.max(
+  2500,
+  Number(process.env.AMAP_PLACE_TIMEOUT_MS || "5000")
+);
 
 type OverpassEntityType = "node" | "way" | "relation";
 
@@ -89,6 +95,28 @@ type OverpassElement = {
 
 type OverpassResponse = {
   elements?: OverpassElement[];
+};
+
+type AmapPoi = {
+  id?: string;
+  name?: string;
+  type?: string;
+  address?: string;
+  location?: string;
+  distance?: number | string;
+  tel?: string;
+  biz_ext?: {
+    rating?: number | string;
+    cost?: number | string;
+  };
+  opentime?: string;
+  opentime2?: string;
+};
+
+type AmapPlaceResponse = {
+  status?: string;
+  info?: string;
+  pois?: AmapPoi[];
 };
 
 type OverpassFilter = {
@@ -173,6 +201,91 @@ function toNumber(value: unknown): number | null {
   }
 
   return null;
+}
+
+function isLikelyInChina(lat: number, lng: number): boolean {
+  return lat >= 3.8 && lat <= 53.6 && lng >= 73.5 && lng <= 135.1;
+}
+
+function getAmapApiKey(): string | undefined {
+  return (
+    process.env.AMAP_WEB_SERVICE_KEY ||
+    process.env.AMAP_API_KEY ||
+    process.env.GAODE_WEB_SERVICE_KEY
+  );
+}
+
+function getAmapTypeCodes(category?: string): string {
+  switch (category) {
+    case "food":
+      return "050000";
+    case "shopping":
+      return "060000";
+    case "fitness":
+      return "080000";
+    case "travel":
+      return "100000|110000";
+    case "entertainment":
+      return "080300|080400|080600|090000";
+    default:
+      return "060000";
+  }
+}
+
+function parseAmapLocation(location: string | undefined): { lat: number; lng: number } | null {
+  if (!location) return null;
+  const [lngRaw, latRaw] = location.split(",");
+  const lat = toNumber(latRaw);
+  const lng = toNumber(lngRaw);
+  if (lat === null || lng === null) return null;
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+  return { lat, lng };
+}
+
+function buildAmapDescription(
+  poi: AmapPoi,
+  distanceKm: number,
+  locale: "zh" | "en"
+): string {
+  const reasons: string[] = [locale === "zh" ? `距离约${formatDistance(distanceKm)}` : `${formatDistance(distanceKm)} away`];
+
+  if (poi.type) {
+    reasons.push(locale === "zh" ? `类型: ${poi.type}` : `type: ${poi.type}`);
+  }
+  if (poi.opentime2 || poi.opentime) {
+    reasons.push(locale === "zh" ? "含营业信息" : "opening hours available");
+  }
+
+  return reasons.join(", ");
+}
+
+function normalizeCandidateKey(candidate: CandidateResult): string {
+  const name = (candidate.name || "").trim().toLowerCase();
+  const address = (candidate.address || "").trim().toLowerCase();
+  return `${name}::${address}`;
+}
+
+function mergeCandidateLists(
+  primary: CandidateResult[],
+  secondary: CandidateResult[],
+  limit: number
+): CandidateResult[] {
+  const merged: CandidateResult[] = [];
+  const dedupe = new Set<string>();
+
+  for (const candidate of [...primary, ...secondary]) {
+    const key = normalizeCandidateKey(candidate);
+    if (!key || dedupe.has(key)) {
+      continue;
+    }
+    dedupe.add(key);
+    merged.push(candidate);
+    if (merged.length >= limit) {
+      break;
+    }
+  }
+
+  return merged;
 }
 
 export function haversineDistanceKm(
@@ -753,6 +866,148 @@ async function fetchNearbyStoresFromOverpass(
   };
 }
 
+async function fetchNearbyStoresFromAmap(
+  params: NearbySearchParams,
+  category: string | undefined,
+  radiusKm: number,
+  limit: number
+): Promise<NearbySearchResult | null> {
+  const key = getAmapApiKey();
+  if (!key) {
+    return null;
+  }
+
+  const radiusMeters = radiusKmToMeters(radiusKm);
+  const offset = Math.max(5, Math.min(20, limit));
+  const types = getAmapTypeCodes(category);
+  const url =
+    `${AMAP_PLACE_AROUND_ENDPOINT}?key=${encodeURIComponent(key)}` +
+    `&location=${encodeURIComponent(`${params.lng},${params.lat}`)}` +
+    `&types=${encodeURIComponent(types)}` +
+    `&radius=${encodeURIComponent(String(radiusMeters))}` +
+    `&sortrule=distance&offset=${encodeURIComponent(String(offset))}` +
+    "&page=1&extensions=all&output=JSON";
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(AMAP_PLACE_TIMEOUT_MS),
+    });
+  } catch (error) {
+    console.warn("[NearbyStoreSearch] Amap nearby request failed:", error);
+    return null;
+  }
+
+  if (!response.ok) {
+    console.warn("[NearbyStoreSearch] Amap nearby responded with status:", response.status);
+    return null;
+  }
+
+  let data: AmapPlaceResponse;
+  try {
+    data = (await response.json()) as AmapPlaceResponse;
+  } catch (error) {
+    console.warn("[NearbyStoreSearch] Failed to parse Amap nearby JSON:", error);
+    return null;
+  }
+
+  if (data.status !== "1") {
+    if (data.info) {
+      console.warn("[NearbyStoreSearch] Amap nearby returned error:", data.info);
+    }
+    return null;
+  }
+
+  const pois = Array.isArray(data.pois) ? data.pois : [];
+  if (pois.length === 0) {
+    return {
+      candidates: [],
+      radiusKm,
+      matchedCount: 0,
+      category,
+      source: "overpass",
+    };
+  }
+
+  const messageTokens = tokenizeForRanking(params.message);
+  const ranked: RankedOverpassCandidate[] = [];
+  const dedupe = new Set<string>();
+
+  for (const poi of pois) {
+    const name = (poi.name || "").trim();
+    if (!name || isGenericPoiName(name)) {
+      continue;
+    }
+
+    const normalizedName = name.toLowerCase();
+    if (dedupe.has(normalizedName)) {
+      continue;
+    }
+
+    const coordinates = parseAmapLocation(poi.location);
+    const distanceMeters = toNumber(poi.distance);
+    let distanceKm = distanceMeters !== null ? distanceMeters / 1000 : null;
+    if (distanceKm === null && coordinates) {
+      distanceKm = haversineDistanceKm(params.lat, params.lng, coordinates.lat, coordinates.lng);
+    }
+    if (distanceKm === null || !Number.isFinite(distanceKm)) {
+      continue;
+    }
+    if (distanceKm > radiusKm) {
+      continue;
+    }
+
+    const address = poi.address?.trim() || undefined;
+    const typeTag = normalizeTagValue(poi.type);
+    const tagsForCard = typeTag ? typeTag.split(";").slice(0, 3) : undefined;
+    const ratingRaw = toNumber(poi.biz_ext?.rating);
+    const rating = ratingRaw && ratingRaw <= 5 ? ratingRaw : undefined;
+    const description = buildAmapDescription(poi, distanceKm, params.locale);
+    const searchQuery = [name, address].filter(Boolean).join(", ");
+
+    const candidate: CandidateResult = {
+      id: poi.id || `amap_${Math.random().toString(36).slice(2, 10)}`,
+      name,
+      description,
+      category: category || inferCategoryFromMessage(params.message, params.locale) || "local_life",
+      distance: formatDistance(distanceKm),
+      rating,
+      priceRange: toNumber(poi.biz_ext?.cost) ? `${poi.biz_ext?.cost}` : undefined,
+      businessHours: poi.opentime2 || poi.opentime || undefined,
+      phone: poi.tel || undefined,
+      address,
+      tags: tagsForCard && tagsForCard.length > 0 ? tagsForCard : undefined,
+      platform: params.region === "CN" ? "高德地图" : "Google Maps",
+      searchQuery: searchQuery || name,
+    };
+
+    ranked.push({
+      score: scoreOverpassCandidate(candidate, distanceKm, messageTokens),
+      distanceKm,
+      candidate,
+    });
+    dedupe.add(normalizedName);
+  }
+
+  ranked.sort((left, right) => {
+    const scoreDiff = right.score - left.score;
+    if (Math.abs(scoreDiff) > 0.001) {
+      return scoreDiff;
+    }
+    return left.distanceKm - right.distanceKm;
+  });
+
+  const candidates = ranked.slice(0, limit).map((item) => item.candidate);
+  return {
+    candidates,
+    radiusKm,
+    matchedCount: ranked.length,
+    category,
+    source: "overpass",
+  };
+}
+
 async function fetchNearbyStoresFromSupabase(
   region: NearbyRegion,
   category?: string
@@ -889,7 +1144,54 @@ export async function searchNearbyStores(
   const limit = Math.max(1, Math.min(10, params.limit ?? 5));
 
   if (params.region === "INTL") {
-    return fetchNearbyStoresFromOverpass(params, inferredCategory, radiusKm, limit);
+    const shouldTryAmap = isLikelyInChina(params.lat, params.lng);
+    let amapResult: NearbySearchResult | null = null;
+
+    if (shouldTryAmap) {
+      amapResult = await fetchNearbyStoresFromAmap(
+        params,
+        inferredCategory,
+        radiusKm,
+        Math.max(limit, 8)
+      );
+      if (amapResult && amapResult.candidates.length >= limit) {
+        amapResult.category = inferredCategory;
+        return {
+          ...amapResult,
+          candidates: amapResult.candidates.slice(0, limit),
+        };
+      }
+    }
+
+    const overpassResult = await fetchNearbyStoresFromOverpass(
+      params,
+      inferredCategory,
+      radiusKm,
+      limit
+    );
+    overpassResult.category = inferredCategory;
+
+    if (amapResult && amapResult.candidates.length > 0) {
+      const mergedCandidates = mergeCandidateLists(
+        amapResult.candidates,
+        overpassResult.candidates,
+        limit
+      );
+
+      return {
+        candidates: mergedCandidates,
+        radiusKm: amapResult.radiusKm,
+        matchedCount: Math.max(
+          amapResult.matchedCount,
+          overpassResult.matchedCount,
+          mergedCandidates.length
+        ),
+        category: inferredCategory,
+        source: "overpass",
+      };
+    }
+
+    return overpassResult;
   }
 
   const primaryRows =

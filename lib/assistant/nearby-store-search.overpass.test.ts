@@ -3,10 +3,16 @@ import { searchNearbyStores } from "./nearby-store-search";
 
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
+const originalAmapKey = process.env.AMAP_WEB_SERVICE_KEY;
 
 describe("nearby-store-search Overpass INTL", () => {
   afterEach(() => {
     vi.clearAllMocks();
+    if (originalAmapKey === undefined) {
+      delete process.env.AMAP_WEB_SERVICE_KEY;
+    } else {
+      process.env.AMAP_WEB_SERVICE_KEY = originalAmapKey;
+    }
   });
 
   it("queries Overpass and maps concrete places into candidates", async () => {
@@ -191,5 +197,82 @@ describe("nearby-store-search Overpass INTL", () => {
     expect(result.candidates).toHaveLength(1);
     expect(result.candidates[0]?.name).toBe("Apple Premium Reseller Pingnan");
     expect(result.candidates[0]?.platform).toBe("Google Maps");
+  });
+
+  it("uses Amap fallback in INTL China coordinates and returns 5 concrete store names", async () => {
+    process.env.AMAP_WEB_SERVICE_KEY = "test-amap-key";
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        status: "1",
+        info: "OK",
+        pois: [
+          {
+            id: "amap_1",
+            name: "Apple Digital Plaza",
+            type: "购物服务;家电电子卖场;家电电子卖场",
+            address: "Jiangbin Rd 599",
+            location: "110.390100,23.540100",
+            distance: "120",
+          },
+          {
+            id: "amap_2",
+            name: "Suning Electronics Pingnan",
+            type: "购物服务;家电电子卖场;苏宁",
+            address: "Chengxi Rd 27",
+            location: "110.389800,23.540200",
+            distance: "180",
+          },
+          {
+            id: "amap_3",
+            name: "Haidatong Communications",
+            type: "购物服务;家电电子卖场;手机销售",
+            address: "Chengxi Rd 31",
+            location: "110.389700,23.540300",
+            distance: "220",
+          },
+          {
+            id: "amap_4",
+            name: "Yongxin Computer Shop",
+            type: "购物服务;专卖店;专营店",
+            address: "Xianlu St 12",
+            location: "110.390300,23.540400",
+            distance: "260",
+          },
+          {
+            id: "amap_5",
+            name: "Jingdong Appliance Service Point",
+            type: "购物服务;家电电子卖场;家电电子卖场",
+            address: "Chengdong Rd 200",
+            location: "110.391000,23.541000",
+            distance: "340",
+          },
+          {
+            id: "amap_6",
+            name: "Huawei Experience Corner",
+            type: "购物服务;家电电子卖场;手机销售",
+            address: "Chengdong Rd 210",
+            location: "110.391500,23.541400",
+            distance: "410",
+          },
+        ],
+      }),
+    });
+
+    const result = await searchNearbyStores({
+      lat: 23.54,
+      lng: 110.39,
+      locale: "en",
+      region: "INTL",
+      message: "Find Mac computer stores within 10km",
+      limit: 5,
+    });
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(String(mockFetch.mock.calls[0]?.[0] || "")).toContain("restapi.amap.com/v3/place/around");
+    expect(result.candidates).toHaveLength(5);
+    expect(result.candidates.map((candidate) => candidate.name)).toContain("Apple Digital Plaza");
+    expect(result.candidates.every((candidate) => Boolean(candidate.name))).toBe(true);
   });
 });
