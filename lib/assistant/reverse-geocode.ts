@@ -58,13 +58,82 @@ interface AmapResponse {
 }
 
 let hasWarnedMissingAmapKey = false;
+let nominatimQueue: Promise<void> = Promise.resolve();
+let lastNominatimRequestAt = 0;
+
+const NOMINATIM_REVERSE_ENDPOINT =
+  process.env.NOMINATIM_REVERSE_ENDPOINT || "https://nominatim.openstreetmap.org/reverse";
+const NOMINATIM_MIN_INTERVAL_MS = Math.max(
+  1000,
+  Number(process.env.NOMINATIM_MIN_INTERVAL_MS || "1100")
+);
+
+function resolveNominatimUserAgent(): string {
+  const configured = process.env.NOMINATIM_USER_AGENT?.trim();
+  if (configured) {
+    return configured;
+  }
+
+  const contactUrl =
+    process.env.NOMINATIM_CONTACT_URL?.trim() ||
+    process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  const contactEmail = process.env.NOMINATIM_CONTACT_EMAIL?.trim();
+
+  if (contactUrl && contactEmail) {
+    return `ProjectOneAssistant/1.0 (${contactUrl}; ${contactEmail})`;
+  }
+  if (contactUrl) {
+    return `ProjectOneAssistant/1.0 (${contactUrl})`;
+  }
+  if (contactEmail) {
+    return `ProjectOneAssistant/1.0 (mailto:${contactEmail})`;
+  }
+
+  return "ProjectOneAssistant/1.0 (+mailto:ops@project-one.app)";
+}
+
+const NOMINATIM_USER_AGENT = resolveNominatimUserAgent();
+const NOMINATIM_REFERER =
+  process.env.NOMINATIM_CONTACT_URL?.trim() ||
+  process.env.NEXT_PUBLIC_SITE_URL?.trim();
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function runNominatimRateLimited<T>(runner: () => Promise<T>): Promise<T> {
+  const task = nominatimQueue.then(async () => {
+    const elapsedMs = Date.now() - lastNominatimRequestAt;
+    const waitMs = Math.max(0, NOMINATIM_MIN_INTERVAL_MS - elapsedMs);
+    if (waitMs > 0) {
+      await sleep(waitMs);
+    }
+    lastNominatimRequestAt = Date.now();
+    return runner();
+  });
+
+  nominatimQueue = task.then(
+    () => undefined,
+    () => undefined
+  );
+
+  return task;
+}
 
 function isLikelyInChina(lat: number, lng: number): boolean {
   return lat >= 3.8 && lat <= 53.6 && lng >= 73.5 && lng <= 135.1;
 }
 
 function shouldPreferAmap(region: GeocodeRegion | undefined, lat: number, lng: number): boolean {
-  return region === "CN" || isLikelyInChina(lat, lng);
+  if (region === "INTL") {
+    return false;
+  }
+  if (region === "CN") {
+    return true;
+  }
+  return isLikelyInChina(lat, lng);
 }
 
 function getAmapApiKey(): string | undefined {
@@ -193,15 +262,28 @@ async function nominatimReverse(
   timeoutMs: number
 ): Promise<GeocodedLocation | null> {
   const acceptLang = locale === "zh" ? "zh-CN,zh" : "en";
-  const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=${acceptLang}&zoom=18`;
+  const url =
+    `${NOMINATIM_REVERSE_ENDPOINT}?format=json` +
+    `&lat=${encodeURIComponent(String(lat))}` +
+    `&lon=${encodeURIComponent(String(lng))}` +
+    `&accept-language=${encodeURIComponent(acceptLang)}` +
+    "&zoom=18";
 
-  const response = await fetch(url, {
-    headers: {
-      "User-Agent": "ChenHuiApp/1.0",
-    },
-    cache: "no-store",
-    signal: AbortSignal.timeout(timeoutMs),
-  });
+  const headers: Record<string, string> = {
+    "User-Agent": NOMINATIM_USER_AGENT,
+    "Accept-Language": acceptLang,
+  };
+  if (NOMINATIM_REFERER) {
+    headers.Referer = NOMINATIM_REFERER;
+  }
+
+  const response = await runNominatimRateLimited(() =>
+    fetch(url, {
+      headers,
+      cache: "no-store",
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+  );
 
   if (!response.ok) return null;
 

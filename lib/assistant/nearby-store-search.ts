@@ -53,13 +53,80 @@ export type NearbySearchResult = {
   radiusKm: number;
   matchedCount: number;
   category?: string;
+  source: "database" | "overpass";
 };
 
 const DEFAULT_RADIUS_KM = 5;
 const MAX_RADIUS_KM = 30;
 const MIN_RADIUS_KM = 0.3;
+const OVERPASS_MIN_RADIUS_METERS = 200;
+const OVERPASS_MAX_RADIUS_METERS = 5000;
+const OVERPASS_TIMEOUT_MS = Math.max(
+  4000,
+  Number(process.env.OVERPASS_TIMEOUT_MS || "12000")
+);
+const OVERPASS_QUERY_TIMEOUT_SECONDS = Math.max(
+  10,
+  Number(process.env.OVERPASS_QUERY_TIMEOUT_SECONDS || "20")
+);
+const OVERPASS_ENDPOINT =
+  process.env.OVERPASS_API_ENDPOINT || "https://overpass-api.de/api/interpreter";
+const OVERPASS_USER_AGENT =
+  process.env.OVERPASS_USER_AGENT ||
+  process.env.NOMINATIM_USER_AGENT ||
+  "ProjectOneAssistant/1.0 (+https://project-one.app)";
+
+type OverpassEntityType = "node" | "way" | "relation";
+
+type OverpassElement = {
+  type?: OverpassEntityType;
+  id?: number;
+  lat?: number;
+  lon?: number;
+  center?: { lat?: number; lon?: number };
+  tags?: Record<string, string>;
+};
+
+type OverpassResponse = {
+  elements?: OverpassElement[];
+};
+
+type OverpassFilter = {
+  key: string;
+  valueRegex: string;
+};
+
+type RankedOverpassCandidate = {
+  candidate: CandidateResult;
+  score: number;
+  distanceKm: number;
+};
+
+const OVERPASS_FILTERS_BY_CATEGORY: Record<string, OverpassFilter[]> = {
+  food: [
+    { key: "amenity", valueRegex: "restaurant|fast_food|cafe|food_court|bar|pub|ice_cream|biergarten" },
+    { key: "shop", valueRegex: "bakery|confectionery|deli|beverages" },
+  ],
+  shopping: [
+    { key: "shop", valueRegex: "mall|department_store|supermarket|convenience|electronics|computer|mobile_phone|clothes|shoes|beauty|books|sports|gift" },
+  ],
+  fitness: [
+    { key: "amenity", valueRegex: "gym" },
+    { key: "leisure", valueRegex: "fitness_centre|sports_centre|swimming_pool|track" },
+  ],
+  travel: [
+    { key: "tourism", valueRegex: "hotel|hostel|guest_house|motel|attraction|museum|viewpoint" },
+  ],
+  entertainment: [
+    { key: "amenity", valueRegex: "cinema|theatre|nightclub|casino|arts_centre|bar|pub" },
+    { key: "leisure", valueRegex: "amusement_arcade|bowling_alley|dance" },
+  ],
+};
+
+const OVERPASS_DEFAULT_FILTERS = OVERPASS_FILTERS_BY_CATEGORY.food;
 
 let supabaseAdminInstance: SupabaseClient | null = null;
+let overpassQueue: Promise<void> = Promise.resolve();
 
 function getSupabaseAdmin(): SupabaseClient {
   if (supabaseAdminInstance) {
@@ -86,6 +153,11 @@ function getSupabaseAdmin(): SupabaseClient {
 function clampRadius(radiusKm: number): number {
   if (!Number.isFinite(radiusKm)) return DEFAULT_RADIUS_KM;
   return Math.max(MIN_RADIUS_KM, Math.min(MAX_RADIUS_KM, radiusKm));
+}
+
+function radiusKmToMeters(radiusKm: number): number {
+  const meters = Math.round(radiusKm * 1000);
+  return Math.max(OVERPASS_MIN_RADIUS_METERS, Math.min(OVERPASS_MAX_RADIUS_METERS, meters));
 }
 
 function toNumber(value: unknown): number | null {
@@ -172,9 +244,393 @@ function inferCategoryFromMessage(message: string, locale: "zh" | "en"): string 
     { pattern: /(movie|cinema|karaoke|bar|entertainment)/, category: "entertainment" },
   ];
 
-  const rules = locale === "zh" ? zhRules : enRules;
-  const matched = rules.find((rule) => rule.pattern.test(text));
-  return matched?.category;
+  const primaryRules = locale === "zh" ? zhRules : enRules;
+  const fallbackRules = locale === "zh" ? enRules : zhRules;
+  const primaryMatch = primaryRules.find((rule) => rule.pattern.test(text));
+  if (primaryMatch) {
+    return primaryMatch.category;
+  }
+  return fallbackRules.find((rule) => rule.pattern.test(text))?.category;
+}
+
+function normalizeTagValue(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const normalized = value.replaceAll(";", ", ").replace(/\s+/g, " ").trim();
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function extractLocation(element: OverpassElement): { lat: number; lng: number } | null {
+  const lat = toNumber(element.lat) ?? toNumber(element.center?.lat);
+  const lng = toNumber(element.lon) ?? toNumber(element.center?.lon);
+
+  if (lat === null || lng === null) return null;
+  return { lat, lng };
+}
+
+function pickPoiName(tags: Record<string, string>): string | null {
+  const rawName = tags["name:en"] || tags.name || tags.brand || tags.operator;
+  if (!rawName) return null;
+  const name = rawName.trim();
+  if (!name) return null;
+  return name;
+}
+
+function isGenericPoiName(name: string): boolean {
+  const trimmed = name.trim();
+  if (trimmed.length <= 2) return true;
+
+  const lower = trimmed.toLowerCase();
+  const genericPatterns: RegExp[] = [
+    /^(restaurant|restaurants|food|eatery|cafe|coffee shop|coffee|bar|pub)$/,
+    /^(shop|store|mall|market|supermarket|grocery|convenience store)$/,
+    /^(gym|fitness|fitness center|sports center|hotel|hostel|cinema|theatre)$/,
+    /^(饭店|餐厅|商店|店铺|超市|健身房|酒店)$/,
+  ];
+
+  return genericPatterns.some((pattern) => pattern.test(lower));
+}
+
+function inferCategoryFromTags(
+  tags: Record<string, string>,
+  fallbackCategory?: string
+): string {
+  const amenity = (tags.amenity || "").toLowerCase();
+  const shop = (tags.shop || "").toLowerCase();
+  const tourism = (tags.tourism || "").toLowerCase();
+  const leisure = (tags.leisure || "").toLowerCase();
+
+  if (
+    ["restaurant", "fast_food", "cafe", "food_court", "bar", "pub", "ice_cream"].includes(amenity) ||
+    ["bakery", "deli", "confectionery", "beverages"].includes(shop)
+  ) {
+    return "food";
+  }
+
+  if (
+    ["mall", "department_store", "supermarket", "convenience", "electronics", "computer", "mobile_phone"].includes(shop)
+  ) {
+    return "shopping";
+  }
+
+  if (
+    amenity === "gym" ||
+    ["fitness_centre", "sports_centre", "swimming_pool"].includes(leisure)
+  ) {
+    return "fitness";
+  }
+
+  if (
+    ["hotel", "hostel", "guest_house", "attraction", "museum", "viewpoint"].includes(tourism)
+  ) {
+    return "travel";
+  }
+
+  if (
+    ["cinema", "theatre", "nightclub", "casino", "arts_centre"].includes(amenity) ||
+    ["amusement_arcade", "bowling_alley"].includes(leisure)
+  ) {
+    return "entertainment";
+  }
+
+  return fallbackCategory || "local_life";
+}
+
+function buildAddressFromTags(tags: Record<string, string>): string | undefined {
+  const addrFull = tags["addr:full"];
+  if (addrFull && addrFull.trim().length > 0) {
+    return addrFull.trim();
+  }
+
+  const houseNumber = tags["addr:housenumber"]?.trim();
+  const street = tags["addr:street"]?.trim();
+  const city = tags["addr:city"]?.trim() || tags["addr:suburb"]?.trim() || tags["addr:district"]?.trim();
+  const state = tags["addr:state"]?.trim();
+  const country = tags["addr:country"]?.trim();
+
+  const firstLine = [houseNumber, street].filter(Boolean).join(" ");
+  const restLine = [city, state, country].filter(Boolean).join(", ");
+  const merged = [firstLine, restLine].filter(Boolean).join(", ");
+
+  return merged || undefined;
+}
+
+function tokenizeForRanking(message: string): string[] {
+  const stopWords = new Set([
+    "a", "an", "the", "for", "with", "near", "nearby", "around", "find", "show",
+    "please", "me", "to", "in", "on", "of", "my", "within", "公里", "附近", "周边",
+    "找", "一下", "帮我", "我想", "restaurant", "restaurants", "shop", "store",
+  ]);
+
+  const normalized = message
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 2);
+
+  return normalized.filter((token) => !stopWords.has(token)).slice(0, 8);
+}
+
+function scoreOverpassCandidate(
+  candidate: CandidateResult,
+  distanceKm: number,
+  messageTokens: string[]
+): number {
+  let score = 0;
+
+  score += Math.max(0, 8 - distanceKm * 3);
+
+  if (candidate.businessHours) score += 0.8;
+  if (candidate.phone) score += 0.6;
+  if (candidate.address) score += 0.5;
+  if (candidate.tags && candidate.tags.length > 0) score += 0.8;
+
+  if (messageTokens.length > 0) {
+    const searchable = [
+      candidate.name,
+      candidate.description,
+      candidate.searchQuery,
+      candidate.address || "",
+      ...(candidate.tags || []),
+    ]
+      .join(" ")
+      .toLowerCase();
+
+    for (const token of messageTokens) {
+      if (searchable.includes(token)) {
+        score += 1.2;
+      }
+    }
+  }
+
+  return score;
+}
+
+function buildOverpassDescription(
+  tags: Record<string, string>,
+  distanceKm: number
+): string {
+  const reasons: string[] = [`${formatDistance(distanceKm)} away`];
+
+  const cuisine = normalizeTagValue(tags.cuisine);
+  if (cuisine) {
+    reasons.push(`cuisine: ${cuisine}`);
+  }
+
+  const amenity = normalizeTagValue(tags.amenity);
+  if (amenity && !cuisine) {
+    reasons.push(`type: ${amenity}`);
+  }
+
+  const shop = normalizeTagValue(tags.shop);
+  if (shop) {
+    reasons.push(`shop: ${shop}`);
+  }
+
+  if (tags.opening_hours) {
+    reasons.push("opening hours available");
+  }
+
+  if (tags.takeaway === "yes" || tags.delivery === "yes") {
+    reasons.push("takeaway/delivery supported");
+  }
+
+  return reasons.join(", ");
+}
+
+function getOverpassFilters(category?: string): OverpassFilter[] {
+  if (!category) {
+    return OVERPASS_DEFAULT_FILTERS;
+  }
+  return OVERPASS_FILTERS_BY_CATEGORY[category] || OVERPASS_DEFAULT_FILTERS;
+}
+
+function buildOverpassQuery(
+  filters: OverpassFilter[],
+  radiusMeters: number,
+  lat: number,
+  lng: number
+): string {
+  const latString = lat.toFixed(6);
+  const lngString = lng.toFixed(6);
+  const clauses: string[] = [];
+
+  for (const filter of filters) {
+    clauses.push(
+      `node["${filter.key}"~"${filter.valueRegex}"](around:${radiusMeters},${latString},${lngString});`,
+      `way["${filter.key}"~"${filter.valueRegex}"](around:${radiusMeters},${latString},${lngString});`,
+      `relation["${filter.key}"~"${filter.valueRegex}"](around:${radiusMeters},${latString},${lngString});`
+    );
+  }
+
+  return [
+    `[out:json][timeout:${OVERPASS_QUERY_TIMEOUT_SECONDS}];`,
+    "(",
+    ...clauses,
+    ");",
+    "out center tags;",
+  ].join("\n");
+}
+
+function runOverpassQueued<T>(runner: () => Promise<T>): Promise<T> {
+  const task = overpassQueue.then(() => runner());
+  overpassQueue = task.then(
+    () => undefined,
+    () => undefined
+  );
+  return task;
+}
+
+async function fetchNearbyStoresFromOverpass(
+  params: NearbySearchParams,
+  category: string | undefined,
+  radiusKm: number,
+  limit: number
+): Promise<NearbySearchResult> {
+  const radiusMeters = radiusKmToMeters(radiusKm);
+  const filters = getOverpassFilters(category);
+  const query = buildOverpassQuery(filters, radiusMeters, params.lat, params.lng);
+
+  let response: Response;
+  try {
+    response = await runOverpassQueued(() =>
+      fetch(OVERPASS_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+          "User-Agent": OVERPASS_USER_AGENT,
+        },
+        body: `data=${encodeURIComponent(query)}`,
+        cache: "no-store",
+        signal: AbortSignal.timeout(OVERPASS_TIMEOUT_MS),
+      })
+    );
+  } catch (error) {
+    console.error("[NearbyStoreSearch] Overpass request failed:", error);
+    return {
+      candidates: [],
+      radiusKm,
+      matchedCount: 0,
+      category,
+      source: "overpass",
+    };
+  }
+
+  if (!response.ok) {
+    console.warn("[NearbyStoreSearch] Overpass responded with status:", response.status);
+    return {
+      candidates: [],
+      radiusKm,
+      matchedCount: 0,
+      category,
+      source: "overpass",
+    };
+  }
+
+  let data: OverpassResponse;
+  try {
+    data = (await response.json()) as OverpassResponse;
+  } catch (error) {
+    console.error("[NearbyStoreSearch] Failed to parse Overpass JSON:", error);
+    return {
+      candidates: [],
+      radiusKm,
+      matchedCount: 0,
+      category,
+      source: "overpass",
+    };
+  }
+
+  const tokens = tokenizeForRanking(params.message);
+  const ranked: RankedOverpassCandidate[] = [];
+  const dedupe = new Set<string>();
+
+  for (const element of data.elements || []) {
+    const tags = element.tags || {};
+    const name = pickPoiName(tags);
+    if (!name || isGenericPoiName(name)) {
+      continue;
+    }
+
+    const normalizedName = name.toLowerCase();
+    if (dedupe.has(normalizedName)) {
+      continue;
+    }
+
+    const coordinates = extractLocation(element);
+    if (!coordinates) {
+      continue;
+    }
+
+    const distanceKm = haversineDistanceKm(
+      params.lat,
+      params.lng,
+      coordinates.lat,
+      coordinates.lng
+    );
+    if (distanceKm > radiusKm) {
+      continue;
+    }
+
+    const poiCategory = inferCategoryFromTags(tags, category);
+    const address = buildAddressFromTags(tags);
+    const contactPhone = tags["contact:phone"] || tags.phone || tags["phone:mobile"];
+    const businessHours = tags.opening_hours;
+    const cuisine = normalizeTagValue(tags.cuisine);
+    const amenity = normalizeTagValue(tags.amenity);
+    const shop = normalizeTagValue(tags.shop);
+
+    const tagsForCard = [cuisine, amenity, shop].filter(
+      (tag): tag is string => Boolean(tag && tag.length > 0)
+    );
+
+    const ratingRaw = toNumber(tags.stars) ?? toNumber(tags.rating);
+    const rating = ratingRaw && ratingRaw <= 5 ? ratingRaw : undefined;
+    const id =
+      element.id !== undefined && element.type
+        ? `osm_${element.type}_${element.id}`
+        : `osm_${Math.random().toString(36).slice(2, 10)}`;
+    const searchQuery = [name, address].filter(Boolean).join(", ");
+    const description = buildOverpassDescription(tags, distanceKm);
+
+    const candidate: CandidateResult = {
+      id,
+      name,
+      description,
+      category: poiCategory,
+      distance: formatDistance(distanceKm),
+      rating,
+      businessHours: businessHours || undefined,
+      phone: contactPhone || undefined,
+      address,
+      tags: tagsForCard.length > 0 ? tagsForCard : undefined,
+      platform: "Google Maps",
+      searchQuery: searchQuery || name,
+    };
+
+    ranked.push({
+      score: scoreOverpassCandidate(candidate, distanceKm, tokens),
+      distanceKm,
+      candidate,
+    });
+    dedupe.add(normalizedName);
+  }
+
+  ranked.sort((left, right) => {
+    const scoreDiff = right.score - left.score;
+    if (Math.abs(scoreDiff) > 0.001) {
+      return scoreDiff;
+    }
+    return left.distanceKm - right.distanceKm;
+  });
+
+  return {
+    candidates: ranked.slice(0, limit).map((item) => item.candidate),
+    radiusKm,
+    matchedCount: ranked.length,
+    category,
+    source: "overpass",
+  };
 }
 
 async function fetchNearbyStoresFromSupabase(
@@ -301,6 +757,7 @@ function mapRowsToCandidates(
     candidates,
     radiusKm,
     matchedCount: withDistance.length,
+    source: "database",
   };
 }
 
@@ -310,6 +767,10 @@ export async function searchNearbyStores(
   const radiusKm = parseRadiusKmFromMessage(params.message);
   const inferredCategory = inferCategoryFromMessage(params.message, params.locale);
   const limit = Math.max(1, Math.min(10, params.limit ?? 5));
+
+  if (params.region === "INTL") {
+    return fetchNearbyStoresFromOverpass(params, inferredCategory, radiusKm, limit);
+  }
 
   const primaryRows =
     params.region === "CN"

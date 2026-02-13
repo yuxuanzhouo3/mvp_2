@@ -16,6 +16,7 @@ import { callAI } from "@/lib/ai/client";
 import { buildSystemPrompt } from "./tool-definitions";
 import { getUserPreferences, savePreference } from "./preference-manager";
 import { buildLocationContext } from "./reverse-geocode";
+import { searchNearbyStores, type NearbySearchResult } from "./nearby-store-search";
 import { resolveCandidateLink } from "@/lib/outbound/link-resolver";
 import { buildOutboundHref } from "@/lib/outbound/outbound-url";
 import type { AssistantResponse, ChatRequest, CandidateResult, AssistantAction } from "./types";
@@ -33,16 +34,18 @@ export async function processChat(
   userId: string
 ): Promise<AssistantResponse> {
   const { message, history, location, locale, region, isMobile, isAndroid } = request;
+  const effectiveLocale: "zh" | "en" = region === "INTL" ? "en" : locale;
+  const nearbyIntent = isNearbyIntent(message);
 
-  if (!location && isNearbyIntent(message, locale)) {
+  if (!location && nearbyIntent) {
     return {
       type: "clarify",
       message:
-        locale === "zh"
+        effectiveLocale === "zh"
           ? "你提到了“附近/周边”需求，我需要先获取你的位置，才能给出准确推荐。"
           : "You asked for nearby options. I need your location first to provide accurate recommendations.",
       thinking:
-        locale === "zh"
+        effectiveLocale === "zh"
           ? [
               "识别到用户在询问附近/周边结果",
               "发现当前请求缺少可用位置信息",
@@ -55,11 +58,11 @@ export async function processChat(
             ],
       intent: "search_nearby",
       clarifyQuestions:
-        locale === "zh"
+        effectiveLocale === "zh"
           ? ["请先授权定位，或告诉我你所在的城市/商圈"]
           : ["Please share your location permission or tell me your city/area"],
       followUps:
-        locale === "zh"
+        effectiveLocale === "zh"
           ? [
               { text: "我在上海浦东", type: "refine" },
               { text: "已开启定位，继续", type: "refine" },
@@ -81,7 +84,7 @@ export async function processChat(
   // 2. 构建 system prompt
   const systemPrompt = buildSystemPrompt(
     region,
-    locale,
+    effectiveLocale,
     !!location,
     !!isMobile,
     !!isAndroid,
@@ -103,8 +106,42 @@ export async function processChat(
 
   // 添加位置上下文（如果有）— 反向地理编码为可读城市名
   if (location) {
-    const locationHint = await buildLocationContext(location.lat, location.lng, locale);
+    const locationHint = await buildLocationContext(
+      location.lat,
+      location.lng,
+      effectiveLocale,
+      region
+    );
     messages.push({ role: "system", content: locationHint });
+  }
+
+  let intlNearbySeed: NearbySearchResult | null = null;
+  if (region === "INTL" && location && nearbyIntent) {
+    try {
+      intlNearbySeed = await searchNearbyStores({
+        lat: location.lat,
+        lng: location.lng,
+        locale: "en",
+        region: "INTL",
+        message,
+        limit: 8,
+      });
+
+      if (intlNearbySeed.candidates.length > 0) {
+        messages.push({
+          role: "system",
+          content: buildIntlNearbySeedPrompt(intlNearbySeed, message),
+        });
+      } else {
+        messages.push({
+          role: "system",
+          content:
+            "[System: Nearby overpass search returned no concrete places in the current radius. If user still wants nearby options, ask to widen the radius or refine the area.]",
+        });
+      }
+    } catch (error) {
+      console.error("[ChatEngine] Failed to fetch INTL nearby seed:", error);
+    }
   }
 
   // 添加用户当前消息
@@ -125,11 +162,11 @@ export async function processChat(
     return {
       type: "error",
       message:
-        locale === "zh"
+        effectiveLocale === "zh"
           ? "AI 服务暂时不可用，请稍后再试。"
           : "AI service is temporarily unavailable. Please try again later.",
       thinking:
-        locale === "zh"
+        effectiveLocale === "zh"
           ? [
               "已完成输入与上下文整理",
               "尝试调用模型服务时发生失败",
@@ -146,7 +183,7 @@ export async function processChat(
   // 5. 解析 AI 响应
   let parsed: AssistantResponse;
   try {
-    parsed = parseAIResponseSafely(aiContent, locale);
+    parsed = parseAIResponseSafely(aiContent, effectiveLocale);
   } catch (error) {
     console.error("[ChatEngine] Failed to parse AI response:", error);
     console.error("[ChatEngine] Raw content:", aiContent);
@@ -155,7 +192,7 @@ export async function processChat(
       type: "text",
       message: aiContent,
       thinking:
-        locale === "zh"
+        effectiveLocale === "zh"
           ? [
               "模型已返回内容",
               "结构化 JSON 解析失败，自动切换为纯文本模式",
@@ -169,12 +206,16 @@ export async function processChat(
     };
   }
 
+  if (intlNearbySeed && intlNearbySeed.candidates.length > 0) {
+    parsed = enforceConcreteIntlCandidates(parsed, intlNearbySeed, effectiveLocale);
+  }
+
   // 5.1 归一化 thinking 字段，保证前端可稳定展示
   const normalizedThinking = normalizeThinkingSteps(parsed.thinking);
   if (normalizedThinking.length > 0) {
     parsed.thinking = normalizedThinking;
   } else {
-    const fallbackThinking = buildFallbackThinking(parsed, locale);
+    const fallbackThinking = buildFallbackThinking(parsed, effectiveLocale);
     if (fallbackThinking.length > 0) {
       parsed.thinking = fallbackThinking;
     }
@@ -185,7 +226,7 @@ export async function processChat(
     parsed.actions = enrichActionsWithDeepLinks(
       parsed.candidates,
       parsed.actions || [],
-      locale,
+      effectiveLocale,
       region,
       isMobile
     );
@@ -202,11 +243,234 @@ export async function processChat(
   return parsed;
 }
 
-function isNearbyIntent(message: string, locale: "zh" | "en"): boolean {
+function isNearbyIntent(message: string): boolean {
   const text = message.toLowerCase();
   const zhPattern = /(附近|周边|就近|离我近|最近|周围)/;
-  const enPattern = /(nearby|near me|around me|close by|nearest|within \d+\s?(km|miles?))/;
-  return locale === "zh" ? zhPattern.test(text) : enPattern.test(text);
+  const enPattern = /(nearby|near me|around me|close by|nearest|within \d+\s?(km|miles?|meters?|m))/;
+  return zhPattern.test(text) || enPattern.test(text);
+}
+
+function buildIntlNearbySeedPrompt(seed: NearbySearchResult, userMessage: string): string {
+  const dataset = seed.candidates.slice(0, 8).map((candidate) => ({
+    id: candidate.id,
+    name: candidate.name,
+    category: candidate.category,
+    distance: candidate.distance,
+    description: candidate.description,
+    address: candidate.address,
+    businessHours: candidate.businessHours,
+    tags: candidate.tags,
+    searchQuery: candidate.searchQuery,
+    platform: candidate.platform,
+  }));
+
+  return [
+    "[System: Nearby places are pre-fetched from OpenStreetMap Overpass around the user's coordinates.]",
+    "For this nearby request, rank and recommend using only places from nearbyData.",
+    "Hard constraints:",
+    "1. Every candidate name must be a concrete place name from nearbyData.",
+    "2. Do not output generic names like Restaurant/Food/Shop/Store.",
+    "3. Keep the response fully in English.",
+    "4. Explain recommendation reasons in each candidate description (distance, tags, opening hours, etc.).",
+    `Nearby radius: ${seed.radiusKm}km, matched: ${seed.matchedCount}`,
+    `User request: ${JSON.stringify(userMessage)}`,
+    `nearbyData=${JSON.stringify(dataset)}`,
+  ].join("\n");
+}
+
+function normalizeCandidateName(value: string | undefined): string {
+  return (value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isGenericCandidateName(name: string | undefined): boolean {
+  const normalized = normalizeCandidateName(name);
+  if (!normalized) return true;
+
+  const generic = new Set([
+    "restaurant",
+    "restaurants",
+    "food",
+    "food place",
+    "shop",
+    "store",
+    "mall",
+    "market",
+    "coffee",
+    "cafe",
+    "bar",
+    "gym",
+    "fitness",
+    "hotel",
+    "movie theater",
+  ]);
+
+  return generic.has(normalized);
+}
+
+function isWeakDescription(description: string | undefined): boolean {
+  const text = (description || "").trim().toLowerCase();
+  if (!text) return true;
+  if (text.length < 12) return true;
+  const weakPatterns = [
+    /^good\b/,
+    /^nice\b/,
+    /^recommended\b/,
+    /^best\b/,
+    /^nearby\b/,
+    /^附近/,
+  ];
+  return weakPatterns.some((pattern) => pattern.test(text));
+}
+
+function mergeCandidateWithSeed(
+  candidate: CandidateResult,
+  seed: CandidateResult
+): CandidateResult {
+  return {
+    ...seed,
+    ...candidate,
+    id: seed.id,
+    name: seed.name,
+    description: isWeakDescription(candidate.description) ? seed.description : candidate.description,
+    category: candidate.category || seed.category,
+    distance: candidate.distance || seed.distance,
+    rating: candidate.rating ?? seed.rating,
+    priceRange: candidate.priceRange || seed.priceRange,
+    estimatedTime: candidate.estimatedTime || seed.estimatedTime,
+    businessHours: candidate.businessHours || seed.businessHours,
+    phone: candidate.phone || seed.phone,
+    address: candidate.address || seed.address,
+    tags: candidate.tags && candidate.tags.length > 0 ? candidate.tags : seed.tags,
+    platform: seed.platform,
+    searchQuery: candidate.searchQuery?.trim() ? candidate.searchQuery : seed.searchQuery,
+  };
+}
+
+function buildDefaultNearbyPlan(locale: "zh" | "en") {
+  if (locale === "zh") {
+    return [
+      { step: 1, description: "获取您的定位", status: "done" as const },
+      { step: 2, description: "检索周边 POI", status: "done" as const },
+      { step: 3, description: "按距离和相关性排序", status: "done" as const },
+    ];
+  }
+
+  return [
+    { step: 1, description: "Get your location", status: "done" as const },
+    { step: 2, description: "Search nearby POIs", status: "done" as const },
+    { step: 3, description: "Rank by distance and relevance", status: "done" as const },
+  ];
+}
+
+function buildDefaultNearbyFollowUps(locale: "zh" | "en") {
+  if (locale === "zh") {
+    return [
+      { text: "需要我把范围扩大到 3 公里吗？", type: "refine" as const },
+      { text: "要不要只看评分更高的？", type: "refine" as const },
+    ];
+  }
+
+  return [
+    { text: "Want me to expand the radius to 3km?", type: "refine" as const },
+    { text: "Should I keep only higher-rated options?", type: "refine" as const },
+  ];
+}
+
+function enforceConcreteIntlCandidates(
+  response: AssistantResponse,
+  seed: NearbySearchResult,
+  locale: "zh" | "en"
+): AssistantResponse {
+  if (response.type !== "results") {
+    return response;
+  }
+
+  const seedCandidates = seed.candidates.slice(0, 8);
+  if (seedCandidates.length === 0) {
+    return response;
+  }
+
+  if (!response.candidates || response.candidates.length === 0) {
+    const fallbackCandidates = seedCandidates.slice(0, 5);
+    return {
+      ...response,
+      intent: "search_nearby",
+      message:
+        locale === "zh"
+          ? `找到 ${fallbackCandidates.length} 个附近结果，已按距离和相关性排序。`
+          : `Found ${fallbackCandidates.length} nearby places ranked by distance and relevance.`,
+      plan: response.plan && response.plan.length > 0 ? response.plan : buildDefaultNearbyPlan(locale),
+      candidates: fallbackCandidates,
+      followUps:
+        response.followUps && response.followUps.length > 0
+          ? response.followUps
+          : buildDefaultNearbyFollowUps(locale),
+    };
+  }
+
+  const seedByName = new Map<string, CandidateResult>();
+  for (const item of seedCandidates) {
+    seedByName.set(normalizeCandidateName(item.name), item);
+  }
+
+  const mergedCandidates: CandidateResult[] = [];
+  const usedSeedIds = new Set<string>();
+
+  for (const candidate of response.candidates) {
+    const normalizedName = normalizeCandidateName(candidate.name);
+    const matchedSeed = seedByName.get(normalizedName);
+
+    if (matchedSeed) {
+      mergedCandidates.push(mergeCandidateWithSeed(candidate, matchedSeed));
+      usedSeedIds.add(matchedSeed.id);
+      continue;
+    }
+
+    if (!isGenericCandidateName(candidate.name)) {
+      mergedCandidates.push(candidate);
+    }
+  }
+
+  if (mergedCandidates.length === 0) {
+    const fallbackCandidates = seedCandidates.slice(0, 5);
+    return {
+      ...response,
+      type: "results",
+      intent: "search_nearby",
+      message:
+        locale === "zh"
+          ? `找到 ${fallbackCandidates.length} 个附近结果，已按距离和相关性排序。`
+          : `Found ${fallbackCandidates.length} nearby places ranked by distance and relevance.`,
+      plan: response.plan && response.plan.length > 0 ? response.plan : buildDefaultNearbyPlan(locale),
+      candidates: fallbackCandidates,
+      followUps:
+        response.followUps && response.followUps.length > 0
+          ? response.followUps
+          : buildDefaultNearbyFollowUps(locale),
+    };
+  }
+
+  for (const seedCandidate of seedCandidates) {
+    if (mergedCandidates.length >= 5) {
+      break;
+    }
+    if (usedSeedIds.has(seedCandidate.id)) {
+      continue;
+    }
+    mergedCandidates.push(seedCandidate);
+  }
+
+  return {
+    ...response,
+    type: "results",
+    intent: response.intent || "search_nearby",
+    candidates: mergedCandidates.slice(0, 5),
+  };
 }
 
 /**

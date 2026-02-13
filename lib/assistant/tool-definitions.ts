@@ -195,6 +195,7 @@ ${platforms}
 7. 结果要尽量真实合理，包含具体的地址、评分、价格等信息
 8. 为"追问与迭代"提供 2-3 个 followUps 建议
 9. **严格基于系统提示中的用户位置城市生成结果**，不要编造其他城市的店铺或地址。如果系统提示中包含用户城市信息，所有候选结果的地址必须属于该城市
+10. 推荐美食/商店/餐厅时，候选名称必须是具体门店名或具体商品名，不能只写“餐厅/商店/美食”等大类词
 ${zhCnClientRules}
 ${zhIntlClientRules}
 ${preferencesSection}
@@ -263,6 +264,8 @@ ${platforms}
 7. Results should be realistic with specific addresses, ratings, prices etc.
 8. Provide 2-3 followUps suggestions for iteration
 9. **Strictly generate results based on the user's city from the system location hint**. Do not fabricate stores or addresses from other cities. All candidate addresses must belong to the user's actual city
+10. For food/store/restaurant recommendations, each candidate name must be a concrete place or item, never a broad category label
+11. In INTL context, all response fields must be in English
 ${enCnClientRules}
 ${enIntlClientRules}
 ${preferencesSection}

@@ -58,16 +58,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 校验 locale 参数
-    const validLocale: "zh" | "en" =
-      locale === "en" ? "en" : "zh";
-
     // 校验 region 参数（可选）
     const deploymentRegion: "CN" | "INTL" =
       process.env.NEXT_PUBLIC_DEPLOYMENT_REGION === "CN" ? "CN" : "INTL";
 
     const validRegion: "CN" | "INTL" =
       body.region === "CN" || body.region === "INTL" ? body.region : deploymentRegion;
+
+    // INTL 环境统一英文地址输出
+    const validLocale: "zh" | "en" =
+      validRegion === "INTL" ? "en" : locale === "en" ? "en" : "zh";
 
     // 调用反向地理编码
     const result = await reverseGeocode(lat, lng, validLocale, validRegion);

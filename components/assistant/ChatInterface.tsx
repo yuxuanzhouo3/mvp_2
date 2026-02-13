@@ -103,7 +103,8 @@ export default function ChatInterface({
   region,
   planType,
 }: ChatInterfaceProps) {
-  const isZh = locale === "zh";
+  const effectiveLocale: "zh" | "en" = region === "INTL" ? "en" : locale;
+  const isZh = effectiveLocale === "zh";
   const { toast } = useToast();
 
   // 状态
@@ -140,7 +141,7 @@ export default function ChatInterface({
         const coords = JSON.parse(cached);
         if (coords.lat && coords.lng) {
           setLocation(coords);
-          setLocationName(formatCoordinates(coords.lat, coords.lng, locale));
+          setLocationName(formatCoordinates(coords.lat, coords.lng, effectiveLocale));
           void fetchLocationName(coords.lat, coords.lng);
         }
       } catch { /* 忽略 */ }
@@ -222,7 +223,7 @@ export default function ChatInterface({
       const res = await fetch("/api/assistant/geocode", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lat, lng, locale, region }),
+        body: JSON.stringify({ lat, lng, locale: effectiveLocale, region }),
       });
 
       if (!res.ok) return null;
@@ -256,7 +257,7 @@ export default function ChatInterface({
         lng: position.coords.longitude,
       };
 
-      const fallbackLocation = formatCoordinates(coords.lat, coords.lng, locale);
+      const fallbackLocation = formatCoordinates(coords.lat, coords.lng, effectiveLocale);
 
       setLocation(coords);
       setLocationName(fallbackLocation);
@@ -323,7 +324,7 @@ export default function ChatInterface({
           message: messageText,
           history,
           location,
-          locale,
+          locale: effectiveLocale,
           region,
           client: detectClientType(),
         }),

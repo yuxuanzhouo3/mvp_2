@@ -111,7 +111,13 @@ const ENV_CONFIG = {
       "NEXT_PUBLIC_SUPABASE_ANON_KEY",
       "SUPABASE_SERVICE_ROLE_KEY",
     ],
-    optional: ["NEXT_PUBLIC_GOOGLE_WEB_CLIENT_ID"],
+    optional: [
+      "NEXT_PUBLIC_GOOGLE_WEB_CLIENT_ID",
+      "NOMINATIM_USER_AGENT",
+      "NOMINATIM_CONTACT_EMAIL",
+      "NOMINATIM_CONTACT_URL",
+      "OVERPASS_API_ENDPOINT",
+    ],
     ai: {
       // 至少需要一个 AI 服务
       oneOf: ["OPENAI_API_KEY", "MISTRAL_API_KEY", "GROQ_API_KEY", "GOOGLE_AI_API_KEY"],

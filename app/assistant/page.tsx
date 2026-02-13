@@ -26,7 +26,7 @@ export default function AssistantPage() {
   const { user, isAuthenticated, isLoading } = useAuth();
   const { language } = useLanguage();
   const isCN = isChinaDeployment();
-  const locale = language as "zh" | "en";
+  const locale = (isCN ? language : "en") as "zh" | "en";
   const region = isCN ? "CN" : "INTL";
 
   // 未登录时引导登录
