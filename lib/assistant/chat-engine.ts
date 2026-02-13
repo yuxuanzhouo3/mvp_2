@@ -36,8 +36,10 @@ export async function processChat(
   const { message, history, location, locale, region, isMobile, isAndroid } = request;
   const effectiveLocale: "zh" | "en" = region === "INTL" ? "en" : locale;
   const nearbyIntent = isNearbyIntent(message);
+  const normalizedLocation = normalizeLocation(location);
+  const hasLocation = Boolean(normalizedLocation);
 
-  if (!location && nearbyIntent) {
+  if (!hasLocation && nearbyIntent) {
     return {
       type: "clarify",
       message:
@@ -85,7 +87,7 @@ export async function processChat(
   const systemPrompt = buildSystemPrompt(
     region,
     effectiveLocale,
-    !!location,
+    hasLocation,
     !!isMobile,
     !!isAndroid,
     Object.keys(preferencesMap).length > 0 ? preferencesMap : undefined
@@ -105,10 +107,10 @@ export async function processChat(
   }
 
   // 添加位置上下文（如果有）— 反向地理编码为可读城市名
-  if (location) {
+  if (normalizedLocation) {
     const locationHint = await buildLocationContext(
-      location.lat,
-      location.lng,
+      normalizedLocation.lat,
+      normalizedLocation.lng,
       effectiveLocale,
       region
     );
@@ -116,11 +118,11 @@ export async function processChat(
   }
 
   let intlNearbySeed: NearbySearchResult | null = null;
-  if (region === "INTL" && location && nearbyIntent) {
+  if (region === "INTL" && normalizedLocation && nearbyIntent) {
     try {
       intlNearbySeed = await searchNearbyStores({
-        lat: location.lat,
-        lng: location.lng,
+        lat: normalizedLocation.lat,
+        lng: normalizedLocation.lng,
         locale: "en",
         region: "INTL",
         message,
@@ -209,6 +211,13 @@ export async function processChat(
   if (intlNearbySeed && intlNearbySeed.candidates.length > 0) {
     parsed = enforceConcreteIntlCandidates(parsed, intlNearbySeed, effectiveLocale);
   }
+  parsed = preventRedundantLocationClarify(
+    parsed,
+    effectiveLocale,
+    hasLocation,
+    nearbyIntent,
+    intlNearbySeed
+  );
 
   // 5.1 归一化 thinking 字段，保证前端可稳定展示
   const normalizedThinking = normalizeThinkingSteps(parsed.thinking);
@@ -241,6 +250,128 @@ export async function processChat(
   }
 
   return parsed;
+}
+
+function toFiniteNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return null;
+}
+
+function normalizeLocation(
+  location: ChatRequest["location"] | null | undefined
+): { lat: number; lng: number } | null {
+  if (!location || typeof location !== "object") {
+    return null;
+  }
+
+  const lat = toFiniteNumber((location as { lat?: unknown }).lat);
+  const lng = toFiniteNumber((location as { lng?: unknown }).lng);
+  if (lat === null || lng === null) {
+    return null;
+  }
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    return null;
+  }
+
+  return { lat, lng };
+}
+
+function asksForLocation(text: string | undefined): boolean {
+  if (!text) return false;
+
+  const normalized = text.toLowerCase();
+  const enPattern =
+    /\b(current location|your location|share (?:your )?location|location permission|where are you|which city|your city|coordinates?|latitude|longitude|lat\b|lng\b)\b/;
+  const zhPattern = /(位置|定位|坐标|经纬|城市|地区|在哪|哪里|所在地|所在城市)/;
+  return enPattern.test(normalized) || zhPattern.test(text);
+}
+
+function preventRedundantLocationClarify(
+  response: AssistantResponse,
+  locale: "zh" | "en",
+  hasLocation: boolean,
+  nearbyIntent: boolean,
+  nearbySeed?: NearbySearchResult | null
+): AssistantResponse {
+  if (!hasLocation || !nearbyIntent || response.type !== "clarify") {
+    return response;
+  }
+
+  const asksInMessage = asksForLocation(response.message);
+  const asksInQuestions = (response.clarifyQuestions || []).some((question) =>
+    asksForLocation(question)
+  );
+  if (!asksInMessage && !asksInQuestions) {
+    return response;
+  }
+
+  const filteredQuestions = (response.clarifyQuestions || []).filter(
+    (question) => !asksForLocation(question)
+  );
+  const filteredFollowUps = (response.followUps || [])
+    .filter((followUp) => !asksForLocation(followUp.text))
+    .slice(0, 3);
+
+  if (nearbySeed && nearbySeed.candidates.length > 0) {
+    const topCandidates = nearbySeed.candidates.slice(0, 5);
+    return {
+      ...response,
+      type: "results",
+      intent: "search_nearby",
+      message:
+        locale === "zh"
+          ? `已基于你当前位置找到 ${topCandidates.length} 个附近结果。`
+          : `I used your current location and found ${topCandidates.length} nearby places.`,
+      plan:
+        response.plan && response.plan.length > 0
+          ? response.plan
+          : buildDefaultNearbyPlan(locale),
+      candidates: topCandidates,
+      clarifyQuestions: undefined,
+      followUps:
+        filteredFollowUps.length > 0
+          ? filteredFollowUps
+          : buildDefaultNearbyFollowUps(locale),
+    };
+  }
+
+  return {
+    ...response,
+    intent: response.intent || "search_nearby",
+    message:
+      locale === "zh"
+        ? "已获取你的位置。请告诉我品牌、营业时间或预算偏好，我会继续筛选。"
+        : "I already have your location. Share brand, opening-hours, or budget preferences and I will refine the results.",
+    clarifyQuestions:
+      filteredQuestions.length > 0
+        ? filteredQuestions
+        : locale === "zh"
+          ? ["你更偏好苹果授权店还是普通电脑店？", "是否有营业时间或预算要求？"]
+          : [
+              "Do you prefer Apple-authorized stores or any computer shop?",
+              "Any preference on opening hours or budget?",
+            ],
+    followUps:
+      filteredFollowUps.length > 0
+        ? filteredFollowUps
+        : locale === "zh"
+          ? [
+              { text: "只看苹果授权店", type: "refine" },
+              { text: "按 10km 内且评分高优先", type: "refine" },
+            ]
+          : [
+              { text: "Only Apple-authorized stores", type: "refine" },
+              { text: "Keep results within 10km and prioritize higher ratings", type: "refine" },
+            ],
+  };
 }
 
 function isNearbyIntent(message: string): boolean {

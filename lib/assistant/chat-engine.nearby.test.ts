@@ -127,4 +127,94 @@ describe("processChat INTL nearby flow", () => {
     expect(response.candidates?.[0]?.platform).toBe("Google Maps");
     expect(response.candidates?.[0]?.searchQuery).toContain("Joe's Pizza");
   });
+
+  it("does not ask for location again when location is already available", async () => {
+    vi.mocked(searchNearbyStores).mockResolvedValueOnce({
+      source: "overpass",
+      radiusKm: 10,
+      matchedCount: 1,
+      category: "shopping",
+      candidates: [
+        {
+          id: "osm_node_2",
+          name: "Apple Store Fifth Avenue",
+          description: "450m away, opening hours available",
+          category: "shopping",
+          distance: "450m",
+          rating: 4.8,
+          address: "767 5th Ave, New York",
+          platform: "Google Maps",
+          searchQuery: "Apple Store Fifth Avenue, 767 5th Ave, New York",
+        },
+      ],
+    });
+
+    vi.mocked(callAI).mockResolvedValueOnce({
+      model: "mock",
+      content: JSON.stringify({
+        type: "clarify",
+        message:
+          "I can help with that. Could you confirm your current location and preferences?",
+        intent: "search_nearby",
+        clarifyQuestions: [
+          "What is your current location?",
+          "Any specific preferences like opening hours or price range?",
+        ],
+      }),
+    });
+
+    const response = await processChat(
+      {
+        message: "Find Mac computer stores within 10km",
+        locale: "en",
+        region: "INTL",
+        location: { lat: 40.7616, lng: -73.9748 },
+      },
+      "test-user"
+    );
+
+    expect(response.type).toBe("results");
+    expect(response.message.toLowerCase()).toContain("used your current location");
+    expect(response.clarifyQuestions).toBeUndefined();
+    expect(response.candidates?.[0]?.name).toBe("Apple Store Fifth Avenue");
+  });
+
+  it("keeps clarify flow but removes location questions when seed is empty", async () => {
+    vi.mocked(searchNearbyStores).mockResolvedValueOnce({
+      source: "overpass",
+      radiusKm: 10,
+      matchedCount: 0,
+      category: "shopping",
+      candidates: [],
+    });
+
+    vi.mocked(callAI).mockResolvedValueOnce({
+      model: "mock",
+      content: JSON.stringify({
+        type: "clarify",
+        message: "Please share your location and preferred price range.",
+        intent: "search_nearby",
+        clarifyQuestions: [
+          "What is your current location?",
+          "Do you have a preferred price range?",
+        ],
+      }),
+    });
+
+    const response = await processChat(
+      {
+        message: "Find Mac computer stores within 10km",
+        locale: "en",
+        region: "INTL",
+        location: { lat: 40.7616, lng: -73.9748 },
+      },
+      "test-user"
+    );
+
+    expect(response.type).toBe("clarify");
+    expect(response.message.toLowerCase()).toContain("already have your location");
+    const questions = response.clarifyQuestions || [];
+    expect(questions.some((q) => q.toLowerCase().includes("location"))).toBe(false);
+    expect(questions.some((q) => q.toLowerCase().includes("price"))).toBe(true);
+  });
 });
