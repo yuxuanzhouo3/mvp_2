@@ -73,6 +73,23 @@ describe("nearby-store-search Overpass INTL", () => {
         ],
       }),
     });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        elements: [
+          {
+            type: "node",
+            id: 103,
+            lat: 40.7127,
+            lon: -74.0062,
+            tags: {
+              name: "Restaurant",
+              amenity: "restaurant",
+            },
+          },
+        ],
+      }),
+    });
 
     const result = await searchNearbyStores({
       lat: 40.7128,
@@ -86,5 +103,93 @@ describe("nearby-store-search Overpass INTL", () => {
     expect(result.source).toBe("overpass");
     expect(result.candidates).toHaveLength(0);
     expect(result.matchedCount).toBe(0);
+  });
+
+  it("honors 10km radius in Overpass query for nearby shopping requests", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        elements: [],
+      }),
+    });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        elements: [
+          {
+            type: "node",
+            id: 301,
+            lat: 23.541,
+            lon: 110.392,
+            tags: {
+              name: "Pingnan Apple Tech Store",
+              shop: "electronics",
+            },
+          },
+        ],
+      }),
+    });
+
+    await searchNearbyStores({
+      lat: 23.54,
+      lng: 110.39,
+      locale: "en",
+      region: "INTL",
+      message: "Find Mac computer stores within 10km",
+      limit: 5,
+    });
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    const primaryRequestOptions = mockFetch.mock.calls[0]?.[1] as RequestInit;
+    const primaryBody = decodeURIComponent(String(primaryRequestOptions.body || ""));
+    expect(primaryBody).toContain("around:10000");
+    expect(primaryBody).toContain("\"shop\"~");
+
+    const keywordRequestOptions = mockFetch.mock.calls[1]?.[1] as RequestInit;
+    const keywordBody = decodeURIComponent(String(keywordRequestOptions.body || ""));
+    expect(keywordBody).toContain("around:10000");
+    expect(keywordBody).toContain("[\"name\"~");
+  });
+
+  it("falls back to keyword query and returns concrete store names", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        elements: [],
+      }),
+    });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        elements: [
+          {
+            type: "node",
+            id: 201,
+            lat: 23.541,
+            lon: 110.392,
+            tags: {
+              name: "Apple Premium Reseller Pingnan",
+              shop: "electronics",
+              "addr:street": "West Street",
+              "addr:city": "Pingnan",
+            },
+          },
+        ],
+      }),
+    });
+
+    const result = await searchNearbyStores({
+      lat: 23.54,
+      lng: 110.39,
+      locale: "en",
+      region: "INTL",
+      message: "Find Mac computer stores within 10km",
+      limit: 5,
+    });
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]?.name).toBe("Apple Premium Reseller Pingnan");
+    expect(result.candidates[0]?.platform).toBe("Google Maps");
   });
 });

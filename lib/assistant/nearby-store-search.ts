@@ -60,7 +60,7 @@ const DEFAULT_RADIUS_KM = 5;
 const MAX_RADIUS_KM = 30;
 const MIN_RADIUS_KM = 0.3;
 const OVERPASS_MIN_RADIUS_METERS = 200;
-const OVERPASS_MAX_RADIUS_METERS = 5000;
+const OVERPASS_MAX_RADIUS_METERS = 30000;
 const OVERPASS_TIMEOUT_MS = Math.max(
   4000,
   Number(process.env.OVERPASS_TIMEOUT_MS || "12000")
@@ -472,6 +472,60 @@ function buildOverpassQuery(
   ].join("\n");
 }
 
+function escapeRegexFragment(input: string): string {
+  return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function buildKeywordRegexFromMessage(
+  message: string,
+  category?: string
+): string | undefined {
+  const tokens = tokenizeForRanking(message).filter((token) => token.length >= 2).slice(0, 8);
+  const categoryHints =
+    category === "shopping"
+      ? ["apple", "mac", "computer", "laptop", "pc", "notebook", "electronics", "digital", "苹果", "电脑", "数码", "笔记本"]
+      : [];
+
+  const merged = [...tokens, ...categoryHints]
+    .map((token) => token.trim().toLowerCase())
+    .filter((token) => token.length >= 2);
+
+  const unique = Array.from(new Set(merged));
+  if (unique.length === 0) return undefined;
+
+  return unique.map((token) => escapeRegexFragment(token)).join("|");
+}
+
+function buildOverpassKeywordQuery(
+  keywordRegex: string,
+  radiusMeters: number,
+  lat: number,
+  lng: number
+): string {
+  const latString = lat.toFixed(6);
+  const lngString = lng.toFixed(6);
+
+  const clauses = [
+    `node["name"~"${keywordRegex}",i](around:${radiusMeters},${latString},${lngString});`,
+    `way["name"~"${keywordRegex}",i](around:${radiusMeters},${latString},${lngString});`,
+    `relation["name"~"${keywordRegex}",i](around:${radiusMeters},${latString},${lngString});`,
+    `node["brand"~"${keywordRegex}",i](around:${radiusMeters},${latString},${lngString});`,
+    `way["brand"~"${keywordRegex}",i](around:${radiusMeters},${latString},${lngString});`,
+    `relation["brand"~"${keywordRegex}",i](around:${radiusMeters},${latString},${lngString});`,
+    `node["operator"~"${keywordRegex}",i](around:${radiusMeters},${latString},${lngString});`,
+    `way["operator"~"${keywordRegex}",i](around:${radiusMeters},${latString},${lngString});`,
+    `relation["operator"~"${keywordRegex}",i](around:${radiusMeters},${latString},${lngString});`,
+  ];
+
+  return [
+    `[out:json][timeout:${OVERPASS_QUERY_TIMEOUT_SECONDS}];`,
+    "(",
+    ...clauses,
+    ");",
+    "out center tags;",
+  ].join("\n");
+}
+
 function runOverpassQueued<T>(runner: () => Promise<T>): Promise<T> {
   const task = overpassQueue.then(() => runner());
   overpassQueue = task.then(
@@ -481,16 +535,7 @@ function runOverpassQueued<T>(runner: () => Promise<T>): Promise<T> {
   return task;
 }
 
-async function fetchNearbyStoresFromOverpass(
-  params: NearbySearchParams,
-  category: string | undefined,
-  radiusKm: number,
-  limit: number
-): Promise<NearbySearchResult> {
-  const radiusMeters = radiusKmToMeters(radiusKm);
-  const filters = getOverpassFilters(category);
-  const query = buildOverpassQuery(filters, radiusMeters, params.lat, params.lng);
-
+async function fetchOverpassElements(query: string): Promise<OverpassElement[] | null> {
   let response: Response;
   try {
     response = await runOverpassQueued(() =>
@@ -507,24 +552,12 @@ async function fetchNearbyStoresFromOverpass(
     );
   } catch (error) {
     console.error("[NearbyStoreSearch] Overpass request failed:", error);
-    return {
-      candidates: [],
-      radiusKm,
-      matchedCount: 0,
-      category,
-      source: "overpass",
-    };
+    return null;
   }
 
   if (!response.ok) {
     console.warn("[NearbyStoreSearch] Overpass responded with status:", response.status);
-    return {
-      candidates: [],
-      radiusKm,
-      matchedCount: 0,
-      category,
-      source: "overpass",
-    };
+    return null;
   }
 
   let data: OverpassResponse;
@@ -532,20 +565,24 @@ async function fetchNearbyStoresFromOverpass(
     data = (await response.json()) as OverpassResponse;
   } catch (error) {
     console.error("[NearbyStoreSearch] Failed to parse Overpass JSON:", error);
-    return {
-      candidates: [],
-      radiusKm,
-      matchedCount: 0,
-      category,
-      source: "overpass",
-    };
+    return null;
   }
 
+  return Array.isArray(data.elements) ? data.elements : [];
+}
+
+function mapOverpassElementsToResult(
+  elements: OverpassElement[],
+  params: NearbySearchParams,
+  category: string | undefined,
+  radiusKm: number,
+  limit: number
+): NearbySearchResult {
   const tokens = tokenizeForRanking(params.message);
   const ranked: RankedOverpassCandidate[] = [];
   const dedupe = new Set<string>();
 
-  for (const element of data.elements || []) {
+  for (const element of elements) {
     const tags = element.tags || {};
     const name = pickPoiName(tags);
     if (!name || isGenericPoiName(name)) {
@@ -628,6 +665,89 @@ async function fetchNearbyStoresFromOverpass(
     candidates: ranked.slice(0, limit).map((item) => item.candidate),
     radiusKm,
     matchedCount: ranked.length,
+    category,
+    source: "overpass",
+  };
+}
+
+async function fetchNearbyStoresFromOverpass(
+  params: NearbySearchParams,
+  category: string | undefined,
+  radiusKm: number,
+  limit: number
+): Promise<NearbySearchResult> {
+  const filters = getOverpassFilters(category);
+  const keywordRegex = buildKeywordRegexFromMessage(params.message, category);
+
+  const runSearch = async (currentRadiusKm: number): Promise<NearbySearchResult | null> => {
+    const radiusMeters = radiusKmToMeters(currentRadiusKm);
+    const primaryQuery = buildOverpassQuery(filters, radiusMeters, params.lat, params.lng);
+    const primaryElements = await fetchOverpassElements(primaryQuery);
+    if (!primaryElements) {
+      return null;
+    }
+
+    const primaryResult = mapOverpassElementsToResult(
+      primaryElements,
+      params,
+      category,
+      currentRadiusKm,
+      limit
+    );
+    if (primaryResult.candidates.length > 0) {
+      return primaryResult;
+    }
+
+    if (!keywordRegex) {
+      return primaryResult;
+    }
+
+    const keywordQuery = buildOverpassKeywordQuery(
+      keywordRegex,
+      radiusMeters,
+      params.lat,
+      params.lng
+    );
+    const keywordElements = await fetchOverpassElements(keywordQuery);
+    if (!keywordElements) {
+      return primaryResult;
+    }
+
+    const keywordResult = mapOverpassElementsToResult(
+      keywordElements,
+      params,
+      category,
+      currentRadiusKm,
+      limit
+    );
+    if (keywordResult.candidates.length > 0) {
+      return keywordResult;
+    }
+
+    return primaryResult;
+  };
+
+  const primaryResult = await runSearch(radiusKm);
+  if (primaryResult && primaryResult.candidates.length > 0) {
+    return primaryResult;
+  }
+
+  const expandedRadiusKm = clampRadius(Math.max(radiusKm + 8, radiusKm * 1.8));
+  if (expandedRadiusKm > radiusKm + 0.1) {
+    const expandedResult = await runSearch(expandedRadiusKm);
+    if (expandedResult && expandedResult.candidates.length > 0) {
+      return expandedResult;
+    }
+  }
+
+  if (primaryResult) {
+    return primaryResult;
+  }
+
+  return {
+    candidates: [],
+    radiusKm,
+    matchedCount: 0,
     category,
     source: "overpass",
   };
