@@ -475,6 +475,8 @@ export async function processChat(
   if (parsed.candidates && parsed.candidates.length > 0) {
     const forceGoogleMapsForIntlNearby =
       region === "INTL" && (nearbyIntent || parsed.intent === "search_nearby");
+    const forceAmapForCnNearby =
+      region === "CN" && (nearbyIntent || parsed.intent === "search_nearby");
     parsed.actions = enrichActionsWithDeepLinks(
       parsed.candidates,
       parsed.actions || [],
@@ -483,7 +485,9 @@ export async function processChat(
       isMobile,
       forceGoogleMapsForIntlNearby
         ? { forceProvider: "Google Maps" }
-        : undefined
+        : forceAmapForCnNearby
+          ? { forceProvider: "高德地图" }
+          : undefined
     );
   }
 
@@ -742,7 +746,11 @@ async function buildNearbyFallbackOnAiFailure(
         locale,
         region,
         isMobile,
-        region === "INTL" ? { forceProvider: "Google Maps" } : undefined
+        region === "INTL"
+          ? { forceProvider: "Google Maps" }
+          : region === "CN"
+            ? { forceProvider: "高德地图" }
+            : undefined
       ),
     };
   }

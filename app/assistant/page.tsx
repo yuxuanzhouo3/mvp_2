@@ -113,7 +113,7 @@ export default function AssistantPage() {
 
         {/* 聊天界面 */}
         <div className="flex-1 px-2 pb-2">
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 h-full">
+          <div className="bg-white rounded-2xl shadow-sm h-full">
             <ChatInterface
               locale={locale}
               region={region}
@@ -125,3 +125,4 @@ export default function AssistantPage() {
     </div>
   );
 }
+

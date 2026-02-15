@@ -541,7 +541,7 @@ describe("processChat INTL nearby flow", () => {
 
     expect(response.type).toBe("clarify");
     expect(response.intent).toBe("search_nearby");
-    expect(response.message).toContain("20km");
+    expect(response.message).toContain("10km");
     expect(response.clarifyQuestions?.[0]).toContain("20km");
     expect(callAI).not.toHaveBeenCalled();
   });
