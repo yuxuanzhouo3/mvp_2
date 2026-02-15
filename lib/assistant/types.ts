@@ -219,8 +219,10 @@ export interface AssistantPreference {
  * AI 助手使用限制配置
  */
 export interface AssistantUsageLimits {
-  /** 免费用户总计可用次数 */
-  freeTotal: number;
+  /** 免费用户每日可用次数 */
+  freeDailyLimit: number;
+  /** 免费用户每月可用次数 */
+  freeMonthlyLimit: number;
   /** 会员用户每日可用次数 */
   proDailyLimit: number;
   /** 企业用户每日可用次数 */
@@ -231,7 +233,8 @@ export interface AssistantUsageLimits {
  * 默认使用限制
  */
 export const ASSISTANT_USAGE_LIMITS: AssistantUsageLimits = {
-  freeTotal: 3,
+  freeDailyLimit: 6,
+  freeMonthlyLimit: 23,
   proDailyLimit: 10,
   enterpriseDailyLimit: -1, // 无限
 };
@@ -249,7 +252,7 @@ export interface AssistantUsageStats {
   /** 剩余次数（-1 无限） */
   remaining: number;
   /** 周期类型 */
-  periodType: "total" | "daily";
+  periodType: "daily" | "monthly";
 }
 
 // =============================================

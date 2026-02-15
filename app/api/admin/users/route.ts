@@ -3,6 +3,11 @@ import { getAdminSessionCookieName, verifyAdminSessionToken } from "@/lib/admin/
 import { proxyAdminJsonFetch } from "@/lib/admin/proxy";
 import { CloudBaseCollections, getCloudBaseDatabase } from "@/lib/database/cloudbase-client";
 import { getSupabaseAdmin } from "@/lib/integrations/supabase-admin";
+import {
+  getDeploymentAdminSource,
+  isAdminSourceAllowedInDeployment,
+  normalizeAdminSourceToDeployment,
+} from "@/lib/admin/deployment-source";
 
 export const dynamic = "force-dynamic";
 
@@ -55,9 +60,7 @@ type UsersPatchResponse = {
 };
 
 function parseSource(value: string | null): UsersSource {
-  const normalized = String(value || "").toUpperCase();
-  if (normalized === "CN" || normalized === "INTL") return normalized;
-  return "ALL";
+  return normalizeAdminSourceToDeployment(value);
 }
 
 function parsePositiveInt(value: string | null, fallback: number): number {
@@ -121,6 +124,15 @@ async function parsePatchBody(request: NextRequest): Promise<
     return {
       ok: false,
       response: NextResponse.json({ error: "source 仅支持 CN 或 INTL" }, { status: 400 }),
+    };
+  }
+  if (!isAdminSourceAllowedInDeployment(sourceRaw)) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { error: `当前部署仅允许 source=${getDeploymentAdminSource()}` },
+        { status: 400 }
+      ),
     };
   }
   const source = sourceRaw as DataSource;

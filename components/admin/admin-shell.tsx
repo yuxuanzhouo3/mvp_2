@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import * as React from "react";
 import {
   Activity,
+  Bot,
   BarChart3,
   CreditCard,
   LayoutDashboard,
@@ -31,6 +32,7 @@ const NAV_ITEMS: AdminNavItem[] = [
   { href: "/admin/device-stats", label: "设备统计", icon: MonitorSmartphone },
   { href: "/admin/orders", label: "交易订单", icon: ShoppingCart },
   { href: "/admin/users", label: "用户管理", icon: Users },
+  { href: "/admin/ai-config", label: "AI config", icon: Bot },
   { href: "/admin/payments", label: "支付分析", icon: CreditCard },
   { href: "/admin/releases", label: "版本管理", icon: Package },
   { href: "/admin/analytics", label: "行为分析", icon: Activity },

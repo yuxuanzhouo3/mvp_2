@@ -25,9 +25,16 @@ import {
   YAxis,
 } from "recharts";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { getDeploymentAdminSource } from "@/lib/admin/deployment-source";
 
 type AdminDataSource = "CN" | "INTL";
-type AnalyticsSource = "ALL" | AdminDataSource;
+type AnalyticsSource = AdminDataSource;
+
+const DEPLOYMENT_SOURCE: AnalyticsSource = getDeploymentAdminSource();
+const DEPLOYMENT_PROVIDER_LABEL =
+  DEPLOYMENT_SOURCE === "CN"
+    ? "腾讯云 CloudBase 文档型数据库"
+    : "Supabase";
 
 type SourceInfo = {
   source: AdminDataSource;
@@ -85,7 +92,7 @@ type AnalyticsResponse = {
 };
 
 const emptyData: AnalyticsResponse = {
-  source: "ALL",
+  source: DEPLOYMENT_SOURCE,
   days: 7,
   permanentDays: 7,
   sources: [],
@@ -103,30 +110,23 @@ function badgeClasses(source: AdminDataSource): string {
     : "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-900/20 dark:text-purple-200 dark:border-purple-900/40";
 }
 
-function mergeByDate(cn: SideAnalytics | undefined, intl: SideAnalytics | undefined) {
-  const map = new Map<string, any>();
-  for (const d of cn?.events.days || []) {
-    map.set(d.date, { date: d.date, cnActive: d.activeSessions, cnPV: d.pageViews });
+function sourceModeLabel(mode: SourceInfo["mode"], source: AdminDataSource): string {
+  if (source === "CN") {
+    if (mode === "direct") return "直连";
+    if (mode === "proxy") return "代理";
+    return "未配置";
   }
-  for (const d of intl?.events.days || []) {
-    const prev = map.get(d.date) || { date: d.date, cnActive: 0, cnPV: 0 };
-    map.set(d.date, { ...prev, intlActive: d.activeSessions, intlPV: d.pageViews });
-  }
-  const out = Array.from(map.values());
-  out.sort((a, b) => (a.date > b.date ? 1 : -1));
-  for (const r of out) {
-    r.cnActive = Number(r.cnActive) || 0;
-    r.intlActive = Number(r.intlActive) || 0;
-    r.cnPV = Number(r.cnPV) || 0;
-    r.intlPV = Number(r.intlPV) || 0;
-    r.totalActive = r.cnActive + r.intlActive;
-    r.totalPV = r.cnPV + r.intlPV;
-  }
-  return out;
+  if (mode === "direct") return "Direct";
+  if (mode === "proxy") return "Proxy";
+  return "Missing";
 }
 
 export default function AdminAnalyticsPage() {
-  const [source, setSource] = React.useState<AnalyticsSource>("ALL");
+  const source = DEPLOYMENT_SOURCE;
+  const isCn = source === "CN";
+  const sourceDisplayLabel = isCn
+    ? "CN · 腾讯云 CloudBase 文档型数据库"
+    : "INTL · Supabase";
   const [days, setDays] = React.useState<number>(7);
   const [permanentDays, setPermanentDays] = React.useState<number>(7);
   const [loading, setLoading] = React.useState<boolean>(true);
@@ -161,44 +161,48 @@ export default function AdminAnalyticsPage() {
     };
   }, [source, days, permanentDays]);
 
-  const cn = data.sides.find((s) => s.source === "CN");
-  const intl = data.sides.find((s) => s.source === "INTL");
-  const trend = mergeByDate(cn, intl);
-  const exitSteps = [...(cn?.onboarding.exitSteps || []).map((s) => ({ ...s, source: "CN" as const })), ...(intl?.onboarding.exitSteps || []).map((s) => ({ ...s, source: "INTL" as const }))].sort(
-    (a, b) => b.count - a.count
-  );
+  const side = data.sides.find((item) => item.source === source);
+  const trend = side?.events.days || [];
+  const exitSteps = (side?.onboarding.exitSteps || [])
+    .map((item) => ({ ...item, source }))
+    .sort((a, b) => b.count - a.count);
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-2">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h1 className="text-3xl font-bold">用户行为分析</h1>
-            <p className="text-muted-foreground mt-1">CN（CloudBase）+ INTL（Supabase）用户行为与 AI 预算</p>
+            <h1 className="text-3xl font-bold">{isCn ? "用户行为分析" : "User Analytics"}</h1>
+            <p className="text-muted-foreground mt-1">
+              {isCn
+                ? `当前为 CN 环境，仅展示${DEPLOYMENT_PROVIDER_LABEL}中的行为数据。`
+                : `Current environment: INTL. Showing analytics from ${DEPLOYMENT_PROVIDER_LABEL} only.`}
+            </p>
           </div>
           <div className="flex gap-2">
-            <Badge variant="outline" className={badgeClasses("CN")}>CN</Badge>
-            <Badge variant="outline" className={badgeClasses("INTL")}>INTL</Badge>
+            <Badge variant="outline" className={badgeClasses(source)}>
+              {sourceDisplayLabel}
+            </Badge>
           </div>
         </div>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>筛选</CardTitle>
+          <CardTitle>{isCn ? "筛选" : "Filters"}</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-wrap items-end gap-3">
           <div className="flex flex-col gap-1">
-            <div className="text-xs text-muted-foreground">数据源</div>
-            <div className="flex gap-2">
-              <Button variant={source === "ALL" ? "default" : "outline"} size="sm" onClick={() => setSource("ALL")}>ALL</Button>
-              <Button variant={source === "CN" ? "default" : "outline"} size="sm" onClick={() => setSource("CN")}>CN</Button>
-              <Button variant={source === "INTL" ? "default" : "outline"} size="sm" onClick={() => setSource("INTL")}>INTL</Button>
+            <div className="text-xs text-muted-foreground">{isCn ? "数据源" : "Source"}</div>
+            <div className="h-9 min-w-28 rounded-md border bg-background px-3 text-sm inline-flex items-center">
+              {sourceDisplayLabel}
             </div>
           </div>
 
           <div className="flex flex-col gap-1">
-            <div className="text-xs text-muted-foreground">时间窗（天）</div>
+            <div className="text-xs text-muted-foreground">
+              {isCn ? "时间窗（天）" : "Window (days)"}
+            </div>
             <div className="flex gap-2">
               <Button variant={days === 7 ? "default" : "outline"} size="sm" onClick={() => setDays(7)}>7</Button>
               <Button variant={days === 30 ? "default" : "outline"} size="sm" onClick={() => setDays(30)}>30</Button>
@@ -207,7 +211,9 @@ export default function AdminAnalyticsPage() {
           </div>
 
           <div className="flex flex-col gap-1">
-            <div className="text-xs text-muted-foreground">永久退出阈值（天）</div>
+            <div className="text-xs text-muted-foreground">
+              {isCn ? "永久退出阈值（天）" : "Permanent drop-off threshold (days)"}
+            </div>
             <input
               value={String(permanentDays)}
               onChange={(e) => setPermanentDays(Math.max(1, Math.min(180, Number(e.target.value) || 1)))}
@@ -217,7 +223,17 @@ export default function AdminAnalyticsPage() {
           </div>
 
           <div className="text-sm text-muted-foreground ml-auto">
-            {loading ? "加载中…" : error ? `加载失败：${error}` : "已更新"}
+            {loading
+              ? isCn
+                ? "加载中…"
+                : "Loading..."
+              : error
+                ? isCn
+                  ? `加载失败：${error}`
+                  : `Failed to load: ${error}`
+                : isCn
+                  ? "已更新"
+                  : "Updated"}
           </div>
         </CardContent>
       </Card>
@@ -225,17 +241,17 @@ export default function AdminAnalyticsPage() {
       {data.sources.some((s) => !s.ok) ? (
         <Card>
           <CardHeader>
-            <CardTitle>数据源状态</CardTitle>
+            <CardTitle>{isCn ? "CloudBase 数据源状态" : "Supabase Data Source Status"}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
             {data.sources.map((s) => (
               <div key={s.source} className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
                   <Badge variant="outline" className={badgeClasses(s.source)}>{s.source}</Badge>
-                  <span className="text-muted-foreground">{s.mode}</span>
+                  <span className="text-muted-foreground">{sourceModeLabel(s.mode, source)}</span>
                 </div>
                 <div className={s.ok ? "text-green-600" : "text-red-600"}>
-                  {s.ok ? "OK" : s.message || "失败"}
+                  {s.ok ? "OK" : s.message || (isCn ? "失败" : "Failed")}
                 </div>
               </div>
             ))}
@@ -245,16 +261,16 @@ export default function AdminAnalyticsPage() {
 
       <Tabs defaultValue="traffic">
         <TabsList>
-          <TabsTrigger value="traffic">访问</TabsTrigger>
+          <TabsTrigger value="traffic">{isCn ? "访问" : "Traffic"}</TabsTrigger>
           <TabsTrigger value="onboarding">Onboarding</TabsTrigger>
-          <TabsTrigger value="ai">AI预算</TabsTrigger>
+          <TabsTrigger value="ai">{isCn ? "AI用量" : "AI Usage"}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="traffic" className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <Card>
               <CardHeader>
-                <CardTitle>活跃会话（按天）</CardTitle>
+                <CardTitle>{isCn ? "活跃会话（按天）" : "Active Sessions (Daily)"}</CardTitle>
               </CardHeader>
               <CardContent className="h-72">
                 <ResponsiveContainer width="100%" height="100%">
@@ -264,9 +280,14 @@ export default function AdminAnalyticsPage() {
                     <YAxis allowDecimals={false} />
                     <Tooltip />
                     <Legend />
-                    <Line type="monotone" dataKey="cnActive" name="CN" stroke="#2563eb" strokeWidth={2} dot={false} />
-                    <Line type="monotone" dataKey="intlActive" name="INTL" stroke="#7c3aed" strokeWidth={2} dot={false} />
-                    <Line type="monotone" dataKey="totalActive" name="Total" stroke="#111827" strokeWidth={2} dot={false} />
+                    <Line
+                      type="monotone"
+                      dataKey="activeSessions"
+                      name={isCn ? "活跃会话" : "Active Sessions"}
+                      stroke={source === "CN" ? "#2563eb" : "#7c3aed"}
+                      strokeWidth={2}
+                      dot={false}
+                    />
                   </LineChart>
                 </ResponsiveContainer>
               </CardContent>
@@ -274,7 +295,7 @@ export default function AdminAnalyticsPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle>页面浏览（按天）</CardTitle>
+                <CardTitle>{isCn ? "页面浏览（按天）" : "Page Views (Daily)"}</CardTitle>
               </CardHeader>
               <CardContent className="h-72">
                 <ResponsiveContainer width="100%" height="100%">
@@ -284,8 +305,11 @@ export default function AdminAnalyticsPage() {
                     <YAxis allowDecimals={false} />
                     <Tooltip />
                     <Legend />
-                    <Bar dataKey="cnPV" name="CN" fill="#60a5fa" />
-                    <Bar dataKey="intlPV" name="INTL" fill="#c4b5fd" />
+                    <Bar
+                      dataKey="pageViews"
+                      name={isCn ? "页面浏览" : "Page Views"}
+                      fill={source === "CN" ? "#60a5fa" : "#c4b5fd"}
+                    />
                   </BarChart>
                 </ResponsiveContainer>
               </CardContent>
@@ -295,34 +319,31 @@ export default function AdminAnalyticsPage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <Card>
               <CardHeader>
-                <CardTitle>Top Pages</CardTitle>
+                <CardTitle>{isCn ? "热门页面" : "Top Pages"}</CardTitle>
               </CardHeader>
               <CardContent>
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>来源</TableHead>
-                      <TableHead>路径</TableHead>
+                      <TableHead>{isCn ? "来源" : "Source"}</TableHead>
+                      <TableHead>{isCn ? "路径" : "Path"}</TableHead>
                       <TableHead className="text-right">PV</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {(["CN", "INTL"] as const).flatMap((src) => {
-                      const side = data.sides.find((s) => s.source === src);
-                      return (side?.events.topPages || []).slice(0, 10).map((p) => (
-                        <TableRow key={`${src}-${p.path}`}>
-                          <TableCell>
-                            <Badge variant="outline" className={badgeClasses(src)}>{src}</Badge>
-                          </TableCell>
-                          <TableCell className="font-mono text-xs">{p.path}</TableCell>
-                          <TableCell className="text-right">{p.pageViews}</TableCell>
-                        </TableRow>
-                      ));
-                    })}
+                    {(side?.events.topPages || []).slice(0, 10).map((p) => (
+                      <TableRow key={`${source}-${p.path}`}>
+                        <TableCell>
+                          <Badge variant="outline" className={badgeClasses(source)}>{source}</Badge>
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">{p.path}</TableCell>
+                        <TableCell className="text-right">{p.pageViews}</TableCell>
+                      </TableRow>
+                    ))}
                     {!data.sides.length ? (
                       <TableRow>
                         <TableCell colSpan={3} className="text-center text-sm text-muted-foreground">
-                          {loading ? "加载中…" : "暂无数据"}
+                          {loading ? (isCn ? "加载中…" : "Loading...") : isCn ? "暂无数据" : "No data"}
                         </TableCell>
                       </TableRow>
                     ) : null}
@@ -333,34 +354,31 @@ export default function AdminAnalyticsPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle>永久退出（最近一步）</CardTitle>
+                <CardTitle>{isCn ? "永久退出（最近一步）" : "Permanent Drop-off (Last Step)"}</CardTitle>
               </CardHeader>
               <CardContent>
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>来源</TableHead>
-                      <TableHead>最近一步</TableHead>
-                      <TableHead className="text-right">会话数</TableHead>
+                      <TableHead>{isCn ? "来源" : "Source"}</TableHead>
+                      <TableHead>{isCn ? "最近一步" : "Last Step"}</TableHead>
+                      <TableHead className="text-right">{isCn ? "会话数" : "Sessions"}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {(["CN", "INTL"] as const).flatMap((src) => {
-                      const side = data.sides.find((s) => s.source === src);
-                      return (side?.events.permanentDropoff || []).slice(0, 10).map((p) => (
-                        <TableRow key={`${src}-${p.lastStep}`}>
-                          <TableCell>
-                            <Badge variant="outline" className={badgeClasses(src)}>{src}</Badge>
-                          </TableCell>
-                          <TableCell className="font-mono text-xs">{p.lastStep}</TableCell>
-                          <TableCell className="text-right">{p.sessions}</TableCell>
-                        </TableRow>
-                      ));
-                    })}
+                    {(side?.events.permanentDropoff || []).slice(0, 10).map((p) => (
+                      <TableRow key={`${source}-${p.lastStep}`}>
+                        <TableCell>
+                          <Badge variant="outline" className={badgeClasses(source)}>{source}</Badge>
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">{p.lastStep}</TableCell>
+                        <TableCell className="text-right">{p.sessions}</TableCell>
+                      </TableRow>
+                    ))}
                     {!data.sides.length ? (
                       <TableRow>
                         <TableCell colSpan={3} className="text-center text-sm text-muted-foreground">
-                          {loading ? "加载中…" : "暂无数据"}
+                          {loading ? (isCn ? "加载中…" : "Loading...") : isCn ? "暂无数据" : "No data"}
                         </TableCell>
                       </TableRow>
                     ) : null}
@@ -373,13 +391,13 @@ export default function AdminAnalyticsPage() {
 
         <TabsContent value="onboarding" className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {(["CN", "INTL"] as const).map((src) => {
+            {[source].map((src) => {
               const side = data.sides.find((s) => s.source === src);
               const o = side?.onboarding.overview;
               return (
                 <Card key={src}>
                   <CardHeader className="flex flex-row items-center justify-between">
-                    <CardTitle className="text-sm text-muted-foreground">完成率</CardTitle>
+                    <CardTitle className="text-sm text-muted-foreground">{isCn ? "完成率" : "Completion Rate"}</CardTitle>
                     <Badge variant="outline" className={badgeClasses(src)}>{src}</Badge>
                   </CardHeader>
                   <CardContent>
@@ -387,7 +405,9 @@ export default function AdminAnalyticsPage() {
                       {loading ? "-" : o ? formatPct(o.completionRate) : "-"}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">
-                      完成 {o?.completed || 0}/{o?.started || 0}
+                      {isCn
+                        ? `完成 ${o?.completed || 0}/${o?.started || 0}`
+                        : `Completed ${o?.completed || 0}/${o?.started || 0}`}
                     </div>
                   </CardContent>
                 </Card>
@@ -397,16 +417,16 @@ export default function AdminAnalyticsPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>退出步骤分布</CardTitle>
+              <CardTitle>{isCn ? "退出步骤分布" : "Exit Step Distribution"}</CardTitle>
             </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>来源</TableHead>
-                    <TableHead>步骤</TableHead>
-                    <TableHead className="text-right">退出人数</TableHead>
-                    <TableHead className="text-right">永久退出</TableHead>
+                    <TableHead>{isCn ? "来源" : "Source"}</TableHead>
+                    <TableHead>{isCn ? "步骤" : "Step"}</TableHead>
+                    <TableHead className="text-right">{isCn ? "退出人数" : "Drop-offs"}</TableHead>
+                    <TableHead className="text-right">{isCn ? "永久退出" : "Permanent"}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -425,7 +445,7 @@ export default function AdminAnalyticsPage() {
                   {!exitSteps.length ? (
                     <TableRow>
                       <TableCell colSpan={4} className="text-center text-sm text-muted-foreground">
-                        {loading ? "加载中…" : "暂无数据"}
+                        {loading ? (isCn ? "加载中…" : "Loading...") : isCn ? "暂无数据" : "No data"}
                       </TableCell>
                     </TableRow>
                   ) : null}
@@ -435,26 +455,28 @@ export default function AdminAnalyticsPage() {
           </Card>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {(["CN", "INTL"] as const).map((src) => {
+            {[source].map((src) => {
               const side = data.sides.find((s) => s.source === src);
               const f = side?.events.funnels.onboarding;
               return (
                 <Card key={src}>
                   <CardHeader className="flex flex-row items-center justify-between">
-                    <CardTitle className="text-sm text-muted-foreground">漏斗（基于会话）</CardTitle>
+                    <CardTitle className="text-sm text-muted-foreground">
+                      {isCn ? "漏斗（基于会话）" : "Funnel (Session-based)"}
+                    </CardTitle>
                     <Badge variant="outline" className={badgeClasses(src)}>{src}</Badge>
                   </CardHeader>
                   <CardContent className="space-y-1 text-sm">
                     <div className="flex items-center justify-between">
-                      <div>看过步骤</div>
+                      <div>{isCn ? "看过步骤" : "Step Viewed"}</div>
                       <div>{loading ? "-" : f?.stepViewedSessions || 0}</div>
                     </div>
                     <div className="flex items-center justify-between">
-                      <div>完成</div>
+                      <div>{isCn ? "完成" : "Completed"}</div>
                       <div>{loading ? "-" : f?.completedSessions || 0}</div>
                     </div>
                     <div className="flex items-center justify-between">
-                      <div>完成率</div>
+                      <div>{isCn ? "完成率" : "Completion Rate"}</div>
                       <div>{loading ? "-" : f ? formatPct(f.completionRate) : "-"}</div>
                     </div>
                   </CardContent>
@@ -466,42 +488,44 @@ export default function AdminAnalyticsPage() {
 
         <TabsContent value="ai" className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {(["CN", "INTL"] as const).map((src) => {
+            {[source].map((src) => {
               const side = data.sides.find((s) => s.source === src);
               const u = side?.aiUsage;
               const f = side?.events.funnels.recommendation;
               return (
                 <Card key={src}>
                   <CardHeader className="flex flex-row items-center justify-between">
-                    <CardTitle className="text-sm text-muted-foreground">AI预算/用量</CardTitle>
+                    <CardTitle className="text-sm text-muted-foreground">{isCn ? "AI预算/用量" : "AI Usage"}</CardTitle>
                     <Badge variant="outline" className={badgeClasses(src)}>{src}</Badge>
                   </CardHeader>
                   <CardContent className="space-y-2">
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <div className="text-xs text-muted-foreground">调用次数（{days}天）</div>
+                        <div className="text-xs text-muted-foreground">
+                          {isCn ? `调用次数（${days}天）` : `Requests (${days} days)`}
+                        </div>
                         <div className="text-2xl font-bold">{loading ? "-" : u?.totalRequests || 0}</div>
                       </div>
                       <div>
-                        <div className="text-xs text-muted-foreground">活跃用户</div>
+                        <div className="text-xs text-muted-foreground">{isCn ? "活跃用户" : "Active Users"}</div>
                         <div className="text-2xl font-bold">{loading ? "-" : u?.activeUsers || 0}</div>
                       </div>
                     </div>
                     <div className="pt-2 border-t text-sm space-y-1">
                       <div className="flex items-center justify-between">
-                        <div>请求会话</div>
+                        <div>{isCn ? "请求会话" : "Request Sessions"}</div>
                         <div>{loading ? "-" : f?.requestedSessions || 0}</div>
                       </div>
                       <div className="flex items-center justify-between">
-                        <div>成功率</div>
+                        <div>{isCn ? "成功率" : "Success Rate"}</div>
                         <div>{loading ? "-" : f ? formatPct(f.requestToSuccessRate) : "-"}</div>
                       </div>
                       <div className="flex items-center justify-between">
-                        <div>查看率</div>
+                        <div>{isCn ? "查看率" : "View Rate"}</div>
                         <div>{loading ? "-" : f ? formatPct(f.successToViewRate) : "-"}</div>
                       </div>
                       <div className="flex items-center justify-between">
-                        <div>点击率</div>
+                        <div>{isCn ? "点击率" : "Click Rate"}</div>
                         <div>{loading ? "-" : f ? formatPct(f.viewToClickRate) : "-"}</div>
                       </div>
                     </div>
@@ -513,19 +537,19 @@ export default function AdminAnalyticsPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Top Users（按调用次数）</CardTitle>
+              <CardTitle>{isCn ? "Top Users（按调用次数）" : "Top Users (By Requests)"}</CardTitle>
             </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>来源</TableHead>
+                    <TableHead>{isCn ? "来源" : "Source"}</TableHead>
                     <TableHead>User ID</TableHead>
-                    <TableHead className="text-right">调用次数</TableHead>
+                    <TableHead className="text-right">{isCn ? "调用次数" : "Requests"}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {(["CN", "INTL"] as const).flatMap((src) => {
+                  {[source].flatMap((src) => {
                     const side = data.sides.find((s) => s.source === src);
                     return (side?.aiUsage.topUsers || []).slice(0, 10).map((u) => (
                       <TableRow key={`${src}-${u.userId}`}>
@@ -540,7 +564,7 @@ export default function AdminAnalyticsPage() {
                   {!data.sides.length ? (
                     <TableRow>
                       <TableCell colSpan={3} className="text-center text-sm text-muted-foreground">
-                        {loading ? "加载中…" : "暂无数据"}
+                        {loading ? (isCn ? "加载中…" : "Loading...") : isCn ? "暂无数据" : "No data"}
                       </TableCell>
                     </TableRow>
                   ) : null}

@@ -19,10 +19,11 @@ export function SourceBadge({
   className?: string;
   children?: React.ReactNode;
 }) {
+  const defaultLabel =
+    source === "CN" ? "CN · Tencent CloudBase" : "INTL · Supabase";
   return (
     <Badge variant="outline" className={cn(sourceBadgeClasses(source), className)}>
-      {children ?? source}
+      {children ?? defaultLabel}
     </Badge>
   );
 }
-

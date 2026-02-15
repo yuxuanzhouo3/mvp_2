@@ -36,6 +36,10 @@ import {
 import { DashboardModuleTile } from "@/components/admin/dashboard-module-tile";
 import { SourceBadge, type AdminDataSource } from "@/components/admin/source-badge";
 import { isInternationalDeployment } from "@/lib/config/deployment.config";
+import {
+  getDeploymentAdminProviderName,
+  getDeploymentAdminSource,
+} from "@/lib/admin/deployment-source";
 
 type DataSource = AdminDataSource;
 
@@ -150,10 +154,7 @@ const emptyStats: StatsData = {
 };
 
 const emptyAnalytics: AnalyticsResponse = {
-  sources: [
-    { source: "CN", ok: false, mode: "missing", message: "未加载" },
-    { source: "INTL", ok: false, mode: "missing", message: "未加载" },
-  ],
+  sources: [],
   sides: [],
 };
 
@@ -197,6 +198,12 @@ async function fetchJson<T>(url: string): Promise<T> {
 
 export function AdminDashboard() {
   const isIntlDeployment = isInternationalDeployment();
+  const deploymentSource = getDeploymentAdminSource();
+  const deploymentProvider = getDeploymentAdminProviderName(deploymentSource);
+  const deploymentProviderLabel =
+    deploymentSource === "CN"
+      ? "腾讯云 CloudBase 文档型数据库"
+      : "Supabase 数据库";
   const [days, setDays] = React.useState<number>(7);
   const [refreshKey, setRefreshKey] = React.useState<number>(0);
   const [loading, setLoading] = React.useState<boolean>(true);
@@ -213,9 +220,9 @@ export function AdminDashboard() {
     (async () => {
       const problems: string[] = [];
       const results = await Promise.allSettled([
-        fetchJson<StatsData>("/api/admin/stats?source=ALL"),
-        fetchJson<PaymentsResponse>(`/api/admin/payments?source=ALL&status=all&page=1&pageSize=5`),
-        fetchJson<AnalyticsResponse>(`/api/admin/analytics?source=ALL&days=${days}&permanentDays=7`),
+        fetchJson<StatsData>(`/api/admin/stats?source=${deploymentSource}`),
+        fetchJson<PaymentsResponse>(`/api/admin/payments?source=${deploymentSource}&status=all&page=1&pageSize=5`),
+        fetchJson<AnalyticsResponse>(`/api/admin/analytics?source=${deploymentSource}&days=${days}&permanentDays=7`),
       ]);
 
       const statsRes = results[0];
@@ -239,7 +246,7 @@ export function AdminDashboard() {
     return () => {
       cancelled = true;
     };
-  }, [days, refreshKey]);
+  }, [days, refreshKey, deploymentSource]);
 
   const userGrowth = ensureSevenDays(stats.userGrowth || [], (date) => ({
     date,
@@ -252,12 +259,23 @@ export function AdminDashboard() {
     cn: 0,
     intl: 0,
   }));
+  const activeUserGrowthKey = deploymentSource === "CN" ? "cn" : "intl";
+  const activeRevenueGrowthKey = deploymentSource === "CN" ? "cn" : "intl";
 
   const cnSide = analytics.sides.find((s) => s.source === "CN");
   const intlSide = analytics.sides.find((s) => s.source === "INTL");
-
-  const totalAiCalls = (cnSide?.aiUsage.totalRequests || 0) + (intlSide?.aiUsage.totalRequests || 0);
-  const totalAiActive = (cnSide?.aiUsage.activeUsers || 0) + (intlSide?.aiUsage.activeUsers || 0);
+  const activeStats = deploymentSource === "CN" ? stats.cn : stats.intl;
+  const activeAiSide = deploymentSource === "CN" ? cnSide : intlSide;
+  const activeRevenue30d =
+    deploymentSource === "CN"
+      ? payments?.stats.revenue30dCny || 0
+      : payments?.stats.revenue30dUsd || 0;
+  const activeRevenueCurrency: "CNY" | "USD" =
+    deploymentSource === "CN" ? "CNY" : "USD";
+  const activeAiCalls = activeAiSide?.aiUsage.totalRequests || 0;
+  const activeAiUsers = activeAiSide?.aiUsage.activeUsers || 0;
+  const activeOnboardingRate =
+    activeAiSide?.onboarding.overview?.completionRate || 0;
 
   const moduleItems = [
     {
@@ -266,8 +284,8 @@ export function AdminDashboard() {
       desc: "用户、订单、收入趋势",
       icon: BarChart3,
       lines: [
-        `总用户：${loading ? "-" : stats.total.totalUsers}`,
-        `今日新增：+${loading ? "-" : stats.total.todayUsers}`,
+        `总用户：${loading ? "-" : activeStats.totalUsers}`,
+        `今日新增：+${loading ? "-" : activeStats.todayUsers}`,
       ],
     },
     {
@@ -276,8 +294,8 @@ export function AdminDashboard() {
       desc: "订单列表与状态汇总",
       icon: ShoppingCart,
       lines: [
-        `总订单：${loading ? "-" : stats.total.totalOrders}`,
-        `今日新增：+${loading ? "-" : stats.total.todayOrders}`,
+        `总订单：${loading ? "-" : activeStats.totalOrders}`,
+        `今日新增：+${loading ? "-" : activeStats.todayOrders}`,
       ],
     },
     {
@@ -286,8 +304,8 @@ export function AdminDashboard() {
       desc: "用户列表与搜索",
       icon: Users,
       lines: [
-        `CN：${loading ? "-" : stats.cn.totalUsers} | INTL：${loading ? "-" : stats.intl.totalUsers}`,
-        `今日新增：CN +${loading ? "-" : stats.cn.todayUsers} / INTL +${loading ? "-" : stats.intl.todayUsers}`,
+        `${deploymentSource} 用户：${loading ? "-" : activeStats.totalUsers}`,
+        `今日新增：+${loading ? "-" : activeStats.todayUsers}`,
       ],
     },
     {
@@ -296,8 +314,12 @@ export function AdminDashboard() {
       desc: "支付记录、收入与渠道",
       icon: CreditCard,
       lines: [
-        `30天收入（CN）：${loading ? "-" : formatMoney(payments?.stats.revenue30dCny || 0, "CNY")}`,
-        `30天收入（INTL）：${loading ? "-" : formatMoney(payments?.stats.revenue30dUsd || 0, "USD")}`,
+        `${deploymentSource} 30天收入：${
+          loading ? "-" : formatMoney(activeRevenue30d, activeRevenueCurrency)
+        }`,
+        `${deploymentProvider} 已完成：${
+          loading ? "-" : payments?.stats.byStatus.completed || 0
+        }`,
       ],
     },
     {
@@ -306,8 +328,12 @@ export function AdminDashboard() {
       desc: "Onboarding、AI预算与漏斗",
       icon: Activity,
       lines: [
-        `AI调用：${loading ? "-" : totalAiCalls}（活跃用户 ${loading ? "-" : totalAiActive}）`,
-        `Onboarding：CN ${loading ? "-" : formatPct(cnSide?.onboarding.overview?.completionRate || 0)} / INTL ${loading ? "-" : formatPct(intlSide?.onboarding.overview?.completionRate || 0)}`,
+        `AI调用：${loading ? "-" : activeAiCalls}（活跃用户 ${
+          loading ? "-" : activeAiUsers
+        }）`,
+        `Onboarding 完成率：${
+          loading ? "-" : formatPct(activeOnboardingRate)
+        }`,
       ],
     },
     {
@@ -315,11 +341,11 @@ export function AdminDashboard() {
       label: "设备统计",
       desc: "设备、操作系统与浏览器趋势",
       icon: MonitorSmartphone,
-      lines: ["查看 CN + INTL 设备可视化", `支持最近 ${days} 天趋势与 Top 分布`],
+      lines: [`查看 ${deploymentSource} 设备可视化`, `支持最近 ${days} 天趋势与 Top 分布`],
     },
   ] as const;
 
-  const topUsers = (["CN", "INTL"] as const)
+  const topUsers = ([deploymentSource] as const)
     .flatMap((src) => {
       const side = analytics.sides.find((s) => s.source === src);
       return (side?.aiUsage.topUsers || []).map((u) => ({ ...u, source: src }));
@@ -333,13 +359,12 @@ export function AdminDashboard() {
         <div className="flex items-start justify-between gap-3">
           <div>
             <h1 className="text-3xl font-bold">Dashboard</h1>
-            <p className="text-muted-foreground mt-1">
-              CN（CloudBase 文档型数据库）+ INTL（Supabase）运营总览与快捷入口
-            </p>
+            <p className="text-muted-foreground mt-1">{`当前数据源：${deploymentSource} · ${deploymentProviderLabel}`}</p>
           </div>
           <div className="flex gap-2">
-            <SourceBadge source="CN">CN · CloudBase</SourceBadge>
-            <SourceBadge source="INTL">INTL · Supabase</SourceBadge>
+            <SourceBadge source={deploymentSource}>
+              {deploymentSource} · {deploymentProvider}
+            </SourceBadge>
           </div>
         </div>
       </div>
@@ -412,13 +437,10 @@ export function AdminDashboard() {
             <CardTitle className="text-sm font-medium text-muted-foreground">总用户</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{loading ? "-" : stats.total.totalUsers}</div>
+            <div className="text-2xl font-bold">{loading ? "-" : activeStats.totalUsers}</div>
             <div className="flex gap-2 mt-2">
-              <SourceBadge source="CN" className="text-xs">
-                CN {loading ? "-" : stats.cn.totalUsers}
-              </SourceBadge>
-              <SourceBadge source="INTL" className="text-xs">
-                INTL {loading ? "-" : stats.intl.totalUsers}
+              <SourceBadge source={deploymentSource} className="text-xs">
+                {deploymentSource} {loading ? "-" : activeStats.totalUsers}
               </SourceBadge>
             </div>
           </CardContent>
@@ -429,13 +451,10 @@ export function AdminDashboard() {
             <CardTitle className="text-sm font-medium text-muted-foreground">今日新增</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{loading ? "-" : stats.total.todayUsers}</div>
+            <div className="text-2xl font-bold">{loading ? "-" : activeStats.todayUsers}</div>
             <div className="flex gap-2 mt-2">
-              <SourceBadge source="CN" className="text-xs">
-                CN +{loading ? "-" : stats.cn.todayUsers}
-              </SourceBadge>
-              <SourceBadge source="INTL" className="text-xs">
-                INTL +{loading ? "-" : stats.intl.todayUsers}
+              <SourceBadge source={deploymentSource} className="text-xs">
+                {deploymentSource} +{loading ? "-" : activeStats.todayUsers}
               </SourceBadge>
             </div>
           </CardContent>
@@ -446,13 +465,10 @@ export function AdminDashboard() {
             <CardTitle className="text-sm font-medium text-muted-foreground">总订单</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{loading ? "-" : stats.total.totalOrders}</div>
+            <div className="text-2xl font-bold">{loading ? "-" : activeStats.totalOrders}</div>
             <div className="flex gap-2 mt-2">
-              <SourceBadge source="CN" className="text-xs">
-                CN {loading ? "-" : stats.cn.totalOrders}
-              </SourceBadge>
-              <SourceBadge source="INTL" className="text-xs">
-                INTL {loading ? "-" : stats.intl.totalOrders}
+              <SourceBadge source={deploymentSource} className="text-xs">
+                {deploymentSource} {loading ? "-" : activeStats.totalOrders}
               </SourceBadge>
             </div>
           </CardContent>
@@ -463,13 +479,10 @@ export function AdminDashboard() {
             <CardTitle className="text-sm font-medium text-muted-foreground">今日订单</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{loading ? "-" : stats.total.todayOrders}</div>
+            <div className="text-2xl font-bold">{loading ? "-" : activeStats.todayOrders}</div>
             <div className="flex gap-2 mt-2">
-              <SourceBadge source="CN" className="text-xs">
-                CN +{loading ? "-" : stats.cn.todayOrders}
-              </SourceBadge>
-              <SourceBadge source="INTL" className="text-xs">
-                INTL +{loading ? "-" : stats.intl.todayOrders}
+              <SourceBadge source={deploymentSource} className="text-xs">
+                {deploymentSource} +{loading ? "-" : activeStats.todayOrders}
               </SourceBadge>
             </div>
           </CardContent>
@@ -481,10 +494,9 @@ export function AdminDashboard() {
           </CardHeader>
           <CardContent className="space-y-1">
             <div className="text-lg font-semibold">
-              {loading ? "-" : formatMoney(payments?.stats.revenue30dCny || 0, "CNY")}
-            </div>
-            <div className="text-lg font-semibold">
-              {loading ? "-" : formatMoney(payments?.stats.revenue30dUsd || 0, "USD")}
+              {loading
+                ? "-"
+                : formatMoney(activeRevenue30d, activeRevenueCurrency)}
             </div>
           </CardContent>
         </Card>
@@ -494,13 +506,10 @@ export function AdminDashboard() {
             <CardTitle className="text-sm font-medium text-muted-foreground">AI调用（{days}天）</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{loading ? "-" : totalAiCalls}</div>
+            <div className="text-2xl font-bold">{loading ? "-" : activeAiCalls}</div>
             <div className="flex gap-2 mt-2">
-              <SourceBadge source="CN" className="text-xs">
-                CN {loading ? "-" : cnSide?.aiUsage.totalRequests || 0}
-              </SourceBadge>
-              <SourceBadge source="INTL" className="text-xs">
-                INTL {loading ? "-" : intlSide?.aiUsage.totalRequests || 0}
+              <SourceBadge source={deploymentSource} className="text-xs">
+                {deploymentSource} {loading ? "-" : activeAiSide?.aiUsage.totalRequests || 0}
               </SourceBadge>
             </div>
           </CardContent>
@@ -540,7 +549,7 @@ export function AdminDashboard() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 gap-3">
-              {(["CN", "INTL"] as const).map((src) => {
+              {[deploymentSource].map((src) => {
                 const side = analytics.sides.find((s) => s.source === src);
                 const u = side?.aiUsage;
                 const f = side?.events.funnels.recommendation;
@@ -637,9 +646,14 @@ export function AdminDashboard() {
                 <YAxis allowDecimals={false} />
                 <Tooltip />
                 <Legend />
-                <Line type="monotone" dataKey="cn" name="CN" stroke="#2563eb" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="intl" name="INTL" stroke="#7c3aed" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="total" name="Total" stroke="#111827" strokeWidth={2} dot={false} />
+                <Line
+                  type="monotone"
+                  dataKey={activeUserGrowthKey}
+                  name={deploymentSource}
+                  stroke={deploymentSource === "CN" ? "#2563eb" : "#7c3aed"}
+                  strokeWidth={2}
+                  dot={false}
+                />
               </LineChart>
             </ResponsiveContainer>
           </CardContent>
@@ -657,8 +671,11 @@ export function AdminDashboard() {
                 <YAxis allowDecimals={false} />
                 <Tooltip />
                 <Legend />
-                <Bar dataKey="cn" name="CN（CNY）" fill="#60a5fa" />
-                <Bar dataKey="intl" name="INTL（USD）" fill="#c4b5fd" />
+                <Bar
+                  dataKey={activeRevenueGrowthKey}
+                  name={deploymentSource === "CN" ? "CNY" : "USD"}
+                  fill={deploymentSource === "CN" ? "#60a5fa" : "#c4b5fd"}
+                />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
@@ -718,7 +735,7 @@ export function AdminDashboard() {
           }
         >
           <CardHeader>
-            <CardTitle>支付状态汇总（ALL）</CardTitle>
+            <CardTitle>{`支付状态汇总（${deploymentSource}）`}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
             <div className="flex items-center justify-between">

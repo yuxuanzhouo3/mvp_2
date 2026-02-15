@@ -6,8 +6,10 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
+import { getDeploymentAdminSource } from "@/lib/admin/deployment-source";
 
 type DataSource = "CN" | "INTL";
+const DEPLOYMENT_SOURCE: DataSource = getDeploymentAdminSource();
 
 type UserRow = {
   id: string;
@@ -36,7 +38,7 @@ type UserPatchResponse = {
 function getSourceView(source: DataSource): { label: string; className: string } {
   if (source === "CN") {
     return {
-      label: "CN · CloudBase",
+      label: "CN · 腾讯云 CloudBase 文档型数据库",
       className: "border border-sky-200 bg-sky-100 text-sky-800",
     };
   }
@@ -56,9 +58,8 @@ export default function AdminUserDetailPage({
   params: { source: string; id: string };
 }) {
   const router = useRouter();
-  const source = String(params.source || "").toUpperCase();
   const id = String(params.id || "");
-  const typedSource: DataSource | null = source === "CN" || source === "INTL" ? (source as DataSource) : null;
+  const typedSource: DataSource = DEPLOYMENT_SOURCE;
 
   const [loading, setLoading] = React.useState(true);
   const [user, setUser] = React.useState<UserRow | null>(null);
@@ -114,9 +115,9 @@ export default function AdminUserDetailPage({
     };
   }, [typedSource, id]);
 
-  const backHref = `/admin/users?source=${encodeURIComponent(typedSource || "ALL")}`;
+  const backHref = `/admin/users?source=${encodeURIComponent(typedSource)}`;
   const email = user?.email || "";
-  const ordersHref = email ? `/admin/orders?source=ALL&email=${encodeURIComponent(email)}` : "";
+  const ordersHref = email ? `/admin/orders?source=${typedSource}&email=${encodeURIComponent(email)}` : "";
 
   const canEdit = Boolean(user && typedSource && !loading);
 
@@ -286,11 +287,11 @@ export default function AdminUserDetailPage({
             {ordersHref ? (
               <Button asChild>
                 <Link href={ordersHref} target="_blank" rel="noreferrer">
-                  查看该用户订单（CN+INTL）
+                  查看该用户订单（当前来源）
                 </Link>
               </Button>
             ) : (
-              <Button disabled>查看该用户订单（CN+INTL）</Button>
+              <Button disabled>查看该用户订单（当前来源）</Button>
             )}
           </div>
         </CardContent>

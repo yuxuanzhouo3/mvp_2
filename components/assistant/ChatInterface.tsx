@@ -505,10 +505,10 @@ export default function ChatInterface({
             structuredResponse: {
               type: "error",
               message:
-                data.error === "free_limit_reached"
+                data.error === "monthly_limit_reached" || data.error === "free_limit_reached"
                   ? isZh
-                    ? "您的免费体验次数已用完。开通会员即可每日使用 10 次超级助手。"
-                    : "Your free trial has been used up. Subscribe to Pro for 10 daily uses."
+                    ? "本月免费使用次数已达上限，开通 VIP 可获得更多使用次数。"
+                    : "Your free monthly limit has been reached. Subscribe to VIP for more usage."
                   : data.error === "daily_limit_reached"
                     ? isZh
                       ? "今日使用次数已达上限，明天再来吧！"
@@ -601,7 +601,13 @@ export default function ChatInterface({
                     {usage.remaining}
                   </span>
                   <span className="text-gray-500">
-                    / {usage.limit} {isZh ? (usage.periodType === "daily" ? "次/日" : "次") : (usage.periodType === "daily" ? "/day" : " total")}
+                    / {usage.limit} {isZh
+                      ? usage.periodType === "daily"
+                        ? "次/日"
+                        : "次/月"
+                      : usage.periodType === "daily"
+                        ? "/day"
+                        : "/month"}
                   </span>
                 </>
               )}

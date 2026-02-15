@@ -4,7 +4,7 @@ import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
   Pagination,
@@ -23,10 +23,158 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { getDeploymentAdminSource } from "@/lib/admin/deployment-source";
 
-type OrdersSource = "ALL" | "CN" | "INTL";
+type OrdersSource = "CN" | "INTL";
 type OrdersStatus = "all" | "pending" | "completed" | "failed" | "refunded";
 type OrdersMutableStatus = "pending" | "completed" | "failed" | "refunded" | "cancelled";
+
+const DEPLOYMENT_SOURCE = getDeploymentAdminSource();
+
+type OrdersStatusText = {
+  all: string;
+  pending: string;
+  completed: string;
+  failed: string;
+  refunded: string;
+  cancelled: string;
+};
+
+type OrdersUiText = {
+  title: string;
+  subtitle: string;
+  sourceLabel: string;
+  sourceDisplay: string;
+  statusLabel: string;
+  pageSizeLabel: string;
+  emailLabel: string;
+  searchButton: string;
+  clearButton: string;
+  loadingText: string;
+  resultText: (total: number) => string;
+  totalOrdersTitle: string;
+  completedPendingTitle: string;
+  failedRefundedTitle: string;
+  revenueTitle: (currency: string) => string;
+  orderListTitle: string;
+  tableHeaders: {
+    source: string;
+    id: string;
+    userId: string;
+    userEmail: string;
+    amount: string;
+    currency: string;
+    status: string;
+    statusAction: string;
+    paymentMethod: string;
+    createdAt: string;
+    completedAt: string;
+  };
+  noDataText: string;
+  sourceStatusTitle: string;
+  sourceUnavailable: string;
+  sourceNoticePartial: (items: string) => string;
+  sourceNoticeAll: (items: string) => string;
+  status: OrdersStatusText;
+};
+
+const ORDERS_UI_TEXT: Record<OrdersSource, OrdersUiText> = {
+  CN: {
+    title: "订单管理",
+    subtitle: "仅展示腾讯云 CloudBase 文档型数据库中的订单数据",
+    sourceLabel: "来源",
+    sourceDisplay: "CN · 腾讯云 CloudBase",
+    statusLabel: "状态",
+    pageSizeLabel: "每页",
+    emailLabel: "邮箱",
+    searchButton: "查询",
+    clearButton: "清除",
+    loadingText: "加载中…",
+    resultText: (total) => `筛选结果：${total} 条`,
+    totalOrdersTitle: "订单总量（全部状态）",
+    completedPendingTitle: "已完成 / 待支付",
+    failedRefundedTitle: "失败 / 已退款",
+    revenueTitle: (currency) => `近30天收入（${currency}）`,
+    orderListTitle: "订单列表",
+    tableHeaders: {
+      source: "来源",
+      id: "ID",
+      userId: "用户",
+      userEmail: "邮箱",
+      amount: "金额",
+      currency: "币种",
+      status: "状态",
+      statusAction: "状态操作",
+      paymentMethod: "渠道",
+      createdAt: "创建时间",
+      completedAt: "完成时间",
+    },
+    noDataText: "暂无数据",
+    sourceStatusTitle: "数据源状态（CloudBase）",
+    sourceUnavailable: "不可用",
+    sourceNoticePartial: (items) => `当前数据源部分不可用：${items}`,
+    sourceNoticeAll: (items) => `当前数据源不可用：${items}`,
+    status: {
+      all: "全部",
+      pending: "待支付",
+      completed: "已完成",
+      failed: "失败",
+      refunded: "已退款",
+      cancelled: "已取消",
+    },
+  },
+  INTL: {
+    title: "Order Management",
+    subtitle: "Showing orders from Supabase only",
+    sourceLabel: "Source",
+    sourceDisplay: "INTL · Supabase",
+    statusLabel: "Status",
+    pageSizeLabel: "Per page",
+    emailLabel: "Email",
+    searchButton: "Search",
+    clearButton: "Clear",
+    loadingText: "Loading...",
+    resultText: (total) => `${total} results`,
+    totalOrdersTitle: "Total orders (all statuses)",
+    completedPendingTitle: "Completed / Pending",
+    failedRefundedTitle: "Failed / Refunded",
+    revenueTitle: (currency) => `Revenue (last 30 days, ${currency})`,
+    orderListTitle: "Orders",
+    tableHeaders: {
+      source: "Source",
+      id: "ID",
+      userId: "User",
+      userEmail: "Email",
+      amount: "Amount",
+      currency: "Currency",
+      status: "Status",
+      statusAction: "Update Status",
+      paymentMethod: "Method",
+      createdAt: "Created At",
+      completedAt: "Completed At",
+    },
+    noDataText: "No data",
+    sourceStatusTitle: "Data Source Status (Supabase)",
+    sourceUnavailable: "Unavailable",
+    sourceNoticePartial: (items) => `Current source partially unavailable: ${items}`,
+    sourceNoticeAll: (items) => `Current source unavailable: ${items}`,
+    status: {
+      all: "All",
+      pending: "Pending",
+      completed: "Completed",
+      failed: "Failed",
+      refunded: "Refunded",
+      cancelled: "Cancelled",
+    },
+  },
+};
+
+function getSourceDisplay(source: "CN" | "INTL"): string {
+  if (source === "CN") {
+    return "CN · CloudBase";
+  }
+  return "INTL · Supabase";
+}
 
 type OrderRow = {
   id: string;
@@ -83,8 +231,7 @@ function parseQuery(params: URLSearchParams): {
   email: string;
   userId: string;
 } {
-  const sourceRaw = String(params.get("source") || "ALL").toUpperCase();
-  const source: OrdersSource = sourceRaw === "CN" || sourceRaw === "INTL" ? sourceRaw : "ALL";
+  const source: OrdersSource = DEPLOYMENT_SOURCE;
 
   const statusRaw = String(params.get("status") || "all").toLowerCase();
   const status: OrdersStatus =
@@ -146,12 +293,15 @@ function buildPageItems(totalPages: number, current: number): Array<number | "�
 /**
  * 将 status 显示为中文并给出 Badge 变体。
  */
-function getStatusView(status: string | null): { label: string; variant: "default" | "secondary" | "destructive" | "outline" } {
+function getStatusView(
+  status: string | null,
+  statusText: OrdersStatusText
+): { label: string; variant: "default" | "secondary" | "destructive" | "outline" } {
   const s = (status || "").toLowerCase();
-  if (s === "completed") return { label: "已完成", variant: "default" };
-  if (s === "pending") return { label: "待支付", variant: "secondary" };
-  if (s === "refunded") return { label: "已退款", variant: "outline" };
-  if (s === "failed") return { label: "失败", variant: "destructive" };
+  if (s === "completed") return { label: statusText.completed, variant: "default" };
+  if (s === "pending") return { label: statusText.pending, variant: "secondary" };
+  if (s === "refunded") return { label: statusText.refunded, variant: "outline" };
+  if (s === "failed") return { label: statusText.failed, variant: "destructive" };
   if (!s) return { label: "-", variant: "secondary" };
   return { label: s, variant: "secondary" };
 }
@@ -163,6 +313,7 @@ export default function AdminOrdersPage() {
     () => parseQuery(new URLSearchParams(searchParams.toString())),
     [searchParams]
   );
+  const uiText = ORDERS_UI_TEXT[source];
 
   const [emailDraft, setEmailDraft] = React.useState(email);
   React.useEffect(() => {
@@ -223,15 +374,19 @@ export default function AdminOrdersPage() {
       ? hasAnyOkSource
         ? {
             tone: "warn" as const,
-            text: `部分数据源不可用：${failedSources
-              .map((s) => `${s.source}(${s.mode}${s.message ? `:${s.message}` : ""})`)
-              .join("；")}`,
+            text: uiText.sourceNoticePartial(
+              failedSources
+                .map((s) => `${getSourceDisplay(s.source)}(${s.mode}${s.message ? `: ${s.message}` : ""})`)
+                .join("; ")
+            ),
           }
         : {
             tone: "error" as const,
-            text: `所有数据源不可用：${failedSources
-              .map((s) => `${s.source}(${s.mode}${s.message ? `:${s.message}` : ""})`)
-              .join("；")}`,
+            text: uiText.sourceNoticeAll(
+              failedSources
+                .map((s) => `${getSourceDisplay(s.source)}(${s.mode}${s.message ? `: ${s.message}` : ""})`)
+                .join("; ")
+            ),
           }
       : null;
 
@@ -272,32 +427,20 @@ export default function AdminOrdersPage() {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>订单管理</CardTitle>
+          <CardTitle>{uiText.title}</CardTitle>
+          <CardDescription>{uiText.subtitle}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-wrap gap-3 items-end">
             <div className="flex flex-col gap-1">
-              <div className="text-xs text-muted-foreground">来源</div>
-              <select
-                className="h-9 w-28 rounded-md border bg-background px-3 text-sm"
-                value={source}
-                onChange={(e) =>
-                  updateQuery(
-                    router,
-                    new URLSearchParams(searchParams.toString()),
-                    { source: e.target.value },
-                    true
-                  )
-                }
-              >
-                <option value="ALL">ALL</option>
-                <option value="CN">CN</option>
-                <option value="INTL">INTL</option>
-              </select>
+              <div className="text-xs text-muted-foreground">{uiText.sourceLabel}</div>
+              <div className="h-9 min-w-44 rounded-md border bg-background px-3 text-sm inline-flex items-center">
+                {uiText.sourceDisplay}
+              </div>
             </div>
 
             <div className="flex flex-col gap-1">
-              <div className="text-xs text-muted-foreground">状态</div>
+              <div className="text-xs text-muted-foreground">{uiText.statusLabel}</div>
               <select
                 className="h-9 w-32 rounded-md border bg-background px-3 text-sm"
                 value={status}
@@ -310,16 +453,16 @@ export default function AdminOrdersPage() {
                   )
                 }
               >
-                <option value="all">全部</option>
-                <option value="pending">待支付</option>
-                <option value="completed">已完成</option>
-                <option value="failed">失败</option>
-                <option value="refunded">已退款</option>
+                <option value="all">{uiText.status.all}</option>
+                <option value="pending">{uiText.status.pending}</option>
+                <option value="completed">{uiText.status.completed}</option>
+                <option value="failed">{uiText.status.failed}</option>
+                <option value="refunded">{uiText.status.refunded}</option>
               </select>
             </div>
 
             <div className="flex flex-col gap-1">
-              <div className="text-xs text-muted-foreground">每页</div>
+              <div className="text-xs text-muted-foreground">{uiText.pageSizeLabel}</div>
               <select
                 className="h-9 w-24 rounded-md border bg-background px-3 text-sm"
                 value={String(pageSize)}
@@ -351,7 +494,7 @@ export default function AdminOrdersPage() {
               }}
             >
               <div className="flex flex-col gap-1">
-                <div className="text-xs text-muted-foreground">邮箱</div>
+                <div className="text-xs text-muted-foreground">{uiText.emailLabel}</div>
                 <Input
                   className="h-9 w-64"
                   value={emailDraft}
@@ -360,7 +503,7 @@ export default function AdminOrdersPage() {
                 />
               </div>
               <Button type="submit" size="sm" variant="outline">
-                查询
+                {uiText.searchButton}
               </Button>
               {email ? (
                 <Button
@@ -371,13 +514,13 @@ export default function AdminOrdersPage() {
                     updateQuery(router, new URLSearchParams(searchParams.toString()), { email: null }, true)
                   }
                 >
-                  清除
+                  {uiText.clearButton}
                 </Button>
               ) : null}
             </form>
 
             <div className="text-sm text-muted-foreground">
-              {loading ? "加载中…" : `筛选结果：${data?.pagination.total ?? 0} 条`}
+              {loading ? uiText.loadingText : uiText.resultText(data?.pagination.total ?? 0)}
             </div>
           </div>
         </CardContent>
@@ -387,7 +530,7 @@ export default function AdminOrdersPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
           <Card>
             <CardHeader>
-              <CardTitle className="text-sm">订单总量（全部状态）</CardTitle>
+              <CardTitle className="text-sm">{uiText.totalOrdersTitle}</CardTitle>
             </CardHeader>
             <CardContent className="text-2xl font-semibold">
               {data?.stats.totalAll ?? (loading ? "…" : 0)}
@@ -395,7 +538,7 @@ export default function AdminOrdersPage() {
           </Card>
           <Card>
             <CardHeader>
-              <CardTitle className="text-sm">已完成 / 待支付</CardTitle>
+              <CardTitle className="text-sm">{uiText.completedPendingTitle}</CardTitle>
             </CardHeader>
             <CardContent className="text-2xl font-semibold">
               {(data?.stats.byStatus.completed ?? 0)}/{(data?.stats.byStatus.pending ?? 0)}
@@ -403,7 +546,7 @@ export default function AdminOrdersPage() {
           </Card>
           <Card>
             <CardHeader>
-              <CardTitle className="text-sm">失败 / 已退款</CardTitle>
+              <CardTitle className="text-sm">{uiText.failedRefundedTitle}</CardTitle>
             </CardHeader>
             <CardContent className="text-2xl font-semibold">
               {(data?.stats.byStatus.failed ?? 0)}/{(data?.stats.byStatus.refunded ?? 0)}
@@ -411,10 +554,12 @@ export default function AdminOrdersPage() {
           </Card>
           <Card>
             <CardHeader>
-              <CardTitle className="text-sm">近30天收入（CNY / USD）</CardTitle>
+              <CardTitle className="text-sm">{uiText.revenueTitle(source === "CN" ? "CNY" : "USD")}</CardTitle>
             </CardHeader>
             <CardContent className="text-2xl font-semibold">
-              ￥{(data?.stats.revenue30dCny ?? 0).toFixed(2)}/${(data?.stats.revenue30dUsd ?? 0).toFixed(2)}
+              {source === "CN"
+                ? `￥${(data?.stats.revenue30dCny ?? 0).toFixed(2)}`
+                : `$${(data?.stats.revenue30dUsd ?? 0).toFixed(2)}`}
             </CardContent>
           </Card>
         </div>
@@ -422,7 +567,7 @@ export default function AdminOrdersPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>订单列表</CardTitle>
+          <CardTitle>{uiText.orderListTitle}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {error ? <div className="text-sm text-red-600">{error}</div> : null}
@@ -435,27 +580,27 @@ export default function AdminOrdersPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>来源</TableHead>
-                <TableHead>ID</TableHead>
-                <TableHead>用户</TableHead>
-                <TableHead>邮箱</TableHead>
-                <TableHead>金额</TableHead>
-                <TableHead>币种</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead>状态操作</TableHead>
-                <TableHead>渠道</TableHead>
-                <TableHead>创建时间</TableHead>
-                <TableHead>完成时间</TableHead>
+                <TableHead>{uiText.tableHeaders.source}</TableHead>
+                <TableHead>{uiText.tableHeaders.id}</TableHead>
+                <TableHead>{uiText.tableHeaders.userId}</TableHead>
+                <TableHead>{uiText.tableHeaders.userEmail}</TableHead>
+                <TableHead>{uiText.tableHeaders.amount}</TableHead>
+                <TableHead>{uiText.tableHeaders.currency}</TableHead>
+                <TableHead>{uiText.tableHeaders.status}</TableHead>
+                <TableHead>{uiText.tableHeaders.statusAction}</TableHead>
+                <TableHead>{uiText.tableHeaders.paymentMethod}</TableHead>
+                <TableHead>{uiText.tableHeaders.createdAt}</TableHead>
+                <TableHead>{uiText.tableHeaders.completedAt}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {(data?.items || []).map((o) => {
-                const view = getStatusView(o.status);
+                const view = getStatusView(o.status, uiText.status);
                 const rowKey = `${o.source}:${o.id}`;
                 const rowUpdating = updatingOrderId === rowKey;
                 return (
                   <TableRow key={`${o.source}-${o.id}`}>
-                    <TableCell>{o.source}</TableCell>
+                    <TableCell>{getSourceDisplay(o.source)}</TableCell>
                     <TableCell className="font-mono text-xs">{o.id}</TableCell>
                     <TableCell className="font-mono text-xs">{o.userId || "-"}</TableCell>
                     <TableCell className="font-mono text-xs">{o.userEmail || "-"}</TableCell>
@@ -496,11 +641,11 @@ export default function AdminOrdersPage() {
                           }
                         }}
                       >
-                        <option value="pending">待支付</option>
-                        <option value="completed">已完成</option>
-                        <option value="failed">失败</option>
-                        <option value="refunded">已退款</option>
-                        <option value="cancelled">已取消</option>
+                        <option value="pending">{uiText.status.pending}</option>
+                        <option value="completed">{uiText.status.completed}</option>
+                        <option value="failed">{uiText.status.failed}</option>
+                        <option value="refunded">{uiText.status.refunded}</option>
+                        <option value="cancelled">{uiText.status.cancelled}</option>
                       </select>
                     </TableCell>
                     <TableCell>{o.paymentMethod ?? "-"}</TableCell>
@@ -516,7 +661,7 @@ export default function AdminOrdersPage() {
               {!loading && (data?.items || []).length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={11} className="text-center text-sm text-muted-foreground">
-                    暂无数据
+                    {uiText.noDataText}
                   </TableCell>
                 </TableRow>
               ) : null}
@@ -592,12 +737,13 @@ export default function AdminOrdersPage() {
       {data?.sources?.length ? (
         <Card>
           <CardHeader>
-            <CardTitle>数据源状态</CardTitle>
+            <CardTitle>{uiText.sourceStatusTitle}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
             {data.sources.map((s) => (
               <div key={s.source}>
-                [{s.source}] {s.ok ? `OK (${s.mode})` : `不可用 (${s.mode})`}{s.message ? `：${s.message}` : ""}
+                [{getSourceDisplay(s.source)}] {s.ok ? `OK (${s.mode})` : `${uiText.sourceUnavailable} (${s.mode})`}
+                {s.message ? `: ${s.message}` : ""}
               </div>
             ))}
           </CardContent>

@@ -3,6 +3,7 @@ import { getAdminSessionCookieName, verifyAdminSessionToken } from "@/lib/admin/
 import { proxyAdminJsonFetch } from "@/lib/admin/proxy";
 import { getCloudBaseDatabase, getDbCommand } from "@/lib/database/cloudbase-client";
 import { getSupabaseAdmin } from "@/lib/integrations/supabase-admin";
+import { normalizeAdminSourceToDeployment } from "@/lib/admin/deployment-source";
 
 export const dynamic = "force-dynamic";
 
@@ -72,9 +73,7 @@ function normalizeSearchQuery(value: string | null): string | null {
 }
 
 function parseSource(value: string | null): PaymentsSource {
-  const normalized = String(value || "").toUpperCase();
-  if (normalized === "CN" || normalized === "INTL") return normalized;
-  return "ALL";
+  return normalizeAdminSourceToDeployment(value);
 }
 
 function parseStatus(value: string | null): PaymentsStatus {

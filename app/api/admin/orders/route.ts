@@ -6,13 +6,17 @@ import {
 import { proxyAdminJsonFetch } from "@/lib/admin/proxy";
 import { getCloudBaseDatabase, getDbCommand } from "@/lib/database/cloudbase-client";
 import { getSupabaseAdmin } from "@/lib/integrations/supabase-admin";
+import {
+  getDeploymentAdminSource,
+  isAdminSourceAllowedInDeployment,
+  normalizeAdminSourceToDeployment,
+} from "@/lib/admin/deployment-source";
 
 export const dynamic = "force-dynamic";
 
-type OrdersSource = "ALL" | "CN" | "INTL";
-type OrdersStatus = "all" | "pending" | "completed" | "failed" | "refunded";
-
 type DataSource = "CN" | "INTL";
+type OrdersSource = DataSource;
+type OrdersStatus = "all" | "pending" | "completed" | "failed" | "refunded";
 type SourceMode = "direct" | "proxy" | "missing";
 
 type SourceInfo = {
@@ -82,12 +86,10 @@ function normalizeEmailFilter(value: string | null): string | null {
 }
 
 /**
- * 解析 source 参数（默认 ALL）。
+ * 解析 source 参数（始终归一为当前部署环境）。
  */
 function parseSource(value: string | null): OrdersSource {
-  const normalized = String(value || "").toUpperCase();
-  if (normalized === "CN" || normalized === "INTL") return normalized;
-  return "ALL";
+  return normalizeAdminSourceToDeployment(value);
 }
 
 /**
@@ -148,6 +150,15 @@ async function parsePatchBody(request: NextRequest): Promise<
     return {
       ok: false,
       response: NextResponse.json({ error: "source 仅支持 CN 或 INTL" }, { status: 400 }),
+    };
+  }
+  if (!isAdminSourceAllowedInDeployment(sourceRaw)) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { error: `当前部署仅允许 source=${getDeploymentAdminSource()}` },
+        { status: 400 }
+      ),
     };
   }
   const source = sourceRaw as DataSource;
@@ -869,12 +880,7 @@ export async function GET(request: NextRequest) {
   );
 
   const from = (page - 1) * pageSize;
-  const requiredTake = from + pageSize;
-  const maxPrefetch = 5000;
   const cookieToken = request.cookies.get(getAdminSessionCookieName())?.value || null;
-
-  const needCN = source === "ALL" || source === "CN";
-  const needINTL = source === "ALL" || source === "INTL";
 
   const cnOrigin = process.env.CN_APP_ORIGIN || "";
   const intlOrigin = process.env.INTL_APP_ORIGIN || "";
@@ -976,79 +982,13 @@ export async function GET(request: NextRequest) {
     });
     return { rows: [], total: 0, stats: null };
   };
-
-  if (source === "ALL" && requiredTake > maxPrefetch) {
-    const emptyStats: OrdersStats = {
-      totalAll: 0,
-      byStatus: { pending: 0, completed: 0, failed: 0, refunded: 0, other: 0 },
-      revenue30dCny: 0,
-      revenue30dUsd: 0,
-    };
-    return NextResponse.json(
-      {
-        items: [],
-        pagination: { page, pageSize, total: 0, totalPages: 0 },
-        stats: emptyStats,
-        sources: [
-          {
-            source: "CN",
-            ok: false,
-            mode: "missing",
-            message: `ALL 模式分页过深（page=${page}），请缩小页码或过滤条件`,
-          },
-          {
-            source: "INTL",
-            ok: false,
-            mode: "missing",
-            message: `ALL 模式分页过深（page=${page}），请缩小页码或过滤条件`,
-          },
-        ],
-      } satisfies OrdersResponse,
-      { status: 400 }
-    );
-  }
-
-  if (source === "CN") {
-    const cn = await fetchSource("CN", from, pageSize);
-    const totalPages = Math.ceil(cn.total / pageSize);
-    return NextResponse.json({
-      items: cn.rows,
-      pagination: { page, pageSize, total: cn.total, totalPages },
-      stats: cn.stats || mergeStats(null, null),
-      sources,
-    } satisfies OrdersResponse);
-  }
-
-  if (source === "INTL") {
-    const intl = await fetchSource("INTL", from, pageSize);
-    const totalPages = Math.ceil(intl.total / pageSize);
-    return NextResponse.json({
-      items: intl.rows,
-      pagination: { page, pageSize, total: intl.total, totalPages },
-      stats: intl.stats || mergeStats(null, null),
-      sources,
-    } satisfies OrdersResponse);
-  }
-
-  const [cn, intl] = await Promise.all([
-    needCN ? fetchSource("CN", 0, requiredTake) : Promise.resolve({ rows: [], total: 0, stats: null }),
-    needINTL
-      ? fetchSource("INTL", 0, requiredTake)
-      : Promise.resolve({ rows: [], total: 0, stats: null }),
-  ]);
-
-  const combined = [...cn.rows, ...intl.rows];
-  combined.sort(sortByCreatedAtDesc);
-  const items = combined.slice(from, from + pageSize);
-
-  const total = cn.total + intl.total;
-  const totalPages = Math.ceil(total / pageSize);
-  const stats = mergeStats(cn.stats, intl.stats);
+  const currentSource = await fetchSource(source, from, pageSize);
+  const totalPages = Math.ceil(currentSource.total / pageSize);
 
   return NextResponse.json({
-    items,
-    pagination: { page, pageSize, total, totalPages },
-    stats,
+    items: currentSource.rows,
+    pagination: { page, pageSize, total: currentSource.total, totalPages },
+    stats: currentSource.stats || mergeStats(null, null),
     sources,
   } satisfies OrdersResponse);
 }

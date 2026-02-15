@@ -3,6 +3,10 @@ import crypto from "crypto";
 import { getAdminSessionCookieName, verifyAdminSessionToken } from "@/lib/admin/session";
 import { getCloudBaseApp, getCloudBaseDatabase, getDbCommand } from "@/lib/database/cloudbase-client";
 import { getSupabaseAdmin } from "@/lib/integrations/supabase-admin";
+import {
+  getDeploymentAdminSource,
+  isAdminSourceAllowedInDeployment,
+} from "@/lib/admin/deployment-source";
 
 export const dynamic = "force-dynamic";
 
@@ -136,7 +140,13 @@ export async function POST(request: NextRequest) {
   const form = await request.formData();
 
   const sourceRaw = normalizeText(form.get("source"));
-  const source: DataSource = sourceRaw.toUpperCase() === "INTL" ? "INTL" : "CN";
+  if (sourceRaw && !isAdminSourceAllowedInDeployment(sourceRaw)) {
+    return NextResponse.json(
+      { error: `当前部署仅允许 source=${getDeploymentAdminSource()}` },
+      { status: 400 }
+    );
+  }
+  const source: DataSource = getDeploymentAdminSource();
   const version = normalizeText(form.get("version"));
   const platform = normalizePlatform(form.get("platform"));
   const archInput = normalizeArch(form.get("arch"));

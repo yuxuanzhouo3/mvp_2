@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
   Pagination,
@@ -22,10 +22,53 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { PaymentSourceChart } from "@/components/admin/payment-source-chart";
+import { getDeploymentAdminSource } from "@/lib/admin/deployment-source";
 
-type PaymentsSource = "ALL" | "CN" | "INTL";
+type PaymentsSource = "CN" | "INTL";
 type PaymentsStatus = "all" | "pending" | "completed" | "failed" | "refunded";
 type DataSource = "CN" | "INTL";
+
+const DEPLOYMENT_SOURCE: PaymentsSource = getDeploymentAdminSource();
+
+function getSourceView(source: DataSource): { label: string; shortLabel: string; className: string } {
+  if (source === "CN") {
+    return {
+      label: "CN · 腾讯云 CloudBase 文档型数据库",
+      shortLabel: "CN",
+      className: "border border-sky-200 bg-sky-100 text-sky-800",
+    };
+  }
+  return {
+    label: "INTL · Supabase",
+    shortLabel: "INTL",
+    className: "border border-pink-200 bg-pink-100 text-pink-800",
+  };
+}
+
+function getDeploymentSourceCopy(source: PaymentsSource): {
+  description: string;
+  sourceLabel: string;
+  deploymentHint: string;
+  chartTitle: string;
+  sourceStatusTitle: string;
+} {
+  if (source === "CN") {
+    return {
+      description: "当前为 CN 环境，仅展示腾讯云 CloudBase 文档型数据库中的支付数据。",
+      sourceLabel: "CN · 腾讯云 CloudBase 文档型数据库",
+      deploymentHint: "当前部署：CN（腾讯云 CloudBase 文档型数据库）",
+      chartTitle: "近 30 天支付趋势（腾讯云 CloudBase 文档型数据库）",
+      sourceStatusTitle: "CloudBase 数据源状态",
+    };
+  }
+  return {
+    description: "当前为 INTL 环境，仅展示 Supabase 中的支付数据。",
+    sourceLabel: "INTL · Supabase",
+    deploymentHint: "当前部署：INTL（Supabase）",
+    chartTitle: "Last 30 Days Payment Trend (Supabase)",
+    sourceStatusTitle: "Supabase Data Source Status",
+  };
+}
 
 type PaymentRow = {
   id: string;
@@ -78,8 +121,7 @@ function parseQuery(params: URLSearchParams): {
   method: string;
   q: string;
 } {
-  const sourceRaw = String(params.get("source") || "ALL").toUpperCase();
-  const source: PaymentsSource = sourceRaw === "CN" || sourceRaw === "INTL" ? sourceRaw : "ALL";
+  const source: PaymentsSource = DEPLOYMENT_SOURCE;
 
   const statusRaw = String(params.get("status") || "all").toLowerCase();
   const status: PaymentsStatus =
@@ -199,47 +241,40 @@ export default function AdminPaymentsPage() {
   const sourceStates = data?.sources || [];
   const failedSources = sourceStates.filter((s) => !s.ok);
   const hasAnyOkSource = sourceStates.some((s) => s.ok);
+  const sourceFailuresText = failedSources
+    .map((s) => `${getSourceView(s.source).label}(${s.mode}${s.message ? `:${s.message}` : ""})`)
+    .join("；");
   const sourceNotice =
     !loading && !error && failedSources.length
       ? hasAnyOkSource
         ? {
             tone: "warn" as const,
-            text: `部分数据源不可用：${failedSources
-              .map((s) => `${s.source}(${s.mode}${s.message ? `:${s.message}` : ""})`)
-              .join("；")}`,
+            text: `部分数据源不可用：${sourceFailuresText}`,
           }
         : {
             tone: "error" as const,
-            text: `所有数据源不可用：${failedSources
-              .map((s) => `${s.source}(${s.mode}${s.message ? `:${s.message}` : ""})`)
-              .join("；")}`,
+            text: `当前数据源不可用：${sourceFailuresText}`,
           }
       : null;
 
   const cnChart = data?.charts?.CN || [];
   const intlChart = data?.charts?.INTL || [];
+  const deploymentSourceCopy = getDeploymentSourceCopy(source);
 
   return (
     <div className="space-y-6">
       <Card>
         <CardHeader>
           <CardTitle>支付分析</CardTitle>
+          <CardDescription>{deploymentSourceCopy.description}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-wrap gap-3 items-end">
             <div className="flex flex-col gap-1">
-              <div className="text-xs text-muted-foreground">来源</div>
-              <select
-                className="h-9 w-28 rounded-md border bg-background px-3 text-sm"
-                value={source}
-                onChange={(e) =>
-                  updateQuery(router, new URLSearchParams(searchParams.toString()), { source: e.target.value }, true)
-                }
-              >
-                <option value="ALL">ALL</option>
-                <option value="CN">CN</option>
-                <option value="INTL">INTL</option>
-              </select>
+              <div className="text-xs text-muted-foreground">数据源</div>
+              <div className="h-9 rounded-md border bg-background px-3 text-sm inline-flex items-center">
+                {deploymentSourceCopy.sourceLabel}
+              </div>
             </div>
 
             <div className="flex flex-col gap-1">
@@ -302,6 +337,7 @@ export default function AdminPaymentsPage() {
             <div className="text-sm text-muted-foreground">
               {loading ? "加载中…" : `筛选结果：${data?.pagination.total ?? 0} 条`}
             </div>
+            <div className="text-sm text-muted-foreground">{deploymentSourceCopy.deploymentHint}</div>
           </div>
         </CardContent>
       </Card>
@@ -331,22 +367,18 @@ export default function AdminPaymentsPage() {
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">近30天收入（CNY / USD）</CardTitle>
+            <CardTitle className="text-sm">{`近30天收入（${source === "CN" ? "CNY" : "USD"}）`}</CardTitle>
           </CardHeader>
           <CardContent className="text-2xl font-semibold">
-            ￥{(data?.stats.revenue30dCny ?? 0).toFixed(2)}/${(data?.stats.revenue30dUsd ?? 0).toFixed(2)}
+            {source === "CN"
+              ? `￥${(data?.stats.revenue30dCny ?? 0).toFixed(2)}`
+              : `$${(data?.stats.revenue30dUsd ?? 0).toFixed(2)}`}
           </CardContent>
         </Card>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        {source !== "INTL" ? (
-          <PaymentSourceChart title="近 30 天支付（CN）" data={cnChart} />
-        ) : null}
-
-        {source !== "CN" ? (
-          <PaymentSourceChart title="近 30 天支付（INTL）" data={intlChart} />
-        ) : null}
+        <PaymentSourceChart title={deploymentSourceCopy.chartTitle} data={source === "CN" ? cnChart : intlChart} />
       </div>
 
       <Card>
@@ -392,7 +424,7 @@ export default function AdminPaymentsPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>来源</TableHead>
+                <TableHead>数据源</TableHead>
                 <TableHead>ID</TableHead>
                 <TableHead>用户</TableHead>
                 <TableHead>金额</TableHead>
@@ -406,7 +438,16 @@ export default function AdminPaymentsPage() {
             <TableBody>
               {(data?.items || []).map((p) => (
                 <TableRow key={`${p.source}-${p.id}`}>
-                  <TableCell>{p.source}</TableCell>
+                  <TableCell>
+                    <span
+                      className={[
+                        "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+                        getSourceView(p.source).className,
+                      ].join(" ")}
+                    >
+                      {getSourceView(p.source).shortLabel}
+                    </span>
+                  </TableCell>
                   <TableCell className="font-mono text-xs">{p.id}</TableCell>
                   <TableCell className="font-mono text-xs">{p.userId || "-"}</TableCell>
                   <TableCell>{p.amount ?? "-"}</TableCell>
@@ -485,12 +526,12 @@ export default function AdminPaymentsPage() {
       {data?.sources?.length ? (
         <Card>
           <CardHeader>
-            <CardTitle>数据源状态</CardTitle>
+            <CardTitle>{deploymentSourceCopy.sourceStatusTitle}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
             {data.sources.map((s) => (
               <div key={s.source}>
-                [{s.source}] {s.ok ? `OK (${s.mode})` : `不可用 (${s.mode})`}
+                [{getSourceView(s.source).label}] {s.ok ? `OK (${s.mode})` : `不可用 (${s.mode})`}
                 {s.message ? `：${s.message}` : ""}
               </div>
             ))}

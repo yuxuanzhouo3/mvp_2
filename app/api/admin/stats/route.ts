@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCloudBaseDatabase, getDbCommand } from "@/lib/database/cloudbase-client";
 import { getSupabaseAdmin } from "@/lib/integrations/supabase-admin";
+import { normalizeAdminSourceToDeployment } from "@/lib/admin/deployment-source";
 import {
   getAdminSessionToken,
   hasCnDbConfig,
@@ -30,9 +31,7 @@ type SideStats = {
 };
 
 function parseSource(value: string | null): StatsSource {
-  const normalized = String(value || "").toUpperCase();
-  if (normalized === "CN" || normalized === "INTL") return normalized;
-  return "ALL";
+  return normalizeAdminSourceToDeployment(value);
 }
 
 function lastNDates(n: number): string[] {

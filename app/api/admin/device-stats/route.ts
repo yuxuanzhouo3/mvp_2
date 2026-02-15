@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCloudBaseDatabase, getDbCommand } from "@/lib/database/cloudbase-client";
 import { getSupabaseAdmin } from "@/lib/integrations/supabase-admin";
+import { normalizeAdminSourceToDeployment } from "@/lib/admin/deployment-source";
 import {
   getAdminSessionToken,
   hasCnDbConfig,
@@ -125,9 +126,7 @@ const BROWSER_LABELS: Record<string, string> = {
 };
 
 function parseSource(value: string | null): DeviceStatsSource {
-  const normalized = String(value || "").toUpperCase();
-  if (normalized === "CN" || normalized === "INTL") return normalized;
-  return "ALL";
+  return normalizeAdminSourceToDeployment(value);
 }
 
 function parseDays(value: string | null): number {
@@ -906,4 +905,3 @@ export async function GET(request: NextRequest) {
     headers: { "Cache-Control": "no-store" },
   });
 }
-

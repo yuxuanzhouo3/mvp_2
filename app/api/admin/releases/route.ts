@@ -3,6 +3,11 @@ import { getAdminSessionCookieName, verifyAdminSessionToken } from "@/lib/admin/
 import { proxyAdminJsonFetch } from "@/lib/admin/proxy";
 import { getCloudBaseDatabase, getDbCommand } from "@/lib/database/cloudbase-client";
 import { getSupabaseAdmin } from "@/lib/integrations/supabase-admin";
+import {
+  getDeploymentAdminSource,
+  isAdminSourceAllowedInDeployment,
+  normalizeAdminSourceToDeployment,
+} from "@/lib/admin/deployment-source";
 
 export const dynamic = "force-dynamic";
 
@@ -40,9 +45,7 @@ type ReleasesResponse = {
 };
 
 function parseSource(value: string | null): ReleasesSource {
-  const normalized = String(value || "").toUpperCase();
-  if (normalized === "CN" || normalized === "INTL") return normalized;
-  return "ALL";
+  return normalizeAdminSourceToDeployment(value);
 }
 
 function parsePositiveInt(value: string | null, fallback: number): number {
@@ -472,7 +475,14 @@ export async function DELETE(request: NextRequest) {
   }
 
   const id = normalizeQueryText(request.nextUrl.searchParams.get("id"));
-  const source = parseSource(request.nextUrl.searchParams.get("source"));
+  const sourceRaw = request.nextUrl.searchParams.get("source");
+  if (sourceRaw && !isAdminSourceAllowedInDeployment(sourceRaw)) {
+    return NextResponse.json(
+      { error: `当前部署仅允许 source=${getDeploymentAdminSource()}` },
+      { status: 400 }
+    );
+  }
+  const source = parseSource(sourceRaw);
   if (!id || (source !== "CN" && source !== "INTL")) {
     return NextResponse.json({ error: "Bad Request" }, { status: 400 });
   }

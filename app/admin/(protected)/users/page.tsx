@@ -23,8 +23,36 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { getDeploymentAdminSource } from "@/lib/admin/deployment-source";
 
-type UsersSource = "ALL" | "CN" | "INTL";
+type UsersSource = "CN" | "INTL";
+
+const DEPLOYMENT_SOURCE: UsersSource = getDeploymentAdminSource();
+
+function getDeploymentSourceCopy(source: UsersSource): {
+  description: string;
+  sourceLabel: string;
+  searchPlaceholder: string;
+  deploymentHint: string;
+  statusTitle: string;
+} {
+  if (source === "CN") {
+    return {
+      description: "当前为 CN 环境，仅展示腾讯云 CloudBase 文档型数据库中的用户数据。",
+      sourceLabel: "CN",
+      searchPlaceholder: "CloudBase 邮箱精确匹配",
+      deploymentHint: "当前部署：CN（腾讯云 CloudBase 文档型数据库）",
+      statusTitle: "CloudBase 数据源状态",
+    };
+  }
+  return {
+    description: "当前为 INTL 环境，仅展示 Supabase 中的用户数据。",
+    sourceLabel: "INTL",
+    searchPlaceholder: "Supabase 邮箱模糊匹配",
+    deploymentHint: "当前部署：INTL（Supabase）",
+    statusTitle: "Supabase 数据源状态",
+  };
+}
 
 type UserRow = {
   id: string;
@@ -54,8 +82,7 @@ function parseQuery(params: URLSearchParams): {
   page: number;
   pageSize: number;
 } {
-  const sourceRaw = String(params.get("source") || "ALL").toUpperCase();
-  const source: UsersSource = sourceRaw === "CN" || sourceRaw === "INTL" ? sourceRaw : "ALL";
+  const source: UsersSource = DEPLOYMENT_SOURCE;
   const q = String(params.get("q") || "").trim();
   const page = Math.max(1, Math.floor(Number(params.get("page") || 1) || 1));
   const pageSize = Math.min(200, Math.max(1, Math.floor(Number(params.get("pageSize") || 50) || 50)));
@@ -99,12 +126,12 @@ function buildPageItems(totalPages: number, current: number): Array<number | "�
 function getSourceView(source: "CN" | "INTL"): { label: string; className: string } {
   if (source === "CN") {
     return {
-      label: "CN · CloudBase",
+      label: "CN",
       className: "border border-sky-200 bg-sky-100 text-sky-800",
     };
   }
   return {
-    label: "INTL · Supabase",
+    label: "INTL",
     className: "border border-pink-200 bg-pink-100 text-pink-800",
   };
 }
@@ -166,50 +193,39 @@ export default function AdminUsersPage() {
   const sourceStates = data?.sources || [];
   const failedSources = sourceStates.filter((s) => !s.ok);
   const hasAnyOkSource = sourceStates.some((s) => s.ok);
+  const sourceFailuresText = failedSources
+    .map((s) => `${getSourceView(s.source).label}(${s.mode}${s.message ? `:${s.message}` : ""})`)
+    .join("；");
   const sourceNotice =
     !loading && !error && failedSources.length
       ? hasAnyOkSource
         ? {
             tone: "warn" as const,
-            text: `部分数据源不可用：${failedSources
-              .map((s) => `${s.source}(${s.mode}${s.message ? `:${s.message}` : ""})`)
-              .join("；")}`,
+            text: `部分数据源不可用：${sourceFailuresText}`,
           }
         : {
             tone: "error" as const,
-            text: `所有数据源不可用：${failedSources
-              .map((s) => `${s.source}(${s.mode}${s.message ? `:${s.message}` : ""})`)
-              .join("；")}`,
+            text: `当前数据源不可用：${sourceFailuresText}`,
           }
       : null;
 
-  const region =
-    process.env.NEXT_PUBLIC_DEPLOYMENT_REGION === "CN" ? "CN" : "INTL";
+  const region: UsersSource = DEPLOYMENT_SOURCE;
+  const deploymentSourceCopy = getDeploymentSourceCopy(region);
 
   return (
     <div className="space-y-6">
       <Card className="overflow-hidden">
         <CardHeader className="bg-gradient-to-r from-sky-50 to-pink-50">
           <CardTitle className="text-lg">用户管理</CardTitle>
-          <CardDescription>
-            CN 使用 CloudBase 文档库，INTL 使用 Supabase；订单可跨环境聚合查看（需配置跨环境代理）。
-          </CardDescription>
+          <CardDescription>{deploymentSourceCopy.description}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-wrap gap-3 items-end">
             <div className="flex flex-col gap-1">
-              <div className="text-xs text-muted-foreground">来源</div>
-              <select
-                className="h-9 w-28 rounded-md border bg-background px-3 text-sm"
-                value={source}
-                onChange={(e) =>
-                  updateQuery(router, new URLSearchParams(searchParams.toString()), { source: e.target.value }, true)
-                }
-              >
-                <option value="ALL">ALL</option>
-                <option value="CN">CN</option>
-                <option value="INTL">INTL</option>
-              </select>
+              <div className="text-xs text-muted-foreground">数据源</div>
+              <div className="h-9 rounded-md border bg-background px-3 text-sm inline-flex items-center">
+                {deploymentSourceCopy.sourceLabel}
+              </div>
             </div>
 
             <div className="flex flex-col gap-1">
@@ -241,7 +257,7 @@ export default function AdminUsersPage() {
                   className="h-9 w-72"
                   value={qDraft}
                   onChange={(e) => setQDraft(e.target.value)}
-                  placeholder="支持 INTL 模糊匹配；CN 为精确匹配"
+                  placeholder={deploymentSourceCopy.searchPlaceholder}
                 />
               </div>
               <Button type="submit" size="sm" variant="outline">
@@ -262,7 +278,7 @@ export default function AdminUsersPage() {
             <div className="text-sm text-muted-foreground">
               {loading ? "加载中…" : `筛选结果：${data?.pagination.total ?? 0} 条`}
             </div>
-            <div className="text-sm text-muted-foreground">当前部署：{region}</div>
+            <div className="text-sm text-muted-foreground">{deploymentSourceCopy.deploymentHint}</div>
           </div>
         </CardContent>
       </Card>
@@ -282,7 +298,7 @@ export default function AdminUsersPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>来源</TableHead>
+                <TableHead>数据源</TableHead>
                 <TableHead>ID</TableHead>
                 <TableHead>邮箱</TableHead>
                 <TableHead>姓名</TableHead>
@@ -298,7 +314,7 @@ export default function AdminUsersPage() {
                 const email = u.email || "";
                 const detailsHref = `/admin/users/${u.source}/${encodeURIComponent(u.id)}`;
                 const orderHref = email
-                  ? `/admin/orders?source=ALL&email=${encodeURIComponent(email)}`
+                  ? `/admin/orders?source=${u.source}&email=${encodeURIComponent(email)}`
                   : "";
                 return (
                   <TableRow key={`${u.source}-${u.id}`}>
@@ -405,12 +421,13 @@ export default function AdminUsersPage() {
       {data?.sources?.length ? (
         <Card>
           <CardHeader>
-            <CardTitle>数据源状态</CardTitle>
+            <CardTitle>{deploymentSourceCopy.statusTitle}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
             {data.sources.map((s) => (
               <div key={s.source}>
-                [{s.source}] {s.ok ? `OK (${s.mode})` : `不可用 (${s.mode})`}{s.message ? `：${s.message}` : ""}
+                [{getSourceView(s.source).label}] {s.ok ? `OK (${s.mode})` : `不可用 (${s.mode})`}
+                {s.message ? `：${s.message}` : ""}
               </div>
             ))}
           </CardContent>

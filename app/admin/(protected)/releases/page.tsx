@@ -23,9 +23,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { getDeploymentAdminSource } from "@/lib/admin/deployment-source";
 
 type DataSource = "CN" | "INTL";
-type ReleasesSource = "ALL" | DataSource;
+type ReleasesSource = DataSource;
+
+const DEPLOYMENT_SOURCE: DataSource = getDeploymentAdminSource();
 
 type ReleaseRow = {
   id: string;
@@ -65,8 +68,7 @@ function parseQuery(params: URLSearchParams): {
   page: number;
   pageSize: number;
 } {
-  const sourceRaw = String(params.get("source") || "ALL").toUpperCase();
-  const source: ReleasesSource = sourceRaw === "CN" || sourceRaw === "INTL" ? sourceRaw : "ALL";
+  const source: ReleasesSource = DEPLOYMENT_SOURCE;
   const platform = String(params.get("platform") || "").trim();
   const q = String(params.get("q") || "").trim();
   const page = Math.max(1, Math.floor(Number(params.get("page") || 1) || 1));
@@ -134,7 +136,7 @@ export default function AdminReleasesPage() {
   const [qDraft, setQDraft] = React.useState(q);
   React.useEffect(() => setQDraft(q), [q]);
 
-  const [uploadSource, setUploadSource] = React.useState<DataSource>("CN");
+  const [uploadSource] = React.useState<DataSource>(DEPLOYMENT_SOURCE);
   const [uploadVersion, setUploadVersion] = React.useState("");
   const [uploadPlatform, setUploadPlatform] = React.useState("windows");
   const [uploadArch, setUploadArch] = React.useState("");
@@ -272,7 +274,7 @@ export default function AdminReleasesPage() {
         !uploadedFileName.toLowerCase().includes(normalizedQ);
 
       const patch: Record<string, string | null> = {};
-      if (source !== "ALL" && source !== uploadedSource) patch.source = uploadedSource;
+      if (source !== uploadedSource) patch.source = uploadedSource;
       if (platform && platform !== uploadedPlatform) patch.platform = uploadedPlatform;
       if (qExcluded) patch.q = null;
 
@@ -334,17 +336,9 @@ export default function AdminReleasesPage() {
           <div className="flex flex-wrap gap-3 items-end">
             <div className="flex flex-col gap-1">
               <div className="text-xs text-muted-foreground">来源</div>
-              <select
-                className="h-9 w-28 rounded-md border bg-background px-3 text-sm"
-                value={source}
-                onChange={(e) =>
-                  updateQuery(router, new URLSearchParams(searchParams.toString()), { source: e.target.value }, true)
-                }
-              >
-                <option value="ALL">ALL</option>
-                <option value="CN">CN</option>
-                <option value="INTL">INTL</option>
-              </select>
+              <div className="h-9 w-28 rounded-md border bg-background px-3 text-sm inline-flex items-center">
+                {source}
+              </div>
             </div>
 
             <div className="flex flex-col gap-1">
@@ -431,14 +425,9 @@ export default function AdminReleasesPage() {
           <form className="flex flex-wrap gap-3 items-end" onSubmit={onUpload}>
             <div className="flex flex-col gap-1">
               <div className="text-xs text-muted-foreground">目标来源</div>
-              <select
-                className="h-9 w-28 rounded-md border bg-background px-3 text-sm"
-                value={uploadSource}
-                onChange={(e) => setUploadSource(e.target.value as DataSource)}
-              >
-                <option value="CN">CN</option>
-                <option value="INTL">INTL</option>
-              </select>
+              <div className="h-9 w-28 rounded-md border bg-background px-3 text-sm inline-flex items-center">
+                {uploadSource}
+              </div>
             </div>
 
             <div className="flex flex-col gap-1">

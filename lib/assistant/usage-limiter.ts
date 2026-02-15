@@ -1,18 +1,18 @@
 /**
- * AI 助手使用次数限制器
+ * Assistant usage limiter.
  *
- * 功能描述：追踪和限制 AI 助手的使用次数
- * - 免费用户：总计 3 次
- * - Pro 会员：每日 10 次
- * - Enterprise：无限制
+ * Current policy:
+ * - Free: daily + monthly limits (both enforced)
+ * - VIP/Pro: daily limit
+ * - Enterprise: unlimited
  *
- * 支持双环境：INTL (Supabase) / CN (CloudBase)
+ * Works for INTL (Supabase) and CN (CloudBase).
  */
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { isChinaDeployment } from "@/lib/config/deployment.config";
-import { ASSISTANT_USAGE_LIMITS } from "./types";
 import type { AssistantUsageStats } from "./types";
+import { getAssistantUsageLimitConfig } from "./usage-limit-config";
 
 type UserPlanType = "free" | "pro" | "enterprise";
 
@@ -62,7 +62,13 @@ function normalizePlanType(rawPlan: unknown): UserPlanType {
     return "enterprise";
   }
 
-  if (plan.includes("pro") || plan.includes("专业")) {
+  if (
+    plan.includes("pro") ||
+    plan.includes("vip") ||
+    plan.includes("membership") ||
+    plan.includes("member") ||
+    plan.includes("专业")
+  ) {
     return "pro";
   }
 
@@ -244,17 +250,17 @@ async function getUserPlanTypeCN(userId: string): Promise<UserPlanType> {
 /**
  * 获取当前周期使用次数
  * @param userId - 用户 ID
- * @param periodType - 周期类型 total|daily
+ * @param periodType - 周期类型 daily|monthly
  * @returns 使用次数
  */
-async function getUsageCount(userId: string, periodType: "total" | "daily"): Promise<number> {
+async function getUsageCount(userId: string, periodType: "daily" | "monthly"): Promise<number> {
   if (isChinaDeployment()) {
     return getUsageCountCN(userId, periodType);
   }
   return getUsageCountINTL(userId, periodType);
 }
 
-async function getUsageCountINTL(userId: string, periodType: "total" | "daily"): Promise<number> {
+async function getUsageCountINTL(userId: string, periodType: "daily" | "monthly"): Promise<number> {
   const supabase = getSupabaseAdmin();
 
   let query = supabase
@@ -266,6 +272,11 @@ async function getUsageCountINTL(userId: string, periodType: "total" | "daily"):
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     query = query.gte("created_at", today.toISOString());
+  } else {
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
+    query = query.gte("created_at", monthStart.toISOString());
   }
 
   const { count, error } = await query;
@@ -276,7 +287,7 @@ async function getUsageCountINTL(userId: string, periodType: "total" | "daily"):
   return count || 0;
 }
 
-async function getUsageCountCN(userId: string, periodType: "total" | "daily"): Promise<number> {
+async function getUsageCountCN(userId: string, periodType: "daily" | "monthly"): Promise<number> {
   const db = await getCloudBaseDb();
   try {
     const whereCondition: Record<string, unknown> = { user_id: userId };
@@ -286,6 +297,12 @@ async function getUsageCountCN(userId: string, periodType: "total" | "daily"): P
       today.setHours(0, 0, 0, 0);
       const _ = db.command;
       whereCondition.created_at = _.gte(today.toISOString());
+    } else {
+      const monthStart = new Date();
+      monthStart.setDate(1);
+      monthStart.setHours(0, 0, 0, 0);
+      const _ = db.command;
+      whereCondition.created_at = _.gte(monthStart.toISOString());
     }
 
     const result = await db
@@ -310,29 +327,47 @@ async function getUsageCountCN(userId: string, periodType: "total" | "daily"): P
  */
 export async function getAssistantUsageStats(userId: string): Promise<AssistantUsageStats> {
   const planType = await getUserPlanType(userId);
+  const limits = await getAssistantUsageLimitConfig();
 
-  let limit: number;
-  let periodType: "total" | "daily";
+  if (planType === "free") {
+    const [dailyUsed, monthlyUsed] = await Promise.all([
+      getUsageCount(userId, "daily"),
+      getUsageCount(userId, "monthly"),
+    ]);
 
-  switch (planType) {
-    case "enterprise":
-      limit = ASSISTANT_USAGE_LIMITS.enterpriseDailyLimit;
-      periodType = "daily";
-      break;
-    case "pro":
-      limit = ASSISTANT_USAGE_LIMITS.proDailyLimit;
-      periodType = "daily";
-      break;
-    default:
-      limit = ASSISTANT_USAGE_LIMITS.freeTotal;
-      periodType = "total";
+    const dailyLimit = limits.freeDailyLimit;
+    const monthlyLimit = limits.freeMonthlyLimit;
+    const dailyRemaining = Math.max(0, dailyLimit - dailyUsed);
+    const monthlyRemaining = Math.max(0, monthlyLimit - monthlyUsed);
+
+    if (monthlyRemaining <= dailyRemaining) {
+      return {
+        userId,
+        planType,
+        used: monthlyUsed,
+        limit: monthlyLimit,
+        remaining: monthlyRemaining,
+        periodType: "monthly",
+      };
+    }
+
+    return {
+      userId,
+      planType,
+      used: dailyUsed,
+      limit: dailyLimit,
+      remaining: dailyRemaining,
+      periodType: "daily",
+    };
   }
 
-  const used = await getUsageCount(userId, periodType);
+  const limit =
+    planType === "enterprise" ? limits.enterpriseDailyLimit : limits.vipDailyLimit;
+  const used = await getUsageCount(userId, "daily");
   const isUnlimited = limit === -1;
   const remaining = isUnlimited ? -1 : Math.max(0, limit - used);
 
-  return { userId, planType, used, limit, remaining, periodType };
+  return { userId, planType, used, limit, remaining, periodType: "daily" };
 }
 
 /**
@@ -353,8 +388,8 @@ export async function canUseAssistant(userId: string): Promise<{
 
   if (stats.remaining <= 0) {
     const reason =
-      stats.periodType === "total"
-        ? "free_limit_reached"
+      stats.planType === "free" && stats.periodType === "monthly"
+        ? "monthly_limit_reached"
         : "daily_limit_reached";
     return { allowed: false, reason, stats };
   }
@@ -418,4 +453,3 @@ async function recordUsageCN(
     return { success: false, error: "Failed to record usage" };
   }
 }
-

@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAdminSessionCookieName, verifyAdminSessionToken } from "@/lib/admin/session";
 import { getCloudBaseDatabase, getDbCommand } from "@/lib/database/cloudbase-client";
 import { getSupabaseAdmin } from "@/lib/integrations/supabase-admin";
+import {
+  getDeploymentAdminSource,
+  isAdminSourceAllowedInDeployment,
+} from "@/lib/admin/deployment-source";
 
 export const dynamic = "force-dynamic";
 
@@ -75,7 +79,14 @@ export async function POST(request: NextRequest) {
 
   const internalProxy = isInternalProxyRequest(request);
   const json = await request.json().catch(() => null);
-  const source: DataSource = String(json?.source || "").toUpperCase() === "INTL" ? "INTL" : "CN";
+  const sourceRaw = String(json?.source || "").trim();
+  if (sourceRaw && !isAdminSourceAllowedInDeployment(sourceRaw)) {
+    return NextResponse.json(
+      { error: `当前部署仅允许 source=${getDeploymentAdminSource()}` },
+      { status: 400 }
+    );
+  }
+  const source: DataSource = getDeploymentAdminSource();
   const id = String(json?.id || "").trim();
   const active = normalizeBool(json?.active);
 
