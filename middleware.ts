@@ -8,6 +8,35 @@ import {
 } from "@/lib/admin/session";
 
 const GEO_IP_DEBUG = String(process.env.GEO_IP_DEBUG || "").toLowerCase() === "true";
+const DEFAULT_API_POST_BODY_LIMIT_BYTES = 10 * 1024 * 1024;
+const DEFAULT_RELEASE_UPLOAD_BODY_LIMIT_BYTES = 512 * 1024 * 1024;
+
+function parsePositiveInt(value: string | undefined, fallback: number): number {
+  if (!value) return fallback;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return parsed;
+}
+
+function getApiPostBodyLimit(pathname: string): number {
+  const normalizedPath = pathname.replace(/\/+$/, "") || "/";
+  if (normalizedPath === "/api/admin/releases/upload") {
+    return parsePositiveInt(
+      process.env.ADMIN_RELEASE_UPLOAD_BODY_LIMIT_BYTES,
+      DEFAULT_RELEASE_UPLOAD_BODY_LIMIT_BYTES
+    );
+  }
+  return parsePositiveInt(
+    process.env.API_POST_BODY_LIMIT_BYTES,
+    DEFAULT_API_POST_BODY_LIMIT_BYTES
+  );
+}
+
+function formatMiB(bytes: number): string {
+  const mib = bytes / (1024 * 1024);
+  if (!Number.isFinite(mib) || mib <= 0) return "0MB";
+  return Number.isInteger(mib) ? `${mib}MB` : `${mib.toFixed(1)}MB`;
+}
 
 function logGeoDebug(message: string, payload: Record<string, unknown>): void {
   if (!GEO_IP_DEBUG || process.env.NODE_ENV === "test") {
@@ -134,14 +163,17 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // Limit API POST body size to 10MB.
+  // Limit API POST body size (default 10MB, configurable, with route-specific overrides).
   if (pathname.startsWith("/api/") && request.method === "POST") {
     const contentLength = request.headers.get("content-length");
-    if (contentLength && parseInt(contentLength, 10) > 10 * 1024 * 1024) {
+    const maxBodyBytes = getApiPostBodyLimit(pathname);
+    const requestBodyBytes = contentLength ? Number.parseInt(contentLength, 10) : NaN;
+    if (Number.isFinite(requestBodyBytes) && requestBodyBytes > maxBodyBytes) {
       return new NextResponse(
         JSON.stringify({
           error: "Request body too large",
-          message: "Maximum request size is 10MB",
+          message: `Maximum request size is ${formatMiB(maxBodyBytes)}`,
+          maxBytes: maxBodyBytes,
         }),
         {
           status: 413,
