@@ -23,6 +23,8 @@ import {
   Send,
   MapPin,
   Loader2,
+  Mic,
+  MicOff,
   Bot,
   User,
   Sparkles,
@@ -48,6 +50,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { useToast } from "@/hooks/use-toast";
+import { useTencentASR } from "@/hooks/useTencentASR";
 import { fetchWithAuth } from "@/lib/auth/fetch-with-auth";
 import type {
   ChatMessage,
@@ -98,6 +101,41 @@ function formatCoordinates(lat: number, lng: number, locale: "zh" | "en"): strin
   return `lat ${roundedLat}, lng ${roundedLng}`;
 }
 
+function normalizeVoiceText(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function mergeVoicePrompt(baseText: string, nextText: string): string {
+  const base = baseText.trim();
+  const next = normalizeVoiceText(nextText);
+
+  if (!next) {
+    return base;
+  }
+
+  if (!base) {
+    return next;
+  }
+
+  if (base.endsWith(next)) {
+    return base;
+  }
+
+  const maxOverlap = Math.min(base.length, next.length);
+  for (let overlap = maxOverlap; overlap > 0; overlap -= 1) {
+    if (base.slice(-overlap) === next.slice(0, overlap)) {
+      return `${base}${next.slice(overlap)}`;
+    }
+  }
+
+  const hasCjk = /[\u4e00-\u9fff]/.test(base + next);
+  if (hasCjk) {
+    return `${base}${next}`;
+  }
+
+  return `${base} ${next}`;
+}
+
 export default function ChatInterface({
   locale,
   region,
@@ -105,6 +143,7 @@ export default function ChatInterface({
 }: ChatInterfaceProps) {
   const effectiveLocale: "zh" | "en" = region === "INTL" ? "en" : locale;
   const isZh = effectiveLocale === "zh";
+  const isCnRegion = region === "CN";
   const { toast } = useToast();
 
   // 状态
@@ -116,10 +155,19 @@ export default function ChatInterface({
   const [locationLoading, setLocationLoading] = useState(false);
   const [locationName, setLocationName] = useState<string | null>(null);
   const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [isRealtimeVoiceInputActive, setIsRealtimeVoiceInputActive] = useState(false);
+  const [interimVoiceText, setInterimVoiceText] = useState("");
 
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const inputValueRef = useRef("");
+  const voiceCommittedInputRef = useRef("");
+
+  const composedInputValue = interimVoiceText
+    ? mergeVoicePrompt(input, interimVoiceText)
+    : input;
+  const canSendText = composedInputValue.trim().length > 0;
 
   // 滚动到底部
   const scrollToBottom = useCallback(() => {
@@ -129,6 +177,16 @@ export default function ChatInterface({
   useEffect(() => {
     scrollToBottom();
   }, [messages, scrollToBottom]);
+
+  useEffect(() => {
+    inputValueRef.current = input;
+  }, [input]);
+
+  useEffect(() => {
+    if (!isRealtimeVoiceInputActive) {
+      voiceCommittedInputRef.current = input;
+    }
+  }, [isRealtimeVoiceInputActive, input]);
 
   // 初始化：获取使用统计 + 加载历史
   useEffect(() => {
@@ -283,9 +341,111 @@ export default function ChatInterface({
   /**
    * 发送消息
    */
+  const getRealtimeVoiceInputErrorMessage = useCallback((errorType: string) => {
+    switch (errorType) {
+      case "network":
+        return isZh
+          ? "实时语音服务不可用（network），请检查网络或使用 HTTPS / localhost。"
+          : "Realtime voice service unavailable (network). Check your connection and use HTTPS / localhost.";
+      case "not-allowed":
+      case "service-not-allowed":
+        return isZh
+          ? "麦克风权限被拒绝，请在浏览器中开启麦克风权限后重试。"
+          : "Microphone permission denied. Please allow microphone access and try again.";
+      case "audio-capture":
+        return isZh ? "未检测到可用麦克风设备。" : "No available microphone device was detected.";
+      default:
+        return isZh ? `实时语音输入失败：${errorType}` : `Realtime voice input failed: ${errorType}`;
+    }
+  }, [isZh]);
+
+  const {
+    isActive: isTencentAsrActive,
+    start: startTencentAsr,
+    stop: stopTencentAsr,
+  } = useTencentASR({
+    onTranscript: useCallback((text: string, isFinal: boolean) => {
+      const normalized = normalizeVoiceText(text);
+      if (!normalized) {
+        return;
+      }
+
+      if (isFinal) {
+        const mergedInput = mergeVoicePrompt(voiceCommittedInputRef.current, normalized);
+        voiceCommittedInputRef.current = mergedInput;
+        inputValueRef.current = mergedInput;
+        setInput(mergedInput);
+        setInterimVoiceText("");
+      } else {
+        setInterimVoiceText(normalized);
+      }
+    }, []),
+    onError: useCallback((error: string) => {
+      toast({
+        title: isZh ? "语音输入失败" : "Voice input failed",
+        description: getRealtimeVoiceInputErrorMessage(error),
+        variant: "destructive",
+      });
+    }, [getRealtimeVoiceInputErrorMessage, isZh, toast]),
+    language: effectiveLocale === "zh" ? "zh-CN" : "en-US",
+  });
+
+  const stopRealtimeVoiceInput = useCallback(() => {
+    if (!isCnRegion) return;
+
+    stopTencentAsr();
+    setIsRealtimeVoiceInputActive(false);
+
+    const finalInput = mergeVoicePrompt(voiceCommittedInputRef.current, interimVoiceText);
+    setInterimVoiceText("");
+    inputValueRef.current = finalInput;
+    voiceCommittedInputRef.current = finalInput;
+    setInput(finalInput);
+  }, [interimVoiceText, isCnRegion, stopTencentAsr]);
+
+  const startRealtimeVoiceInput = useCallback(() => {
+    if (!isCnRegion || isLoading) return;
+
+    if (typeof window !== "undefined") {
+      const host = window.location.hostname;
+      const isLocalhost = host === "localhost" || host === "127.0.0.1" || host === "::1";
+      if (!window.isSecureContext && !isLocalhost) {
+        toast({
+          title: isZh ? "无法启动语音输入" : "Failed to start voice input",
+          description: isZh
+            ? "实时语音输入需要在 HTTPS 或 localhost 环境下使用。"
+            : "Realtime voice input requires HTTPS or localhost.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
+    voiceCommittedInputRef.current = inputValueRef.current;
+    setInterimVoiceText("");
+    setIsRealtimeVoiceInputActive(true);
+    void startTencentAsr();
+  }, [isCnRegion, isLoading, isZh, startTencentAsr, toast]);
+
+  useEffect(() => {
+    if (!isCnRegion) return;
+    setIsRealtimeVoiceInputActive(isTencentAsrActive);
+  }, [isCnRegion, isTencentAsrActive]);
+
+  useEffect(() => {
+    return () => {
+      stopTencentAsr();
+    };
+  }, [stopTencentAsr]);
+
   async function sendMessage(text?: string) {
-    const messageText = text || input.trim();
+    const rawMessageText = typeof text === "string" ? text : composedInputValue;
+    const messageText = rawMessageText.trim();
     if (!messageText || isLoading) return;
+
+    if (isRealtimeVoiceInputActive) {
+      stopRealtimeVoiceInput();
+    }
 
     // 添加用户消息
     const userMsg: ChatMessage = {
@@ -306,6 +466,9 @@ export default function ChatInterface({
 
     setMessages((prev) => [...prev, userMsg, loadingMsg]);
     setInput("");
+    setInterimVoiceText("");
+    inputValueRef.current = "";
+    voiceCommittedInputRef.current = "";
     setIsLoading(true);
 
     try {
@@ -520,8 +683,16 @@ export default function ChatInterface({
         <div className="flex items-end gap-2">
           <textarea
             ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
+            value={composedInputValue}
+            onChange={(e) => {
+              const nextValue = e.target.value;
+              setInput(nextValue);
+              inputValueRef.current = nextValue;
+              if (isRealtimeVoiceInputActive) {
+                setInterimVoiceText("");
+                voiceCommittedInputRef.current = nextValue;
+              }
+            }}
             onKeyDown={handleKeyDown}
             placeholder={
               isZh
@@ -532,9 +703,39 @@ export default function ChatInterface({
             rows={2}
             disabled={isLoading}
           />
+          {isCnRegion && (
+            <Button
+              onClick={() => {
+                if (isRealtimeVoiceInputActive) {
+                  stopRealtimeVoiceInput();
+                } else {
+                  startRealtimeVoiceInput();
+                }
+              }}
+              disabled={isLoading}
+              size="icon"
+              variant="outline"
+              title={
+                isRealtimeVoiceInputActive
+                  ? (isZh ? "停止语音输入" : "Stop voice input")
+                  : (isZh ? "实时语音输入" : "Realtime voice input")
+              }
+              className={`h-[56px] w-[56px] rounded-xl border ${
+                isRealtimeVoiceInputActive
+                  ? "border-red-300 text-red-600 bg-red-50 hover:bg-red-100"
+                  : "border-gray-200 text-gray-600 hover:bg-gray-50"
+              }`}
+            >
+              {isRealtimeVoiceInputActive ? (
+                <MicOff className="h-4 w-4" />
+              ) : (
+                <Mic className="h-4 w-4" />
+              )}
+            </Button>
+          )}
           <Button
             onClick={() => sendMessage()}
-            disabled={isLoading || !input.trim()}
+            disabled={isLoading || !canSendText}
             size="icon"
             className="h-[56px] w-[56px] rounded-xl bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 text-white shadow-md"
           >
