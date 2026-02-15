@@ -29,16 +29,6 @@ const DEFAULT_ASSISTANT_NEARBY_SEED_TIMEOUT_MS = 2200;
 const DEFAULT_ASSISTANT_PREFERENCES_WAIT_MS = 180;
 const DEFAULT_ASSISTANT_CONTEXT_WAIT_MS = 250;
 const DEFAULT_ASSISTANT_NEARBY_PROMPT_WAIT_MS = 500;
-const ASSISTANT_CHAT_DEBUG =
-  String(process.env.ASSISTANT_CHAT_DEBUG || "").toLowerCase() === "true";
-
-function logChatDebug(message: string, payload: Record<string, unknown>): void {
-  if (!ASSISTANT_CHAT_DEBUG || process.env.NODE_ENV === "test") {
-    return;
-  }
-
-  console.info(message, payload);
-}
 
 function parseBoundedIntEnv(
   value: string | undefined,
@@ -199,32 +189,7 @@ export async function processChat(
   const contextWaitMs = getAssistantContextWaitMs();
   const nearbyPromptWaitMs = getAssistantNearbyPromptWaitMs();
 
-  logChatDebug("[ChatEngine] processChat start", {
-    region,
-    locale: effectiveLocale,
-    nearbyIntent,
-    directCarWashNearbyIntent,
-    historyCarWashNearbyIntent,
-    carWashNearbyIntent,
-    closerRefinementIntent,
-    hasLocation,
-    historyCount: history?.length || 0,
-    messageChars: message.length,
-    timeoutConfig: {
-      locationHintTimeoutMs,
-      nearbySeedTimeoutMs,
-      preferencesWaitMs,
-      contextWaitMs,
-      nearbyPromptWaitMs,
-    },
-  });
-
   if (!hasLocation && nearbyIntent) {
-    logChatDebug("[ChatEngine] nearby intent without location", {
-      region,
-      locale: effectiveLocale,
-      messageChars: message.length,
-    });
     return {
       type: "clarify",
       message:
@@ -353,15 +318,6 @@ export async function processChat(
     nearbySeed = await nearbySeedPromise;
     latestNearbySeed = nearbySeed;
   }
-  logChatDebug("[ChatEngine] nearby seed resolved", {
-    hasSeed: Boolean(nearbySeed),
-    nearbyIntent,
-    source: nearbySeed?.source,
-    radiusKm: nearbySeed?.radiusKm,
-    matchedCount: nearbySeed?.matchedCount,
-    candidateCount: nearbySeed?.candidates.length || 0,
-    topNames: nearbySeed?.candidates.slice(0, 5).map((candidate) => candidate.name) || [],
-  });
   if (region === "CN" && nearbyIntent && hasLocation) {
     if (!nearbySeed) {
       return buildAmapUnavailableNearbyResponse(effectiveLocale);
@@ -399,11 +355,6 @@ export async function processChat(
 
   // 4. 调用 AI
   let aiContent: string;
-  logChatDebug("[ChatEngine] invoking AI", {
-    messageCountForModel: messages.length,
-    nearbyIntent,
-    hasNearbySeed: Boolean(nearbySeed),
-  });
   try {
     const aiResponse = await callAI({
       messages,
@@ -411,7 +362,6 @@ export async function processChat(
       maxTokens: aiMaxTokens,
     });
     aiContent = aiResponse.content;
-    console.log(`[ChatEngine] AI model used: ${aiResponse.model}`);
   } catch (error) {
     console.error("[ChatEngine] AI call failed:", error);
     const nearbyFallback =
@@ -427,14 +377,6 @@ export async function processChat(
             nearbySeedSearchMessage
           )
         : null;
-
-    logChatDebug("[ChatEngine] AI failure fallback decision", {
-      nearbyIntent,
-      hasLocation: Boolean(normalizedLocation),
-      usedNearbyFallback: Boolean(nearbyFallback),
-      nearbySeedCandidates: nearbySeed?.candidates.length || 0,
-      error: error instanceof Error ? error.message : String(error),
-    });
 
     if (nearbyFallback) {
       return nearbyFallback;
@@ -507,7 +449,6 @@ export async function processChat(
     nearbySeed
   );
   if (region === "CN" && nearbyIntent && nearbySeed && nearbySeed.candidates.length > 0) {
-    const beforeCount = parsed.candidates?.length || 0;
     parsed = enforceStrictNearbySeedCandidates(
       parsed,
       nearbySeed,
@@ -516,12 +457,6 @@ export async function processChat(
       normalizedLocation,
       closerRefinementIntent
     );
-    logChatDebug("[ChatEngine] applied strict CN nearby Amap-only candidate enforcement", {
-      beforeCount,
-      afterCount: parsed.candidates?.length || 0,
-      source: nearbySeed.source,
-      topNames: parsed.candidates?.slice(0, 5).map((candidate) => candidate.name) || [],
-    });
   }
   parsed = normalizeAssistantResponseForContext(parsed, region, normalizedLocation);
 
@@ -769,18 +704,6 @@ async function buildNearbyFallbackOnAiFailure(
     nearbySeed && nearbySeed.candidates.length > 0
       ? pickTopCandidates(nearbySeed.candidates, 5, preferCloser)
       : buildFallbackNearbyCandidates(message, locale, region, location);
-
-  logChatDebug("[ChatEngine] built nearby fallback", {
-    region,
-    locale,
-    preferCloser,
-    usedPreloadedSeed: Boolean(preloadedSeed),
-    hasNearbySeed: Boolean(nearbySeed),
-    nearbySeedSource: nearbySeed?.source,
-    nearbySeedCount: nearbySeed?.candidates.length || 0,
-    returnedCandidates: candidates.length,
-    topNames: candidates.slice(0, 5).map((candidate) => candidate.name),
-  });
 
   const fallbackResponse: AssistantResponse = {
     type: "results",

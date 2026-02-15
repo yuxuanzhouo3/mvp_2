@@ -1,44 +1,7 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { getCloudBaseDatabase } from "@/lib/database/cloudbase-client";
 import type { CandidateResult } from "./types";
 
 type NearbyRegion = "CN" | "INTL";
 type DistanceUnitSystem = "metric" | "imperial";
-
-type NearbyStoreRow = {
-  id?: string;
-  _id?: string;
-  region?: string;
-  city?: string;
-  district?: string;
-  name?: string;
-  category?: string;
-  description?: string;
-  tags?: string[];
-  address?: string;
-  latitude?: number | string;
-  longitude?: number | string;
-  lat?: number | string;
-  lng?: number | string;
-  rating?: number | string;
-  price_range?: string;
-  priceRange?: string;
-  business_hours?: string;
-  businessHours?: string;
-  estimated_time?: string;
-  estimatedTime?: string;
-  phone?: string;
-  platform?: string;
-  search_query?: string;
-  searchQuery?: string;
-  is_active?: boolean;
-  metadata?: Record<string, unknown>;
-};
-
-type NearbyStoreWithDistance = {
-  row: NearbyStoreRow;
-  distanceKm: number;
-};
 
 export type NearbySearchParams = {
   lat: number;
@@ -90,8 +53,6 @@ const AMAP_DISTANCE_TIMEOUT_MS = Math.max(
 );
 const AMAP_DISTANCE_MAX_POINTS = 20;
 const KM_TO_MILES = 0.621371;
-const ASSISTANT_NEARBY_DEBUG =
-  String(process.env.ASSISTANT_NEARBY_DEBUG || "").toLowerCase() === "true";
 
 type OverpassEntityType = "node" | "way" | "relation";
 
@@ -153,14 +114,6 @@ type RankedOverpassCandidate = {
   coordinates?: { lat: number; lng: number };
 };
 
-function logNearbyDebug(message: string, payload: Record<string, unknown>): void {
-  if (!ASSISTANT_NEARBY_DEBUG || process.env.NODE_ENV === "test") {
-    return;
-  }
-
-  console.info(message, payload);
-}
-
 const OVERPASS_FILTERS_BY_CATEGORY: Record<string, OverpassFilter[]> = {
   food: [
     { key: "amenity", valueRegex: "restaurant|fast_food|cafe|food_court|bar|pub|ice_cream|biergarten" },
@@ -184,30 +137,7 @@ const OVERPASS_FILTERS_BY_CATEGORY: Record<string, OverpassFilter[]> = {
 
 const OVERPASS_DEFAULT_FILTERS = OVERPASS_FILTERS_BY_CATEGORY.food;
 
-let supabaseAdminInstance: SupabaseClient | null = null;
 let overpassQueue: Promise<void> = Promise.resolve();
-
-function getSupabaseAdmin(): SupabaseClient {
-  if (supabaseAdminInstance) {
-    return supabaseAdminInstance;
-  }
-
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!supabaseUrl || !serviceRoleKey) {
-    throw new Error("Missing Supabase configuration for nearby store search");
-  }
-
-  supabaseAdminInstance = createClient(supabaseUrl, serviceRoleKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  });
-
-  return supabaseAdminInstance;
-}
 
 function clampRadius(radiusKm: number): number {
   if (!Number.isFinite(radiusKm)) return DEFAULT_RADIUS_KM;
@@ -244,33 +174,6 @@ function getDistanceUnitSystem(region: NearbyRegion): DistanceUnitSystem {
 
 function resolveMapPlatformForLocation(lat: number, lng: number): "高德地图" | "Google Maps" {
   return isLikelyInChina(lat, lng) ? "高德地图" : "Google Maps";
-}
-
-function isMapPlatform(platform: string | undefined): boolean {
-  if (!platform) return false;
-  const normalized = platform.trim().toLowerCase();
-  if (!normalized) return false;
-
-  return (
-    normalized.includes("map") ||
-    normalized.includes("地图") ||
-    normalized === "amap" ||
-    normalized === "gaode" ||
-    normalized === "googlemaps" ||
-    normalized === "baidumap" ||
-    normalized === "tencentmap"
-  );
-}
-
-function normalizeCandidatePlatform(
-  platform: string | undefined,
-  fallbackMapPlatform: "高德地图" | "Google Maps"
-): string {
-  if (!platform || platform.trim().length === 0) {
-    return fallbackMapPlatform;
-  }
-
-  return isMapPlatform(platform) ? fallbackMapPlatform : platform;
 }
 
 function getAmapApiKey(): string | undefined {
@@ -363,18 +266,6 @@ function isCarWashTextRelevant(text: string): boolean {
   }
 
   return CAR_WASH_POSITIVE_EN.test(normalized) || CAR_WASH_POSITIVE_ZH.test(text);
-}
-
-function isCarWashCandidateRelevant(candidate: CandidateResult): boolean {
-  const text = [
-    candidate.name || "",
-    candidate.description || "",
-    candidate.category || "",
-    candidate.searchQuery || "",
-    candidate.address || "",
-    ...(candidate.tags || []),
-  ].join(" ");
-  return isCarWashTextRelevant(text);
 }
 
 function parseAmapLocation(location: string | undefined): { lat: number; lng: number } | null {
@@ -1145,19 +1036,6 @@ async function fetchNearbyStoresFromAmap(
     `&sortrule=distance&offset=${encodeURIComponent(String(offset))}` +
     "&page=1&extensions=all&output=JSON";
 
-  if (profile.strictCarWash) {
-    logNearbyDebug("[NearbyStoreSearch] Amap car wash query", {
-      region: params.region,
-      locale: params.locale,
-      lat: params.lat,
-      lng: params.lng,
-      radiusMeters,
-      types,
-      keywords: profile.keywords,
-      offset,
-    });
-  }
-
   let response: Response;
   try {
     response = await fetch(url, {
@@ -1290,7 +1168,6 @@ async function fetchNearbyStoresFromAmap(
     if (drivingDistances && drivingDistances.length > 0) {
       let distanceIndex = 0;
       const routeFiltered: RankedOverpassCandidate[] = [];
-      const beforeCount = ranked.length;
 
       for (const item of ranked) {
         if (!item.coordinates) {
@@ -1329,20 +1206,7 @@ async function fetchNearbyStoresFromAmap(
       });
 
       finalRanked = routeFiltered;
-      logNearbyDebug("[NearbyStoreSearch] Amap car wash driving-distance filter", {
-        radiusKm,
-        beforeCount,
-        afterCount: finalRanked.length,
-      });
     }
-  }
-
-  if (profile.strictCarWash) {
-    logNearbyDebug("[NearbyStoreSearch] Amap car wash result summary", {
-      totalPois: pois.length,
-      matchedCandidates: finalRanked.length,
-      topNames: finalRanked.slice(0, 5).map((item) => item.candidate.name),
-    });
   }
 
   const candidates = finalRanked.slice(0, limit).map((item) => item.candidate);
@@ -1352,134 +1216,6 @@ async function fetchNearbyStoresFromAmap(
     matchedCount: finalRanked.length,
     category,
     source: "overpass",
-  };
-}
-
-async function fetchNearbyStoresFromSupabase(
-  region: NearbyRegion,
-  category?: string
-): Promise<NearbyStoreRow[]> {
-  const supabase = getSupabaseAdmin();
-
-  let query = supabase
-    .from("assistant_nearby_stores")
-    .select("*")
-    .eq("is_active", true)
-    .eq("region", region)
-    .limit(800);
-
-  if (category) {
-    query = query.eq("category", category);
-  }
-
-  const { data, error } = await query;
-  if (error || !data) {
-    if (error) {
-      console.error("[NearbyStoreSearch] Supabase query failed:", error.message);
-    }
-    return [];
-  }
-
-  return data as NearbyStoreRow[];
-}
-
-async function fetchNearbyStoresFromCloudBase(
-  region: NearbyRegion,
-  category?: string
-): Promise<NearbyStoreRow[]> {
-  try {
-    const db = getCloudBaseDatabase();
-    const whereCondition: Record<string, unknown> = {
-      is_active: true,
-      region,
-    };
-
-    if (category) {
-      whereCondition.category = category;
-    }
-
-    const result = await db
-      .collection("assistant_nearby_stores")
-      .where(whereCondition)
-      .limit(800)
-      .get();
-
-    return (result.data || []) as NearbyStoreRow[];
-  } catch (error) {
-    console.error("[NearbyStoreSearch] CloudBase query failed:", error);
-    return [];
-  }
-}
-
-function mapRowsToCandidates(
-  rows: NearbyStoreRow[],
-  params: NearbySearchParams,
-  radiusKm: number,
-  limit: number
-): NearbySearchResult {
-  const mapPlatform = resolveMapPlatformForLocation(params.lat, params.lng);
-  const unitSystem = getDistanceUnitSystem(params.region);
-
-  const withDistance: NearbyStoreWithDistance[] = rows
-    .map((row) => {
-      const lat = toNumber(row.latitude) ?? toNumber(row.lat);
-      const lng = toNumber(row.longitude) ?? toNumber(row.lng);
-
-      if (lat === null || lng === null) {
-        return null;
-      }
-
-      const distanceKm = haversineDistanceKm(params.lat, params.lng, lat, lng);
-      return { row, distanceKm };
-    })
-    .filter((item): item is NearbyStoreWithDistance => Boolean(item))
-    .filter((item) => item.distanceKm <= radiusKm);
-
-  withDistance.sort((left, right) => {
-    const distanceDiff = left.distanceKm - right.distanceKm;
-    if (Math.abs(distanceDiff) > 0.001) {
-      return distanceDiff;
-    }
-
-    const leftRating = toNumber(left.row.rating) ?? 0;
-    const rightRating = toNumber(right.row.rating) ?? 0;
-    return rightRating - leftRating;
-  });
-
-  const candidates: CandidateResult[] = withDistance.slice(0, limit).map((item, index) => {
-    const row = item.row;
-    const id = row.id || row._id || `nearby_${index + 1}`;
-    const category = row.category || "local_life";
-    const name = row.name || "Nearby Store";
-    const formattedDistance = formatDistance(item.distanceKm, unitSystem);
-    const description =
-      row.description || `About ${formattedDistance} away, available for in-store visit.`;
-
-    const rating = toNumber(row.rating) ?? undefined;
-
-    return {
-      id,
-      name,
-      description,
-      category,
-      distance: formattedDistance,
-      rating,
-      priceRange: row.price_range || row.priceRange || undefined,
-      estimatedTime: row.estimated_time || row.estimatedTime || undefined,
-      businessHours: row.business_hours || row.businessHours || undefined,
-      phone: row.phone || undefined,
-      address: row.address || undefined,
-      tags: Array.isArray(row.tags) ? row.tags : undefined,
-      platform: normalizeCandidatePlatform(row.platform, mapPlatform),
-      searchQuery: row.search_query || row.searchQuery || name,
-    };
-  });
-
-  return {
-    candidates,
-    radiusKm,
-    matchedCount: withDistance.length,
-    source: "database",
   };
 }
 
@@ -1568,12 +1304,6 @@ export async function searchNearbyStores(
     };
   }
 
-  logNearbyDebug("[NearbyStoreSearch] CN nearby Amap-only mode no result", {
-    reason: shouldTryAmap ? "amap_unavailable_or_failed" : "outside_china_coordinates",
-    radiusKm,
-    limit,
-    strictCarWash,
-  });
   return {
     candidates: [],
     radiusKm,
