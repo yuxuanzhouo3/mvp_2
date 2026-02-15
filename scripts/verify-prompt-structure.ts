@@ -1,4 +1,4 @@
-﻿import { buildExpansionSignalPrompt } from "../lib/ai/zhipu-recommendation";
+import { buildExpansionSignalPrompt } from "../lib/ai/zhipu-recommendation";
 
 function assert(condition: unknown, message: string) {
   if (!condition) throw new Error(message);

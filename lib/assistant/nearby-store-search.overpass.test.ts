@@ -200,80 +200,26 @@ describe("nearby-store-search Overpass INTL", () => {
     expect(result.candidates[0]?.platform).toBeTruthy();
   });
 
-  it("uses Amap fallback in INTL China coordinates and returns 5 concrete store names", async () => {
+  it("uses Overpass only in INTL even when coordinates are in China", async () => {
     process.env.AMAP_WEB_SERVICE_KEY = "test-amap-key";
 
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({
-        status: "1",
-        info: "OK",
-        pois: [
+        elements: [
           {
-            id: "amap_1",
-            name: "Apple Digital Plaza",
-            type: "shopping;electronics;store",
-            address: "Jiangbin Rd 599",
-            location: "110.390100,23.540100",
-            distance: "120",
-          },
-          {
-            id: "amap_2",
-            name: "Suning Electronics Pingnan",
-            type: "shopping;electronics;store",
-            address: "Chengxi Rd 27",
-            location: "110.389800,23.540200",
-            distance: "180",
-          },
-          {
-            id: "amap_3",
-            name: "Haidatong Communications",
-            type: "shopping;electronics;mobile_phone",
-            address: "Chengxi Rd 31",
-            location: "110.389700,23.540300",
-            distance: "220",
-          },
-          {
-            id: "amap_4",
-            name: "Yongxin Computer Shop",
-            type: "shopping;computer_store",
-            address: "Xianlu St 12",
-            location: "110.390300,23.540400",
-            distance: "260",
-          },
-          {
-            id: "amap_5",
-            name: "Jingdong Appliance Service Point",
-            type: "shopping;electronics;store",
-            address: "Chengdong Rd 200",
-            location: "110.391000,23.541000",
-            distance: "340",
-          },
-          {
-            id: "amap_6",
-            name: "Huawei Experience Corner",
-            type: "shopping;electronics;mobile_phone",
-            address: "Chengdong Rd 210",
-            location: "110.391500,23.541400",
-            distance: "410",
+            type: "node",
+            id: 401,
+            lat: 23.5402,
+            lon: 110.3902,
+            tags: {
+              name: "Apple Digital Plaza",
+              shop: "electronics",
+              "addr:street": "Jiangbin Rd",
+              "addr:city": "Pingnan",
+            },
           },
         ],
-      }),
-    });
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        status: "1",
-        info: "OK",
-        results: [{ distance: "320" }, { distance: "560" }, { distance: "980" }],
-      }),
-    });
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        status: "1",
-        info: "OK",
-        results: [{ distance: "320" }, { distance: "560" }, { distance: "980" }],
       }),
     });
 
@@ -287,12 +233,11 @@ describe("nearby-store-search Overpass INTL", () => {
     });
 
     expect(mockFetch).toHaveBeenCalledTimes(1);
-    expect(String(mockFetch.mock.calls[0]?.[0] || "")).toContain("restapi.amap.com/v3/place/around");
-    expect(result.candidates).toHaveLength(5);
-    expect(result.candidates.map((candidate) => candidate.name)).toContain("Apple Digital Plaza");
-    expect(result.candidates.every((candidate) => Boolean(candidate.name))).toBe(true);
-    expect(result.candidates.every((candidate) => Boolean(candidate.platform))).toBe(true);
-    expect(result.candidates.every((candidate) => /mile/.test(candidate.distance || ""))).toBe(true);
+    expect(String(mockFetch.mock.calls[0]?.[0] || "")).toContain("overpass-api.de/api/interpreter");
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]?.name).toBe("Apple Digital Plaza");
+    expect(result.candidates[0]?.platform).toBe("Google Maps");
+    expect(result.candidates[0]?.distance).toMatch(/mile/);
   });
 
   it("uses Amap in CN nearby flow and returns concrete car wash stores", async () => {
@@ -423,17 +368,17 @@ describe("nearby-store-search Overpass INTL", () => {
         pois: [
           {
             id: "amap_mix_3",
-            name: "\u5e73\u5357\u53bf\u6770\u5174\u52a8\u7269\u8fd0\u8f93\u8f66\u8f86\u6d17\u6d88\u4e2d\u5fc3",
-            type: "\u6c7d\u8f66\u670d\u52a1;\u6d17\u8f66\u573a;\u6d88\u6bd2\u6d17\u6d88",
-            address: "\u4e0a\u6e21\u8857\u9053",
+            name: "平南县杰兴动物运输车辆洗消中心",
+            type: "汽车服务;洗车场;消毒洗消",
+            address: "上渡街道",
             location: "110.390200,23.540200",
             distance: "350",
           },
           {
             id: "amap_mix_4",
-            name: "\u8f66\u6d77\u6d0b\u81ea\u52a9\u6d17\u8f66\u7ad9",
-            type: "\u6c7d\u8f66\u670d\u52a1;\u6d17\u8f66\u573a;\u81ea\u52a9\u6d17\u8f66",
-            address: "\u5e73\u5357\u519c\u4fe1\u7efc\u5408\u5927\u697c",
+            name: "车海洋自助洗车站",
+            type: "汽车服务;洗车场;自助洗车",
+            address: "平南农信综合大楼",
             location: "110.391200,23.541200",
             distance: "420",
           },
@@ -460,7 +405,7 @@ describe("nearby-store-search Overpass INTL", () => {
 
     expect(mockFetch).toHaveBeenCalledTimes(2);
     expect(result.candidates).toHaveLength(1);
-    expect(result.candidates[0]?.name).toBe("\u8f66\u6d77\u6d0b\u81ea\u52a9\u6d17\u8f66\u7ad9");
+    expect(result.candidates[0]?.name).toBe("车海洋自助洗车站");
   });
 
   it("drops car wash POIs whose driving distance exceeds requested radius", async () => {
@@ -474,17 +419,17 @@ describe("nearby-store-search Overpass INTL", () => {
         pois: [
           {
             id: "amap_drive_1",
-            name: "\u4e34\u6c5f\u6d17\u8f66",
-            type: "\u6c7d\u8f66\u670d\u52a1;\u6d17\u8f66\u573a;\u6c7d\u8f66\u7f8e\u5bb9",
-            address: "\u4e34\u6c5f\u8def",
+            name: "临江洗车",
+            type: "汽车服务;洗车场;汽车美容",
+            address: "临江路",
             location: "110.395000,23.545000",
             distance: "6500",
           },
           {
             id: "amap_drive_2",
-            name: "\u5357\u57ce\u81ea\u52a9\u6d17\u8f66\u7ad9",
-            type: "\u6c7d\u8f66\u670d\u52a1;\u6d17\u8f66\u573a;\u81ea\u52a9\u6d17\u8f66",
-            address: "\u5357\u57ce\u8def",
+            name: "南城自助洗车站",
+            type: "汽车服务;洗车场;自助洗车",
+            address: "南城路",
             location: "110.392000,23.542000",
             distance: "5200",
           },
@@ -512,7 +457,7 @@ describe("nearby-store-search Overpass INTL", () => {
     expect(mockFetch).toHaveBeenCalledTimes(2);
     expect(String(mockFetch.mock.calls[1]?.[0] || "")).toContain("restapi.amap.com/v3/distance");
     expect(result.candidates).toHaveLength(1);
-    expect(result.candidates[0]?.name).toBe("\u5357\u57ce\u81ea\u52a9\u6d17\u8f66\u7ad9");
+    expect(result.candidates[0]?.name).toBe("南城自助洗车站");
   });
 
   it("returns empty result in strict CN car wash mode when Amap has no POIs", async () => {

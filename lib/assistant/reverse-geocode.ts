@@ -171,6 +171,10 @@ export async function reverseGeocode(
   locale: "zh" | "en" = "zh",
   region?: GeocodeRegion
 ): Promise<GeocodedLocation | null> {
+  if (region === "INTL") {
+    return runProvider("Nominatim", () => nominatimReverse(lat, lng, locale, 5000));
+  }
+
   const preferAmap = shouldPreferAmap(region, lat, lng);
 
   if (preferAmap) {
@@ -183,11 +187,6 @@ export async function reverseGeocode(
     nominatimReverse(lat, lng, locale, nominatimTimeout)
   );
   if (nominatimResult) return nominatimResult;
-
-  if (!preferAmap) {
-    const amapResult = await runProvider("Amap", () => amapReverse(lat, lng, locale));
-    if (amapResult) return amapResult;
-  }
 
   return null;
 }

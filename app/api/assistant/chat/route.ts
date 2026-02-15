@@ -82,6 +82,10 @@ export async function POST(request: NextRequest) {
     // 3. 解析请求
     const body = await request.json();
     const { message, history, location, locale, region } = body as ChatRequest;
+    const deploymentRegion: "CN" | "INTL" =
+      process.env.NEXT_PUBLIC_DEPLOYMENT_REGION === "CN" ? "CN" : "INTL";
+    const effectiveRegion: "CN" | "INTL" =
+      region === "CN" || region === "INTL" ? region : deploymentRegion;
 
     if (!message || typeof message !== "string" || message.trim().length === 0) {
       return NextResponse.json(
@@ -98,7 +102,7 @@ export async function POST(request: NextRequest) {
     logApiChatDebug("[API /assistant/chat] Request summary", {
       requestId,
       userId,
-      region: region || "CN",
+      region: effectiveRegion,
       locale: locale || "zh",
       client,
       isMobile,
@@ -115,7 +119,7 @@ export async function POST(request: NextRequest) {
         history: history || [],
         location,
         locale: locale || "zh",
-        region: region || "CN",
+        region: effectiveRegion,
         client,
         isMobile,
         isAndroid,
@@ -149,7 +153,7 @@ export async function POST(request: NextRequest) {
         assistantCreatedAt
       ))
       .catch(() => {
-        // 瀵硅瘽淇濆瓨澶辫触涓嶅簲闃绘柇涓绘祦绋?
+        // 对话保存失败不应阻断主流程
       });
 
     // 7. 获取最新使用统计

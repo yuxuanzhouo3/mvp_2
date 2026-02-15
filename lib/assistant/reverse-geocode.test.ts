@@ -36,6 +36,22 @@ describe("reverseGeocode provider fallback", () => {
     expect(mockFetch.mock.calls[0][0]).toContain("nominatim.openstreetmap.org");
   });
 
+  it("does not fall back to Amap in INTL when Nominatim fails", async () => {
+    process.env.AMAP_WEB_SERVICE_KEY = "test-amap-key";
+
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 503,
+      json: async () => ({}),
+    });
+
+    const result = await reverseGeocode(34.0522, -118.2437, "en", "INTL");
+
+    expect(result).toBeNull();
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockFetch.mock.calls[0][0]).toContain("nominatim.openstreetmap.org");
+  });
+
   it("prefers Amap in CN region when key is configured", async () => {
     process.env.AMAP_WEB_SERVICE_KEY = "test-amap-key";
 

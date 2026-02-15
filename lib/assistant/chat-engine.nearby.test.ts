@@ -31,6 +31,7 @@ vi.mock("@/lib/ai/client", () => ({
 }));
 
 import { callAI } from "@/lib/ai/client";
+import { resolveCandidateLink } from "@/lib/outbound/link-resolver";
 import { processChat } from "./chat-engine";
 import { searchNearbyStores } from "./nearby-store-search";
 
@@ -127,6 +128,148 @@ describe("processChat INTL nearby flow", () => {
     expect(response.candidates?.[0]?.platform).toBe("Google Maps");
     expect(response.candidates?.[0]?.distance).toMatch(/mile/);
     expect(response.candidates?.[0]?.searchQuery).toContain("Joe's Pizza");
+  });
+
+  it("forces Google Maps with search query for INTL nearby actions", async () => {
+    vi.mocked(searchNearbyStores).mockResolvedValueOnce({
+      source: "overpass",
+      radiusKm: 5,
+      matchedCount: 1,
+      category: "food",
+      candidates: [
+        {
+          id: "osm_node_gm_1",
+          name: "Joe's Pizza",
+          description: "120m away, cuisine: pizza, opening hours available",
+          category: "food",
+          distance: "120m",
+          rating: 4.6,
+          address: "123 Broadway, New York",
+          platform: "Google Maps",
+          searchQuery: "Joe's Pizza, 123 Broadway, New York",
+        },
+      ],
+    });
+
+    vi.mocked(callAI).mockResolvedValueOnce({
+      model: "mock",
+      content: JSON.stringify({
+        type: "results",
+        message: "Found nearby options",
+        intent: "search_nearby",
+        candidates: [
+          {
+            id: "tmp_gm_1",
+            name: "Joe's Pizza",
+            description: "Great pizza place",
+            category: "food",
+            platform: "Amap",
+            searchQuery: "Joe's Pizza, 123 Broadway, New York",
+          },
+        ],
+      }),
+    });
+
+    const response = await processChat(
+      {
+        message: "find pizza nearby",
+        locale: "en",
+        region: "INTL",
+        location: { lat: 23.54, lng: 110.39 },
+      },
+      "test-user"
+    );
+
+    expect(response.type).toBe("results");
+    expect(response.candidates?.[0]?.platform).toBe("Google Maps");
+    expect(response.actions?.some((action) => action.providerId === "Google Maps")).toBe(true);
+
+    const resolverCalls = vi.mocked(resolveCandidateLink).mock.calls;
+    expect(
+      resolverCalls.some(
+        (call) =>
+          call?.[0]?.provider === "Google Maps" &&
+          typeof call?.[0]?.query === "string" &&
+          call[0].query.includes("Joe's Pizza")
+      )
+    ).toBe(true);
+  });
+
+  it("drops non-seed concrete names in INTL nearby results", async () => {
+    vi.mocked(searchNearbyStores).mockResolvedValueOnce({
+      source: "overpass",
+      radiusKm: 1,
+      matchedCount: 2,
+      category: "food",
+      candidates: [
+        {
+          id: "osm_seed_1",
+          name: "Joe's Pizza",
+          description: "120m away, cuisine: pizza, opening hours available",
+          category: "food",
+          distance: "120m",
+          rating: 4.6,
+          address: "123 Broadway, New York",
+          platform: "Google Maps",
+          searchQuery: "Joe's Pizza, 123 Broadway, New York",
+        },
+        {
+          id: "osm_seed_2",
+          name: "Little Italy Deli",
+          description: "300m away, sandwiches and coffee",
+          category: "food",
+          distance: "300m",
+          rating: 4.4,
+          address: "98 Mulberry St, New York",
+          platform: "Google Maps",
+          searchQuery: "Little Italy Deli, 98 Mulberry St, New York",
+        },
+      ],
+    });
+
+    vi.mocked(callAI).mockResolvedValueOnce({
+      model: "mock",
+      content: JSON.stringify({
+        type: "results",
+        message: "Found nearby options",
+        intent: "search_nearby",
+        candidates: [
+          {
+            id: "tmp_hallucinated",
+            name: "Empire Prime Bistro",
+            description: "A famous local spot with premium service",
+            category: "food",
+            platform: "Google Maps",
+            searchQuery: "Empire Prime Bistro",
+          },
+          {
+            id: "tmp_seed",
+            name: "Joe's Pizza",
+            description: "Top rated choice for a quick bite",
+            category: "food",
+            platform: "Google Maps",
+            searchQuery: "Joe's Pizza",
+          },
+        ],
+      }),
+    });
+
+    const response = await processChat(
+      {
+        message: "find restaurants nearby",
+        locale: "en",
+        region: "INTL",
+        location: { lat: 40.7128, lng: -74.006 },
+      },
+      "test-user"
+    );
+
+    expect(response.type).toBe("results");
+    expect(response.candidates?.map((candidate) => candidate.name)).toContain("Joe's Pizza");
+    expect(response.candidates?.map((candidate) => candidate.name)).toContain("Little Italy Deli");
+    expect(response.candidates?.map((candidate) => candidate.name)).not.toContain(
+      "Empire Prime Bistro"
+    );
   });
 
   it("does not ask for location again when location is already available", async () => {
@@ -321,6 +464,60 @@ describe("processChat INTL nearby flow", () => {
     expect(response.clarifyQuestions).toBeUndefined();
     expect(response.candidates?.[0]?.name).toContain("Search on map");
     expect(response.candidates?.[0]?.platform).toBe("Google Maps");
+  });
+
+  it("forces zh locale and Amap-style map provider for CN nearby intents", async () => {
+    vi.mocked(searchNearbyStores).mockResolvedValueOnce({
+      source: "database",
+      radiusKm: 5,
+      matchedCount: 1,
+      category: "food",
+      candidates: [
+        {
+          id: "amap_locale_1",
+          name: "Nearby Cafe A",
+          description: "0.8km away, opens at 08:00",
+          category: "food",
+          distance: "0.8km",
+          rating: 4.6,
+          platform: "Amap",
+          searchQuery: "Nearby Cafe A",
+        },
+      ],
+    });
+
+    vi.mocked(callAI).mockResolvedValueOnce({
+      model: "mock",
+      content: JSON.stringify({
+        type: "results",
+        message: "Found coffee shops",
+        intent: "search_nearby",
+        candidates: [
+          {
+            id: "tmp_locale_1",
+            name: "Coffee Spot",
+            description: "good",
+            category: "food",
+            platform: "Google Maps",
+            searchQuery: "Coffee Spot",
+          },
+        ],
+      }),
+    });
+
+    const response = await processChat(
+      {
+        message: "find cafes nearby",
+        locale: "en",
+        region: "CN",
+        location: { lat: 23.476458472108877, lng: 110.45730570700682 },
+      },
+      "test-user"
+    );
+
+    expect(vi.mocked(searchNearbyStores).mock.calls[0]?.[0]?.locale).toBe("zh");
+    expect(response.type).toBe("results");
+    expect(response.candidates?.[0]?.platform).toBe("高德地图");
   });
 
   it("asks to widen radius when car wash nearby seed is empty", async () => {
@@ -585,7 +782,8 @@ describe("processChat INTL nearby flow", () => {
       "test-user"
     );
 
-    expect(vi.mocked(searchNearbyStores).mock.calls[0]?.[0]?.message).toContain("洗车");
+    const seedMessage = vi.mocked(searchNearbyStores).mock.calls[0]?.[0]?.message || "";
+    expect(/(洗车|娲楄溅|car wash)/i.test(seedMessage)).toBe(true);
     expect(response.type).toBe("results");
     expect(response.candidates?.map((candidate) => candidate.id)).toEqual([
       "amap_expand_1",

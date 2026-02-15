@@ -2,6 +2,7 @@ import { createHmac, randomUUID } from "crypto"
 import process from "process"
 
 export const runtime = "nodejs"
+export const dynamic = "force-dynamic"
 
 function resolveEnvValue(key: string, tencentKey: string): string | undefined {
   const env = process.env as Record<string, string | undefined>

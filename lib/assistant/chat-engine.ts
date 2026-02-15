@@ -164,8 +164,9 @@ export async function processChat(
   userId: string
 ): Promise<AssistantResponse> {
   const { message, history, location, locale, region, isMobile, isAndroid } = request;
-  const effectiveLocale: "zh" | "en" = region === "INTL" ? "en" : locale;
   const nearbyIntent = isNearbyIntent(message);
+  const effectiveLocale: "zh" | "en" =
+    region === "INTL" ? "en" : nearbyIntent ? "zh" : locale;
   const directCarWashNearbyIntent = nearbyIntent && isCarWashNearbyIntent(message);
   const historyCarWashNearbyIntent =
     nearbyIntent &&
@@ -199,15 +200,15 @@ export async function processChat(
       thinking:
         effectiveLocale === "zh"
           ? [
-              "识别到用户在询问附近/周边结果",
-              "发现当前请求缺少可用位置信息",
-              "先向用户发起位置补充，再继续检索",
-            ]
+            "识别到用户在询问附近/周边结果",
+            "发现当前请求缺少可用位置信息",
+            "先向用户发起位置补充，再继续检索",
+          ]
           : [
-              "Detected a nearby-intent request",
-              "No usable location context is available",
-              "Ask for location first, then continue search",
-            ],
+            "Detected a nearby-intent request",
+            "No usable location context is available",
+            "Ask for location first, then continue search",
+          ],
       intent: "search_nearby",
       clarifyQuestions:
         effectiveLocale === "zh"
@@ -216,13 +217,13 @@ export async function processChat(
       followUps:
         effectiveLocale === "zh"
           ? [
-              { text: "我在上海浦东", type: "refine" },
-              { text: "已开启定位，继续", type: "refine" },
-            ]
+            { text: "我在上海浦东", type: "refine" },
+            { text: "已开启定位，继续", type: "refine" },
+          ]
           : [
-              { text: "I'm in Manhattan, NYC", type: "refine" },
-              { text: "Location enabled, continue", type: "refine" },
-            ],
+            { text: "I'm in Manhattan, NYC", type: "refine" },
+            { text: "Location enabled, continue", type: "refine" },
+          ],
     };
   }
 
@@ -300,7 +301,7 @@ export async function processChat(
     }
   }
 
-  // 添加位置上下文（如果有）— 反向地理编码为可读城市名
+  // 添加位置上下文（如果有）- 反向地理编码为可读城市名
   const [locationHint, quickNearbySeed] = await Promise.all([
     resolveWithin(locationHintPromise, contextWaitMs, null),
     resolveWithin(nearbySeedPromise, nearbyPromptWaitMs, null),
@@ -367,15 +368,15 @@ export async function processChat(
     const nearbyFallback =
       nearbyIntent && normalizedLocation
         ? await buildNearbyFallbackOnAiFailure(
-            message,
-            effectiveLocale,
-            region,
-            normalizedLocation,
-            closerRefinementIntent,
-            isMobile,
-            nearbySeed,
-            nearbySeedSearchMessage
-          )
+          message,
+          effectiveLocale,
+          region,
+          normalizedLocation,
+          closerRefinementIntent,
+          isMobile,
+          nearbySeed,
+          nearbySeedSearchMessage
+        )
         : null;
 
     if (nearbyFallback) {
@@ -391,15 +392,15 @@ export async function processChat(
       thinking:
         effectiveLocale === "zh"
           ? [
-              "已完成输入与上下文整理",
-              "尝试调用模型服务时发生失败",
-              "返回稳定错误提示，避免用户等待",
-            ]
+            "已完成输入与上下文整理",
+            "尝试调用模型服务时发生失败",
+            "返回稳定错误提示，避免用户等待",
+          ]
           : [
-              "Prepared user input and context",
-              "Model invocation failed unexpectedly",
-              "Returned a safe fallback error message",
-            ],
+            "Prepared user input and context",
+            "Model invocation failed unexpectedly",
+            "Returned a safe fallback error message",
+          ],
     };
   }
 
@@ -417,15 +418,15 @@ export async function processChat(
       thinking:
         effectiveLocale === "zh"
           ? [
-              "模型已返回内容",
-              "结构化 JSON 解析失败，自动切换为纯文本模式",
-              "保留原始回答并直接返回给用户",
-            ]
+            "模型已返回内容",
+            "结构化 JSON 解析失败，自动切换为纯文本模式",
+            "保留原始回答并直接返回给用户",
+          ]
           : [
-              "Model returned content",
-              "Structured JSON parsing failed, switched to text fallback",
-              "Preserved raw answer and returned it directly",
-            ],
+            "Model returned content",
+            "Structured JSON parsing failed, switched to text fallback",
+            "Preserved raw answer and returned it directly",
+          ],
     };
   }
 
@@ -454,11 +455,10 @@ export async function processChat(
       nearbySeed,
       effectiveLocale,
       region,
-      normalizedLocation,
       closerRefinementIntent
     );
   }
-  parsed = normalizeAssistantResponseForContext(parsed, region, normalizedLocation);
+  parsed = normalizeAssistantResponseForContext(parsed, region);
 
   // 5.1 归一化 thinking 字段，保证前端可稳定展示
   const normalizedThinking = normalizeThinkingSteps(parsed.thinking);
@@ -473,12 +473,17 @@ export async function processChat(
 
   // 6. 为候选结果补充真实深链
   if (parsed.candidates && parsed.candidates.length > 0) {
+    const forceGoogleMapsForIntlNearby =
+      region === "INTL" && (nearbyIntent || parsed.intent === "search_nearby");
     parsed.actions = enrichActionsWithDeepLinks(
       parsed.candidates,
       parsed.actions || [],
       effectiveLocale,
       region,
-      isMobile
+      isMobile,
+      forceGoogleMapsForIntlNearby
+        ? { forceProvider: "Google Maps" }
+        : undefined
     );
   }
 
@@ -525,18 +530,9 @@ function normalizeLocation(
   return { lat, lng };
 }
 
-function isLikelyInChinaCoordinates(lat: number, lng: number): boolean {
-  return lat >= 3.8 && lat <= 53.6 && lng >= 73.5 && lng <= 135.1;
-}
-
 function resolveMapPlatformForContext(
-  region: "CN" | "INTL",
-  location: { lat: number; lng: number } | null
+  region: "CN" | "INTL"
 ): "高德地图" | "Google Maps" {
-  if (location) {
-    return isLikelyInChinaCoordinates(location.lat, location.lng) ? "高德地图" : "Google Maps";
-  }
-
   return region === "CN" ? "高德地图" : "Google Maps";
 }
 
@@ -572,14 +568,13 @@ function normalizeDistanceLabelForIntl(distance: string | undefined): string | u
 
 function normalizeAssistantResponseForContext(
   response: AssistantResponse,
-  region: "CN" | "INTL",
-  location: { lat: number; lng: number } | null
+  region: "CN" | "INTL"
 ): AssistantResponse {
   if (!response.candidates || response.candidates.length === 0) {
     return response;
   }
 
-  const targetMapPlatform = resolveMapPlatformForContext(region, location);
+  const targetMapPlatform = resolveMapPlatformForContext(region);
   const normalizedCandidates = response.candidates.map((candidate) => ({
     ...candidate,
     platform: isMapPlatformValue(candidate.platform)
@@ -606,7 +601,7 @@ function sanitizeNearbySearchQuery(message: string): string {
   const stripped = trimmed
     .replace(/\bwithin\s+\d+(?:\.\d+)?\s*(?:km|kilometers?|kilometres?|miles?|meters?|m)\b/gi, " ")
     .replace(/\b(nearby|near me|around me|close by|nearest|closer|closest)\b/gi, " ")
-    .replace(/(\u66F4\u8FD1|\u8FD1\u4E00\u70B9|\u6700\u8FD1)/g, " ")
+    .replace(/(更近|近一点|最近)/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 
@@ -627,11 +622,11 @@ function parseDistanceToMeters(distance: string | undefined): number | null {
   if (/\b(mi|mile|miles)\b/.test(normalized)) {
     return value * 1609.344;
   }
-  if (/\b(km|kilometer|kilometers|kilometre|kilometres)\b|\u516C\u91CC|\u5343\u7C73/.test(normalized)) {
+  if (/\b(km|kilometer|kilometers|kilometre|kilometres)\b|公里|千米/.test(normalized)) {
     return value * 1000;
   }
   if (
-    /\b(m|meter|meters)\b|\u7C73/.test(normalized) ||
+    /\b(m|meter|meters)\b|米/.test(normalized) ||
     /(?:\d+(?:\.\d+)?)m$/.test(normalized)
   ) {
     return value;
@@ -703,7 +698,7 @@ async function buildNearbyFallbackOnAiFailure(
   const candidates =
     nearbySeed && nearbySeed.candidates.length > 0
       ? pickTopCandidates(nearbySeed.candidates, 5, preferCloser)
-      : buildFallbackNearbyCandidates(message, locale, region, location);
+      : buildFallbackNearbyCandidates(message, locale, region);
 
   const fallbackResponse: AssistantResponse = {
     type: "results",
@@ -711,10 +706,10 @@ async function buildNearbyFallbackOnAiFailure(
     message:
       nearbySeed && nearbySeed.candidates.length > 0
         ? locale === "zh"
-          ? `\u5df2\u4f7f\u7528\u4f60\u7684\u5f53\u524d\u4f4d\u7f6e\uff0c\u627e\u5230 ${candidates.length} \u4e2a\u9644\u8fd1\u5730\u70b9\u3002`
+          ? `已使用你的当前位置，找到 ${candidates.length} 个结果`
           : `I used your current location and found ${candidates.length} nearby places.`
         : locale === "zh"
-          ? "\u5df2\u4f7f\u7528\u4f60\u7684\u5f53\u524d\u4f4d\u7f6e\uff0c\u4e3a\u4f60\u51c6\u5907\u4e86\u53ef\u76f4\u63a5\u6253\u5f00\u7684\u9644\u8fd1\u641c\u7d22\u3002"
+          ? "已使用你的当前位置，为你准备了可直接打开的附近搜索。"
           : "I used your current location and prepared a nearby search you can open directly.",
     plan: buildDefaultNearbyPlan(locale),
     candidates,
@@ -722,21 +717,20 @@ async function buildNearbyFallbackOnAiFailure(
     thinking:
       locale === "zh"
         ? [
-            "\u68c0\u6d4b\u5230 AI \u6a21\u578b\u8c03\u7528\u5931\u8d25\uff0c\u542f\u7528\u9644\u8fd1\u641c\u7d22\u964d\u7ea7\u6d41\u7a0b",
-            "\u57fa\u4e8e\u5f53\u524d\u5b9a\u4f4d\u68c0\u7d22\u9644\u8fd1\u95e8\u5e97",
-            "\u8fd4\u56de\u53ef\u76f4\u63a5\u8df3\u8f6c\u7684\u5019\u9009\u7ed3\u679c",
-          ]
+          "检测到 AI 模型调用失败，启用附近搜索降级流程",
+          "基于当前定位检索附近门店",
+          "返回可直接跳转的候选结果",
+        ]
         : [
-            "Detected AI provider failure and switched to nearby fallback flow",
-            "Queried nearby places from location-aware data sources",
-            "Returned actionable candidates with direct links",
-          ],
+          "Detected AI provider failure and switched to nearby fallback flow",
+          "Queried nearby places from location-aware data sources",
+          "Returned actionable candidates with direct links",
+        ],
   };
 
   let normalizedFallback = normalizeAssistantResponseForContext(
     fallbackResponse,
-    region,
-    location
+    region
   );
 
   if (normalizedFallback.candidates && normalizedFallback.candidates.length > 0) {
@@ -747,7 +741,8 @@ async function buildNearbyFallbackOnAiFailure(
         [],
         locale,
         region,
-        isMobile
+        isMobile,
+        region === "INTL" ? { forceProvider: "Google Maps" } : undefined
       ),
     };
   }
@@ -758,21 +753,23 @@ async function buildNearbyFallbackOnAiFailure(
 function buildFallbackNearbyCandidates(
   message: string,
   locale: "zh" | "en",
-  region: "CN" | "INTL",
-  location: { lat: number; lng: number } | null
+  region: "CN" | "INTL"
 ): CandidateResult[] {
   const query = sanitizeNearbySearchQuery(message);
-  const platform = resolveMapPlatformForContext(region, location);
+  const platform = resolveMapPlatformForContext(region);
 
   return [
     {
       id: "nearby_fallback_map_search",
-      name: locale === "zh" ? `Map search: ${query}` : `Search on map: ${query}`,
+      name:
+        locale === "zh"
+          ? `地图搜索：${query}`
+          : `Search on map: ${query}`,
       description:
         locale === "zh"
-          ? "I used your current location and prepared a direct nearby map search."
+          ? "已使用你的当前位置，已为你准备可直接打开的附近地图搜索。"
           : "I used your current location and prepared a direct nearby map search.",
-      category: locale === "zh" ? "Electronics" : "Electronics",
+      category: locale === "zh" ? "本地生活" : "Electronics",
       platform,
       searchQuery: query,
     },
@@ -804,7 +801,7 @@ function preventRedundantLocationClarify(
       intent: "search_nearby",
       message:
         locale === "zh"
-          ? `I used your current location and found ${topCandidates.length} nearby places.`
+          ? `已使用你的当前位置，找到 ${topCandidates.length} 个结果`
           : `I used your current location and found ${topCandidates.length} nearby places.`,
       plan:
         response.plan && response.plan.length > 0
@@ -822,13 +819,13 @@ function preventRedundantLocationClarify(
     intent: response.intent || "search_nearby",
     message:
       locale === "zh"
-        ? "I used your current location and prepared a nearby search you can open directly."
+        ? "已使用你的当前位置，已为你准备可直接打开的附近搜索。"
         : "I used your current location and prepared a nearby search you can open directly.",
     plan:
       response.plan && response.plan.length > 0
         ? response.plan
         : buildDefaultNearbyPlan(locale),
-    candidates: buildFallbackNearbyCandidates(message, locale, region, location),
+    candidates: buildFallbackNearbyCandidates(message, locale, region),
     clarifyQuestions: undefined,
     followUps: followUps.length > 0 ? followUps : buildDefaultNearbyFollowUps(locale),
   };
@@ -837,7 +834,7 @@ function preventRedundantLocationClarify(
 function isNearbyIntent(message: string): boolean {
   const text = message.toLowerCase();
   const zhPattern =
-    /(\u9644\u8FD1|\u5468\u8FB9|\u5C31\u8FD1|\u79BB\u6211\u8FD1|\u6700\u8FD1|\u66F4\u8FD1|\u8FD1\u4E00\u70B9|\d+(?:\.\d+)?\s*(?:\u516C\u91CC|\u5343\u7C73|\u7C73)\s*(?:\u5185|\u4EE5\u5185)?)/;
+    /(附近|周边|就近|离我近|最近|更近|近一点|\d+(?:\.\d+)?\s*(?:公里|千米|米)\s*(?:内|以内)?)/;
   const enPattern = /(nearby|near me|around me|close by|nearest|closer|closest|within \d+\s?(km|miles?|meters?|m))/;
   return zhPattern.test(text) || enPattern.test(text);
 }
@@ -847,14 +844,14 @@ function isCarWashNearbyIntent(message: string): boolean {
   const enPattern =
     /(car wash|auto wash|vehicle wash|auto detail|detailing|car detailing|car care)/;
   const zhPattern =
-    /(\u6d17\u8f66|\u6c7d\u8f66\u7f8e\u5bb9|\u7cbe\u6d17|\u6253\u8721|\u5185\u9970\u6e05\u6d17|\u6f06\u9762)/;
+    /(洗车|汽车美容|精洗|打蜡|内饰清洗|漆面)/;
   return enPattern.test(normalized) || zhPattern.test(message);
 }
 
 function isNearbyRefinementMessage(message: string): boolean {
   const text = message.toLowerCase();
   const zhPattern =
-    /(\u6269\u5927|\u6269\u5c55|\u653e\u5927|\u66f4\u8fdc|\u66f4\u5927\u8303\u56f4|\u534a\u5f84|\u8303\u56f4)/;
+    /(扩大|扩展|放大|更远|更大范围|半径|范围)/;
   const enPattern = /(expand|widen|increase|broaden|radius|range|within \d+\s?(km|miles?|meters?|m))/;
   return zhPattern.test(text) || enPattern.test(text);
 }
@@ -899,7 +896,7 @@ function buildNearbySeedSearchMessage(
 
 function isCloserRefinementIntent(message: string): boolean {
   const text = message.toLowerCase();
-  const zhPattern = /(\u66F4\u8FD1|\u8FD1\u4E00\u70B9|\u6700\u8FD1|\u79BB\u6211\u8FD1\u4E00\u70B9)/;
+  const zhPattern = /(更近|近一点|最近|离我近一点)/;
   const enPattern = /(closer|closest|nearest|shorter distance|less far)/;
   return zhPattern.test(text) || enPattern.test(text);
 }
@@ -936,8 +933,10 @@ function buildIntlNearbySeedPrompt(
       "2. 不要使用“洗车店/餐厅/商店”这类泛化名称。",
       "3. 用中文输出。",
       "4. 推荐理由需结合距离、标签、营业时间等具体信息。",
-      ...(preferCloser ? ["5. 用户要求更近，优先按距离从近到远排序。"] : []),
-      `搜索半径: ${seed.radiusKm}km, 命中数: ${seed.matchedCount}`,
+      ...(preferCloser
+        ? ["5. 用户要求更近，优先按距离从近到远排序。"]
+        : []),
+      `搜索半径: ${seed.radiusKm}km, 匹配数量: ${seed.matchedCount}`,
       `用户需求: ${JSON.stringify(userMessage)}`,
       `nearbyData=${JSON.stringify(dataset)}`,
     ].join("\n");
@@ -965,31 +964,6 @@ function normalizeCandidateName(value: string | undefined): string {
     .replace(/[^a-z0-9\s]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-}
-
-function isGenericCandidateName(name: string | undefined): boolean {
-  const normalized = normalizeCandidateName(name);
-  if (!normalized) return true;
-
-  const generic = new Set([
-    "restaurant",
-    "restaurants",
-    "food",
-    "food place",
-    "shop",
-    "store",
-    "mall",
-    "market",
-    "coffee",
-    "cafe",
-    "bar",
-    "gym",
-    "fitness",
-    "hotel",
-    "movie theater",
-  ]);
-
-  return generic.has(normalized);
 }
 
 function isWeakDescription(description: string | undefined): boolean {
@@ -1076,25 +1050,25 @@ function buildAmapUnavailableNearbyResponse(locale: "zh" | "en"): AssistantRespo
     followUps:
       locale === "zh"
         ? [
-            { text: "稍后重试", type: "refine" },
-            { text: "换个关键词", type: "refine" },
-          ]
+          { text: "稍后重试", type: "refine" },
+          { text: "换个关键词", type: "refine" },
+        ]
         : [
-            { text: "Retry later", type: "refine" },
-            { text: "Use another keyword", type: "refine" },
-          ],
+          { text: "Retry later", type: "refine" },
+          { text: "Use another keyword", type: "refine" },
+        ],
     thinking:
       locale === "zh"
         ? [
-            "已按 Amap-only 策略执行附近检索",
-            "当前无法获取可用的高德周边结果",
-            "返回重试引导，避免使用非高德数据源",
-          ]
+          "已按 Amap-only 策略执行附近检索",
+          "当前无法获取可用的高德周边结果",
+          "返回重试引导，避免使用非高德数据源",
+        ]
         : [
-            "Applied Amap-only nearby strategy",
-            "No usable Amap nearby result is available right now",
-            "Returned retry guidance without using non-Amap sources",
-          ],
+          "Applied Amap-only nearby strategy",
+          "No usable Amap nearby result is available right now",
+          "Returned retry guidance without using non-Amap sources",
+        ],
   };
 }
 
@@ -1110,7 +1084,7 @@ function buildAmapNoResultNearbyResponse(
       intent: "search_nearby",
       message:
         locale === "zh"
-          ? `我已按你的位置用高德地图查了 ${radiusDisplay}km 内的洗车店，暂无符合结果。要不要扩大到 20km？`
+          ? `我已按你的位置用高德地图查了 ${radiusDisplay}km 内的洗车服务，暂无结果。`
           : `I searched Amap for car wash options within ${radiusDisplay}km of your location and found none. Expand to 20km?`,
       clarifyQuestions:
         locale === "zh"
@@ -1119,25 +1093,25 @@ function buildAmapNoResultNearbyResponse(
       followUps:
         locale === "zh"
           ? [
-              { text: "扩大到 20km", type: "refine" },
-              { text: "给我最近的 3 家（可超出 10km）", type: "refine" },
-            ]
+            { text: "扩大到 20km", type: "refine" },
+            { text: "给我最近的 3 家（可超出 10km）", type: "refine" },
+          ]
           : [
-              { text: "Expand to 20km", type: "refine" },
-              { text: "Show 3 nearest even if beyond 10km", type: "refine" },
-            ],
+            { text: "Expand to 20km", type: "refine" },
+            { text: "Show 3 nearest even if beyond 10km", type: "refine" },
+          ],
       thinking:
         locale === "zh"
           ? [
-              "已使用高德地图周边检索洗车店",
-              "在当前半径内未命中可用门店",
-              "建议扩大半径继续检索",
-            ]
+            "已使用高德地图周边检索洗车店",
+            "在当前半径内未命中可用门店",
+            "建议扩大半径继续检索",
+          ]
           : [
-              "Searched Amap nearby for car wash options",
-              "No usable place found within current radius",
-              "Suggested expanding radius for next search",
-            ],
+            "Searched Amap nearby for car wash options",
+            "No usable place found within current radius",
+            "Suggested expanding radius for next search",
+          ],
     };
   }
 
@@ -1146,7 +1120,7 @@ function buildAmapNoResultNearbyResponse(
     intent: "search_nearby",
     message:
       locale === "zh"
-        ? `我已按你的位置用高德地图查了 ${radiusDisplay}km 内的附近结果，暂无匹配地点。要不要扩大到 20km 或换个关键词？`
+        ? `我已按你的位置用高德地图查了 ${radiusDisplay}km 范围，暂无结果。`
         : `I searched Amap nearby within ${radiusDisplay}km of your location and found no matching places. Expand to 20km or change the keyword?`,
     clarifyQuestions:
       locale === "zh"
@@ -1155,25 +1129,25 @@ function buildAmapNoResultNearbyResponse(
     followUps:
       locale === "zh"
         ? [
-            { text: "扩大到 20km", type: "refine" },
-            { text: "换个关键词重试", type: "refine" },
-          ]
+          { text: "扩大到 20km", type: "refine" },
+          { text: "换个关键词重试", type: "refine" },
+        ]
         : [
-            { text: "Expand to 20km", type: "refine" },
-            { text: "Try another keyword", type: "refine" },
-          ],
+          { text: "Expand to 20km", type: "refine" },
+          { text: "Try another keyword", type: "refine" },
+        ],
     thinking:
       locale === "zh"
         ? [
-            "已使用高德地图周边检索",
-            "当前半径下没有匹配地点",
-            "建议扩大范围或调整关键词",
-          ]
+          "已使用高德地图周边检索",
+          "当前半径下没有匹配地点",
+          "建议扩大范围或调整关键词",
+        ]
         : [
-            "Searched nearby places via Amap",
-            "No matching place in current radius",
-            "Suggested wider radius or refined keyword",
-          ],
+          "Searched nearby places via Amap",
+          "No matching place in current radius",
+          "Suggested wider radius or refined keyword",
+        ],
   };
 }
 
@@ -1199,7 +1173,7 @@ function enforceConcreteIntlCandidates(
       intent: "search_nearby",
       message:
         locale === "zh"
-          ? `找到 ${fallbackCandidates.length} 个附近结果，已按距离和相关性排序。`
+          ? `找到 ${fallbackCandidates.length} 个附近结果，已按距离排序。`
           : `Found ${fallbackCandidates.length} nearby places ranked by distance and relevance.`,
       plan: response.plan && response.plan.length > 0 ? response.plan : buildDefaultNearbyPlan(locale),
       candidates: fallbackCandidates,
@@ -1221,16 +1195,13 @@ function enforceConcreteIntlCandidates(
   for (const candidate of response.candidates) {
     const normalizedName = normalizeCandidateName(candidate.name);
     const matchedSeed = seedByName.get(normalizedName);
-
-    if (matchedSeed) {
-      mergedCandidates.push(mergeCandidateWithSeed(candidate, matchedSeed));
-      usedSeedIds.add(matchedSeed.id);
+    if (!matchedSeed || usedSeedIds.has(matchedSeed.id)) {
       continue;
     }
 
-    if (!isGenericCandidateName(candidate.name)) {
-      mergedCandidates.push(candidate);
-    }
+    // Keep INTL nearby results strictly grounded in fetched map POIs.
+    mergedCandidates.push(mergeCandidateWithSeed(candidate, matchedSeed));
+    usedSeedIds.add(matchedSeed.id);
   }
 
   if (mergedCandidates.length === 0) {
@@ -1241,7 +1212,7 @@ function enforceConcreteIntlCandidates(
       intent: "search_nearby",
       message:
         locale === "zh"
-          ? `找到 ${fallbackCandidates.length} 个附近结果，已按距离和相关性排序。`
+          ? `找到 ${fallbackCandidates.length} 个附近结果，已按距离排序。`
           : `Found ${fallbackCandidates.length} nearby places ranked by distance and relevance.`,
       plan: response.plan && response.plan.length > 0 ? response.plan : buildDefaultNearbyPlan(locale),
       candidates: fallbackCandidates,
@@ -1283,7 +1254,6 @@ function enforceStrictNearbySeedCandidates(
   seed: NearbySearchResult,
   locale: "zh" | "en",
   region: "CN" | "INTL",
-  location: { lat: number; lng: number } | null,
   preferCloser: boolean
 ): AssistantResponse {
   const strictSeedCandidates = pickTopCandidates(seed.candidates, 5, preferCloser);
@@ -1291,7 +1261,7 @@ function enforceStrictNearbySeedCandidates(
     return response;
   }
 
-  const mapPlatform = resolveMapPlatformForContext(region, location);
+  const mapPlatform = resolveMapPlatformForContext(region);
   const normalizedCandidates = strictSeedCandidates.map((candidate) => ({
     ...candidate,
     platform: mapPlatform,
@@ -1305,7 +1275,7 @@ function enforceStrictNearbySeedCandidates(
     message: hasResultsMessage
       ? response.message
       : locale === "zh"
-        ? `已基于高德地图周边搜索找到 ${normalizedCandidates.length} 个结果。`
+        ? `已基于高德地图周边搜索找到 ${normalizedCandidates.length} 个结果`
         : `Found ${normalizedCandidates.length} nearby places from map POIs.`,
     plan: response.plan && response.plan.length > 0 ? response.plan : buildDefaultNearbyPlan(locale),
     candidates: normalizedCandidates,
@@ -1363,21 +1333,29 @@ function enrichActionsWithDeepLinks(
   existingActions: AssistantAction[],
   locale: "zh" | "en",
   region: "CN" | "INTL",
-  isMobile?: boolean
+  isMobile?: boolean,
+  options?: {
+    forceProvider?: string;
+  }
 ): AssistantAction[] {
   const enrichedActions: AssistantAction[] = [];
   const deployRegion = region as DeploymentRegion;
 
   for (const candidate of candidates) {
+    const resolvedProvider = options?.forceProvider || candidate.platform;
+    const resolvedQuery =
+      candidate.searchQuery?.trim() ||
+      candidate.name?.trim() ||
+      "nearby";
     // 使用 provider-catalog 解析深链
     try {
       const candidateLink = resolveCandidateLink({
         title: candidate.name,
-        query: candidate.searchQuery || candidate.name,
+        query: resolvedQuery,
         category: mapCategoryToRecommendation(candidate.category),
         locale,
         region: deployRegion,
-        provider: candidate.platform,
+        provider: resolvedProvider,
         isMobile,
       });
 
@@ -1389,15 +1367,15 @@ function enrichActionsWithDeepLinks(
         type: "open_app",
         label:
           locale === "zh"
-            ? `打开${candidateLink.metadata?.providerDisplayName || candidate.platform}查看「${candidate.name}」`
-            : `Open ${candidateLink.metadata?.providerDisplayName || candidate.platform} for "${candidate.name}"`,
+            ? `打开${candidateLink.metadata?.providerDisplayName || resolvedProvider}查看“${candidate.name}”`
+            : `Open ${candidateLink.metadata?.providerDisplayName || resolvedProvider} for "${candidate.name}"`,
         payload: outboundUrl,
-        providerId: candidate.platform,
+        providerId: resolvedProvider,
         candidateId: candidate.id,
         icon: "external-link",
       });
     } catch (err) {
-      console.warn(`[ChatEngine] Failed to resolve deep link for ${candidate.platform}:`, err);
+      console.warn(`[ChatEngine] Failed to resolve deep link for ${resolvedProvider}:`, err);
     }
 
     // 添加电话拨打动作
@@ -1411,7 +1389,7 @@ function enrichActionsWithDeepLinks(
     }
   }
 
-  // 保留 AI 生成的不重复的动作
+  // 保留 AI 生成的不重复动作
   for (const action of existingActions) {
     const isDuplicate = enrichedActions.some(
       (a) => a.type === action.type && a.payload === action.payload
@@ -1436,25 +1414,26 @@ function mapCategoryToRecommendation(
   const lower = category.toLowerCase();
 
   if (
-    lower.includes("food") || lower.includes("餐") || lower.includes("吃") ||
-    lower.includes("外卖") || lower.includes("美食") || lower.includes("饮") ||
+    lower.includes("food") || lower.includes("restaurant") || lower.includes("delivery") ||
+    lower.includes("餐") || lower.includes("吃") || lower.includes("外卖") || lower.includes("美食") ||
+    lower.includes("饭") ||
     lower.includes("delivery") || lower.includes("restaurant")
   ) {
     return "food";
   }
 
   if (
-    lower.includes("shop") || lower.includes("购") || lower.includes("商") ||
+    lower.includes("shop") || lower.includes("store") || lower.includes("mall") || lower.includes("electronics") ||
+    lower.includes("购") || lower.includes("买") || lower.includes("商品") ||
     lower.includes("电脑") || lower.includes("数码") || lower.includes("电子") ||
-    lower.includes("商品") || lower.includes("买") || lower.includes("electronics") ||
     lower.includes("store") || lower.includes("mall")
   ) {
     return "shopping";
   }
 
   if (
-    lower.includes("travel") || lower.includes("旅") || lower.includes("酒店") ||
-    lower.includes("景") || lower.includes("hotel") || lower.includes("flight")
+    lower.includes("travel") || lower.includes("hotel") || lower.includes("flight") ||
+    lower.includes("旅") || lower.includes("酒店") || lower.includes("景点")
   ) {
     return "travel";
   }
@@ -1467,8 +1446,8 @@ function mapCategoryToRecommendation(
   }
 
   if (
-    lower.includes("entertain") || lower.includes("娱乐") || lower.includes("电影") ||
-    lower.includes("音乐") || lower.includes("游戏") || lower.includes("movie") ||
+    lower.includes("entertain") || lower.includes("movie") || lower.includes("music") || lower.includes("game") ||
+    lower.includes("娱乐") || lower.includes("电影") || lower.includes("音乐") || lower.includes("游戏") ||
     lower.includes("music") || lower.includes("game")
   ) {
     return "entertainment";
@@ -1658,8 +1637,8 @@ function repairCommonJsonIssues(content: string): string {
 function normalizeJsonContent(content: string): string {
   const normalizedQuotes = content
     .replace(/^\uFEFF/, "")
-    .replace(/[“”]/g, "\"")
-    .replace(/[‘’]/g, "'");
+    .replace(/[\u201C\u201D]/g, "\"")
+    .replace(/[\u2018\u2019]/g, "'");
 
   const commonRepaired = repairCommonJsonIssues(normalizedQuotes);
   const withoutTrailingCommas = commonRepaired.replace(/,\s*([}\]])/g, "$1");
@@ -1805,10 +1784,13 @@ function parseAIResponseSafely(content: string, locale: "zh" | "en"): AssistantR
       if (parsed.type === "results" && parsed.candidates && parsed.candidates.length > 0) {
         parsed.message =
           locale === "zh"
-            ? `找到 ${parsed.candidates.length} 个候选结果：`
+            ? `找到 ${parsed.candidates.length} 个结果`
             : `Found ${parsed.candidates.length} candidates:`;
       } else {
-        parsed.message = locale === "zh" ? "已为你整理好结果。" : "I prepared the result for you.";
+        parsed.message =
+          locale === "zh"
+            ? "已为你整理好结果。"
+            : "I prepared the result for you.";
       }
     }
 
@@ -1827,7 +1809,7 @@ function normalizeThinkingSteps(raw: unknown): string[] {
 
   if (typeof raw === "string") {
     return raw
-      .split(/\r?\n|[;；]/)
+      .split(/\r?\n|[;；、]/)
       .map((item) => sanitizeThinkingStep(item))
       .filter((item) => item.length > 0)
       .slice(0, 8);
@@ -1839,7 +1821,7 @@ function normalizeThinkingSteps(raw: unknown): string[] {
 function sanitizeThinkingStep(value: string): string {
   return value
     .trim()
-    .replace(/^[-*•]+\s*/, "")
+    .replace(/^[-*•+\s]+/, "")
     .replace(/^\d+[.)]\s*/, "")
     .replace(/^第\s*\d+\s*步[:：]?\s*/, "")
     .replace(/^Step\s*\d+[:：]?\s*/i, "")
