@@ -3,6 +3,7 @@ import { getCloudBaseDatabase } from "@/lib/database/cloudbase-client";
 import type { CandidateResult } from "./types";
 
 type NearbyRegion = "CN" | "INTL";
+type DistanceUnitSystem = "metric" | "imperial";
 
 type NearbyStoreRow = {
   id?: string;
@@ -81,6 +82,7 @@ const AMAP_PLACE_TIMEOUT_MS = Math.max(
   2500,
   Number(process.env.AMAP_PLACE_TIMEOUT_MS || "5000")
 );
+const KM_TO_MILES = 0.621371;
 
 type OverpassEntityType = "node" | "way" | "relation";
 
@@ -207,6 +209,41 @@ function isLikelyInChina(lat: number, lng: number): boolean {
   return lat >= 3.8 && lat <= 53.6 && lng >= 73.5 && lng <= 135.1;
 }
 
+function getDistanceUnitSystem(region: NearbyRegion): DistanceUnitSystem {
+  return region === "INTL" ? "imperial" : "metric";
+}
+
+function resolveMapPlatformForLocation(lat: number, lng: number): "高德地图" | "Google Maps" {
+  return isLikelyInChina(lat, lng) ? "高德地图" : "Google Maps";
+}
+
+function isMapPlatform(platform: string | undefined): boolean {
+  if (!platform) return false;
+  const normalized = platform.trim().toLowerCase();
+  if (!normalized) return false;
+
+  return (
+    normalized.includes("map") ||
+    normalized.includes("地图") ||
+    normalized === "amap" ||
+    normalized === "gaode" ||
+    normalized === "googlemaps" ||
+    normalized === "baidumap" ||
+    normalized === "tencentmap"
+  );
+}
+
+function normalizeCandidatePlatform(
+  platform: string | undefined,
+  fallbackMapPlatform: "高德地图" | "Google Maps"
+): string {
+  if (!platform || platform.trim().length === 0) {
+    return fallbackMapPlatform;
+  }
+
+  return isMapPlatform(platform) ? fallbackMapPlatform : platform;
+}
+
 function getAmapApiKey(): string | undefined {
   return (
     process.env.AMAP_WEB_SERVICE_KEY ||
@@ -245,15 +282,19 @@ function parseAmapLocation(location: string | undefined): { lat: number; lng: nu
 function buildAmapDescription(
   poi: AmapPoi,
   distanceKm: number,
-  locale: "zh" | "en"
+  locale: "zh" | "en",
+  region: NearbyRegion
 ): string {
-  const reasons: string[] = [locale === "zh" ? `距离约${formatDistance(distanceKm)}` : `${formatDistance(distanceKm)} away`];
+  const distance = formatDistance(distanceKm, getDistanceUnitSystem(region));
+  const reasons: string[] = [
+    locale === "zh" ? `距离约 ${distance}` : `${distance} away`,
+  ];
 
   if (poi.type) {
     reasons.push(locale === "zh" ? `类型: ${poi.type}` : `type: ${poi.type}`);
   }
   if (poi.opentime2 || poi.opentime) {
-    reasons.push(locale === "zh" ? "含营业信息" : "opening hours available");
+    reasons.push(locale === "zh" ? "含营业时间信息" : "opening hours available");
   }
 
   return reasons.join(", ");
@@ -309,11 +350,23 @@ export function haversineDistanceKm(
   return earthRadiusKm * c;
 }
 
-function formatDistance(distanceKm: number): string {
+function formatDistance(
+  distanceKm: number,
+  unitSystem: DistanceUnitSystem
+): string {
+  if (unitSystem === "imperial") {
+    const miles = distanceKm * KM_TO_MILES;
+    if (miles < 0.1) {
+      return "0.1 miles";
+    }
+    if (miles < 10) {
+      return `${miles.toFixed(1)} miles`;
+    }
+    return `${Math.round(miles)} miles`;
+  }
   if (distanceKm < 1) {
     return `${Math.round(distanceKm * 1000)}m`;
   }
-
   return `${distanceKm.toFixed(1)}km`;
 }
 
@@ -521,9 +574,12 @@ function scoreOverpassCandidate(
 
 function buildOverpassDescription(
   tags: Record<string, string>,
-  distanceKm: number
+  distanceKm: number,
+  region: NearbyRegion
 ): string {
-  const reasons: string[] = [`${formatDistance(distanceKm)} away`];
+  const reasons: string[] = [
+    `${formatDistance(distanceKm, getDistanceUnitSystem(region))} away`,
+  ];
 
   const cuisine = normalizeTagValue(tags.cuisine);
   if (cuisine) {
@@ -692,6 +748,8 @@ function mapOverpassElementsToResult(
   limit: number
 ): NearbySearchResult {
   const tokens = tokenizeForRanking(params.message);
+  const mapPlatform = resolveMapPlatformForLocation(params.lat, params.lng);
+  const unitSystem = getDistanceUnitSystem(params.region);
   const ranked: RankedOverpassCandidate[] = [];
   const dedupe = new Set<string>();
 
@@ -741,20 +799,20 @@ function mapOverpassElementsToResult(
         ? `osm_${element.type}_${element.id}`
         : `osm_${Math.random().toString(36).slice(2, 10)}`;
     const searchQuery = [name, address].filter(Boolean).join(", ");
-    const description = buildOverpassDescription(tags, distanceKm);
+    const description = buildOverpassDescription(tags, distanceKm, params.region);
 
     const candidate: CandidateResult = {
       id,
       name,
       description,
       category: poiCategory,
-      distance: formatDistance(distanceKm),
+      distance: formatDistance(distanceKm, unitSystem),
       rating,
       businessHours: businessHours || undefined,
       phone: contactPhone || undefined,
       address,
       tags: tagsForCard.length > 0 ? tagsForCard : undefined,
-      platform: "Google Maps",
+      platform: mapPlatform,
       searchQuery: searchQuery || name,
     };
 
@@ -931,6 +989,8 @@ async function fetchNearbyStoresFromAmap(
   }
 
   const messageTokens = tokenizeForRanking(params.message);
+  const mapPlatform = resolveMapPlatformForLocation(params.lat, params.lng);
+  const unitSystem = getDistanceUnitSystem(params.region);
   const ranked: RankedOverpassCandidate[] = [];
   const dedupe = new Set<string>();
 
@@ -963,7 +1023,7 @@ async function fetchNearbyStoresFromAmap(
     const tagsForCard = typeTag ? typeTag.split(";").slice(0, 3) : undefined;
     const ratingRaw = toNumber(poi.biz_ext?.rating);
     const rating = ratingRaw && ratingRaw <= 5 ? ratingRaw : undefined;
-    const description = buildAmapDescription(poi, distanceKm, params.locale);
+    const description = buildAmapDescription(poi, distanceKm, params.locale, params.region);
     const searchQuery = [name, address].filter(Boolean).join(", ");
 
     const candidate: CandidateResult = {
@@ -971,14 +1031,14 @@ async function fetchNearbyStoresFromAmap(
       name,
       description,
       category: category || inferCategoryFromMessage(params.message, params.locale) || "local_life",
-      distance: formatDistance(distanceKm),
+      distance: formatDistance(distanceKm, unitSystem),
       rating,
       priceRange: toNumber(poi.biz_ext?.cost) ? `${poi.biz_ext?.cost}` : undefined,
       businessHours: poi.opentime2 || poi.opentime || undefined,
       phone: poi.tel || undefined,
       address,
       tags: tagsForCard && tagsForCard.length > 0 ? tagsForCard : undefined,
-      platform: params.region === "CN" ? "高德地图" : "Google Maps",
+      platform: mapPlatform,
       searchQuery: searchQuery || name,
     };
 
@@ -1070,6 +1130,9 @@ function mapRowsToCandidates(
   radiusKm: number,
   limit: number
 ): NearbySearchResult {
+  const mapPlatform = resolveMapPlatformForLocation(params.lat, params.lng);
+  const unitSystem = getDistanceUnitSystem(params.region);
+
   const withDistance: NearbyStoreWithDistance[] = rows
     .map((row) => {
       const lat = toNumber(row.latitude) ?? toNumber(row.lat);
@@ -1100,12 +1163,10 @@ function mapRowsToCandidates(
     const row = item.row;
     const id = row.id || row._id || `nearby_${index + 1}`;
     const category = row.category || "local_life";
-    const name = row.name || (params.locale === "zh" ? "附近门店" : "Nearby Store");
+    const name = row.name || "Nearby Store";
+    const formattedDistance = formatDistance(item.distanceKm, unitSystem);
     const description =
-      row.description ||
-      (params.locale === "zh"
-        ? `距离约 ${formatDistance(item.distanceKm)}，可到店查看。`
-        : `About ${formatDistance(item.distanceKm)} away, available for in-store visit.`);
+      row.description || `About ${formattedDistance} away, available for in-store visit.`;
 
     const rating = toNumber(row.rating) ?? undefined;
 
@@ -1114,7 +1175,7 @@ function mapRowsToCandidates(
       name,
       description,
       category,
-      distance: formatDistance(item.distanceKm),
+      distance: formattedDistance,
       rating,
       priceRange: row.price_range || row.priceRange || undefined,
       estimatedTime: row.estimated_time || row.estimatedTime || undefined,
@@ -1122,8 +1183,7 @@ function mapRowsToCandidates(
       phone: row.phone || undefined,
       address: row.address || undefined,
       tags: Array.isArray(row.tags) ? row.tags : undefined,
-      platform:
-        row.platform || (params.region === "CN" ? "高德地图" : "Google Maps"),
+      platform: normalizeCandidatePlatform(row.platform, mapPlatform),
       searchQuery: row.search_query || row.searchQuery || name,
     };
   });

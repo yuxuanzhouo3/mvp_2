@@ -125,6 +125,7 @@ describe("processChat INTL nearby flow", () => {
     expect(response.type).toBe("results");
     expect(response.candidates?.[0]?.name).toBe("Joe's Pizza");
     expect(response.candidates?.[0]?.platform).toBe("Google Maps");
+    expect(response.candidates?.[0]?.distance).toMatch(/mile/);
     expect(response.candidates?.[0]?.searchQuery).toContain("Joe's Pizza");
   });
 
@@ -319,6 +320,85 @@ describe("processChat INTL nearby flow", () => {
     expect(response.message.toLowerCase()).toContain("prepared a nearby search");
     expect(response.clarifyQuestions).toBeUndefined();
     expect(response.candidates?.[0]?.name).toContain("Search on map");
+    expect(response.candidates?.[0]?.platform).toBe("Google Maps");
+  });
+
+  it("prioritizes nearest places when user asks for closer options", async () => {
+    vi.mocked(searchNearbyStores).mockResolvedValueOnce({
+      source: "overpass",
+      radiusKm: 5,
+      matchedCount: 2,
+      category: "food",
+      candidates: [
+        {
+          id: "osm_far",
+          name: "Far Cafe",
+          description: "1.8 miles away",
+          category: "food",
+          distance: "1.8 miles",
+          platform: "Google Maps",
+          searchQuery: "Far Cafe",
+        },
+        {
+          id: "osm_near",
+          name: "Near Cafe",
+          description: "0.3 miles away",
+          category: "food",
+          distance: "0.3 miles",
+          platform: "Google Maps",
+          searchQuery: "Near Cafe",
+        },
+      ],
+    });
+
+    vi.mocked(callAI).mockResolvedValueOnce({
+      model: "mock",
+      content: JSON.stringify({
+        type: "clarify",
+        message: "Want to refine?",
+        intent: "search_nearby",
+        clarifyQuestions: ["Any budget preference?"],
+      }),
+    });
+
+    const response = await processChat(
+      {
+        message: "Want closer options",
+        locale: "en",
+        region: "INTL",
+        location: { lat: 40.7128, lng: -74.006 },
+      },
+      "test-user"
+    );
+
+    expect(searchNearbyStores).toHaveBeenCalledTimes(1);
+    expect(response.type).toBe("results");
+    expect(response.candidates?.[0]?.name).toBe("Near Cafe");
+    expect(response.candidates?.[1]?.name).toBe("Far Cafe");
+  });
+
+  it("uses Google Maps fallback for CN users located outside China", async () => {
+    vi.mocked(callAI).mockResolvedValueOnce({
+      model: "mock",
+      content: JSON.stringify({
+        type: "clarify",
+        message: "请确认位置",
+        intent: "search_nearby",
+        clarifyQuestions: ["你现在在哪个区域？"],
+      }),
+    });
+
+    const response = await processChat(
+      {
+        message: "附近咖啡店",
+        locale: "zh",
+        region: "CN",
+        location: { lat: 37.7749, lng: -122.4194 },
+      },
+      "test-user"
+    );
+
+    expect(response.type).toBe("results");
     expect(response.candidates?.[0]?.platform).toBe("Google Maps");
   });
 });

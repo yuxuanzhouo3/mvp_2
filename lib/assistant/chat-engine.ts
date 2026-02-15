@@ -36,6 +36,7 @@ export async function processChat(
   const { message, history, location, locale, region, isMobile, isAndroid } = request;
   const effectiveLocale: "zh" | "en" = region === "INTL" ? "en" : locale;
   const nearbyIntent = isNearbyIntent(message);
+  const closerRefinementIntent = isCloserRefinementIntent(message);
   const normalizedLocation = normalizeLocation(location);
   const hasLocation = Boolean(normalizedLocation);
 
@@ -132,7 +133,7 @@ export async function processChat(
       if (intlNearbySeed.candidates.length > 0) {
         messages.push({
           role: "system",
-          content: buildIntlNearbySeedPrompt(intlNearbySeed, message),
+          content: buildIntlNearbySeedPrompt(intlNearbySeed, message, closerRefinementIntent),
         });
       } else {
         messages.push({
@@ -209,17 +210,25 @@ export async function processChat(
   }
 
   if (intlNearbySeed && intlNearbySeed.candidates.length > 0) {
-    parsed = enforceConcreteIntlCandidates(parsed, intlNearbySeed, effectiveLocale);
+    parsed = enforceConcreteIntlCandidates(
+      parsed,
+      intlNearbySeed,
+      effectiveLocale,
+      closerRefinementIntent
+    );
   }
   parsed = preventRedundantLocationClarify(
     parsed,
     effectiveLocale,
     region,
+    normalizedLocation,
     message,
     hasLocation,
     nearbyIntent,
+    closerRefinementIntent,
     intlNearbySeed
   );
+  parsed = normalizeAssistantResponseForContext(parsed, region, normalizedLocation);
 
   // 5.1 归一化 thinking 字段，保证前端可稳定展示
   const normalizedThinking = normalizeThinkingSteps(parsed.thinking);
@@ -286,6 +295,78 @@ function normalizeLocation(
   return { lat, lng };
 }
 
+function isLikelyInChinaCoordinates(lat: number, lng: number): boolean {
+  return lat >= 3.8 && lat <= 53.6 && lng >= 73.5 && lng <= 135.1;
+}
+
+function resolveMapPlatformForContext(
+  region: "CN" | "INTL",
+  location: { lat: number; lng: number } | null
+): "高德地图" | "Google Maps" {
+  if (location) {
+    return isLikelyInChinaCoordinates(location.lat, location.lng) ? "高德地图" : "Google Maps";
+  }
+
+  return region === "CN" ? "高德地图" : "Google Maps";
+}
+
+function isMapPlatformValue(platform: string | undefined): boolean {
+  if (!platform) return false;
+  const normalized = platform.trim().toLowerCase();
+  if (!normalized) return false;
+
+  return (
+    normalized.includes("map") ||
+    normalized.includes("地图") ||
+    normalized === "amap" ||
+    normalized === "gaode" ||
+    normalized === "baidumap" ||
+    normalized === "tencentmap"
+  );
+}
+
+function normalizeDistanceLabelForIntl(distance: string | undefined): string | undefined {
+  if (!distance) return distance;
+  const meters = parseDistanceToMeters(distance);
+  if (meters === null) return distance;
+
+  const miles = meters / 1609.344;
+  if (miles < 0.1) {
+    return "0.1 miles";
+  }
+  if (miles < 10) {
+    return `${miles.toFixed(1)} miles`;
+  }
+  return `${Math.round(miles)} miles`;
+}
+
+function normalizeAssistantResponseForContext(
+  response: AssistantResponse,
+  region: "CN" | "INTL",
+  location: { lat: number; lng: number } | null
+): AssistantResponse {
+  if (!response.candidates || response.candidates.length === 0) {
+    return response;
+  }
+
+  const targetMapPlatform = resolveMapPlatformForContext(region, location);
+  const normalizedCandidates = response.candidates.map((candidate) => ({
+    ...candidate,
+    platform: isMapPlatformValue(candidate.platform)
+      ? targetMapPlatform
+      : candidate.platform,
+    distance:
+      region === "INTL"
+        ? normalizeDistanceLabelForIntl(candidate.distance)
+        : candidate.distance,
+  }));
+
+  return {
+    ...response,
+    candidates: normalizedCandidates,
+  };
+}
+
 function sanitizeNearbySearchQuery(message: string): string {
   const trimmed = message.trim();
   if (!trimmed) {
@@ -294,30 +375,89 @@ function sanitizeNearbySearchQuery(message: string): string {
 
   const stripped = trimmed
     .replace(/\bwithin\s+\d+(?:\.\d+)?\s*(?:km|kilometers?|kilometres?|miles?|meters?|m)\b/gi, " ")
-    .replace(/\b(nearby|near me|around me|close by|nearest)\b/gi, " ")
+    .replace(/\b(nearby|near me|around me|close by|nearest|closer|closest)\b/gi, " ")
+    .replace(/(\u66F4\u8FD1|\u8FD1\u4E00\u70B9|\u6700\u8FD1)/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 
   return stripped.length > 0 ? stripped : trimmed;
 }
 
+function parseDistanceToMeters(distance: string | undefined): number | null {
+  if (!distance) return null;
+  const normalized = distance.trim().toLowerCase();
+  if (!normalized) return null;
+
+  const valueMatch = normalized.match(/(\d+(?:\.\d+)?)/);
+  if (!valueMatch) return null;
+
+  const value = Number(valueMatch[1]);
+  if (!Number.isFinite(value)) return null;
+
+  if (/\b(mi|mile|miles)\b/.test(normalized)) {
+    return value * 1609.344;
+  }
+  if (/\b(km|kilometer|kilometers|kilometre|kilometres)\b|\u516C\u91CC|\u5343\u7C73/.test(normalized)) {
+    return value * 1000;
+  }
+  if (
+    /\b(m|meter|meters)\b|\u7C73/.test(normalized) ||
+    /(?:\d+(?:\.\d+)?)m$/.test(normalized)
+  ) {
+    return value;
+  }
+
+  return null;
+}
+
+function sortCandidatesByDistance(candidates: CandidateResult[]): CandidateResult[] {
+  return [...candidates].sort((left, right) => {
+    const leftMeters = parseDistanceToMeters(left.distance);
+    const rightMeters = parseDistanceToMeters(right.distance);
+
+    if (leftMeters === null && rightMeters === null) {
+      return 0;
+    }
+    if (leftMeters === null) {
+      return 1;
+    }
+    if (rightMeters === null) {
+      return -1;
+    }
+    return leftMeters - rightMeters;
+  });
+}
+
+function pickTopCandidates(
+  candidates: CandidateResult[],
+  limit: number,
+  preferCloser: boolean
+): CandidateResult[] {
+  if (!preferCloser) {
+    return candidates.slice(0, limit);
+  }
+
+  return sortCandidatesByDistance(candidates).slice(0, limit);
+}
+
 function buildFallbackNearbyCandidates(
   message: string,
   locale: "zh" | "en",
-  region: "CN" | "INTL"
+  region: "CN" | "INTL",
+  location: { lat: number; lng: number } | null
 ): CandidateResult[] {
   const query = sanitizeNearbySearchQuery(message);
-  const platform = region === "CN" ? "高德地图" : "Google Maps";
+  const platform = resolveMapPlatformForContext(region, location);
 
   return [
     {
       id: "nearby_fallback_map_search",
-      name: locale === "zh" ? `地图搜索：${query}` : `Search on map: ${query}`,
+      name: locale === "zh" ? `Map search: ${query}` : `Search on map: ${query}`,
       description:
         locale === "zh"
-          ? "已基于你当前位置准备地图搜索入口，可直接查看附近门店。"
+          ? "I used your current location and prepared a direct nearby map search."
           : "I used your current location and prepared a direct nearby map search.",
-      category: locale === "zh" ? "数码/电脑" : "Electronics",
+      category: locale === "zh" ? "Electronics" : "Electronics",
       platform,
       searchQuery: query,
     },
@@ -328,9 +468,11 @@ function preventRedundantLocationClarify(
   response: AssistantResponse,
   locale: "zh" | "en",
   region: "CN" | "INTL",
+  location: { lat: number; lng: number } | null,
   message: string,
   hasLocation: boolean,
   nearbyIntent: boolean,
+  preferCloser: boolean,
   nearbySeed?: NearbySearchResult | null
 ): AssistantResponse {
   if (!hasLocation || !nearbyIntent || response.type !== "clarify") {
@@ -340,14 +482,14 @@ function preventRedundantLocationClarify(
   const followUps = (response.followUps || []).slice(0, 3);
 
   if (nearbySeed && nearbySeed.candidates.length > 0) {
-    const topCandidates = nearbySeed.candidates.slice(0, 5);
+    const topCandidates = pickTopCandidates(nearbySeed.candidates, 5, preferCloser);
     return {
       ...response,
       type: "results",
       intent: "search_nearby",
       message:
         locale === "zh"
-          ? `已基于你当前位置找到 ${topCandidates.length} 个附近结果。`
+          ? `I used your current location and found ${topCandidates.length} nearby places.`
           : `I used your current location and found ${topCandidates.length} nearby places.`,
       plan:
         response.plan && response.plan.length > 0
@@ -365,13 +507,13 @@ function preventRedundantLocationClarify(
     intent: response.intent || "search_nearby",
     message:
       locale === "zh"
-        ? "已根据你当前位置准备好附近搜索入口，可直接点击查看。"
+        ? "I used your current location and prepared a nearby search you can open directly."
         : "I used your current location and prepared a nearby search you can open directly.",
     plan:
       response.plan && response.plan.length > 0
         ? response.plan
         : buildDefaultNearbyPlan(locale),
-    candidates: buildFallbackNearbyCandidates(message, locale, region),
+    candidates: buildFallbackNearbyCandidates(message, locale, region, location),
     clarifyQuestions: undefined,
     followUps: followUps.length > 0 ? followUps : buildDefaultNearbyFollowUps(locale),
   };
@@ -379,13 +521,28 @@ function preventRedundantLocationClarify(
 
 function isNearbyIntent(message: string): boolean {
   const text = message.toLowerCase();
-  const zhPattern = /(附近|周边|就近|离我近|最近|周围)/;
-  const enPattern = /(nearby|near me|around me|close by|nearest|within \d+\s?(km|miles?|meters?|m))/;
+  const zhPattern = /(\u9644\u8FD1|\u5468\u8FB9|\u5C31\u8FD1|\u79BB\u6211\u8FD1|\u6700\u8FD1|\u66F4\u8FD1|\u8FD1\u4E00\u70B9)/;
+  const enPattern = /(nearby|near me|around me|close by|nearest|closer|closest|within \d+\s?(km|miles?|meters?|m))/;
   return zhPattern.test(text) || enPattern.test(text);
 }
 
-function buildIntlNearbySeedPrompt(seed: NearbySearchResult, userMessage: string): string {
-  const dataset = seed.candidates.slice(0, 8).map((candidate) => ({
+function isCloserRefinementIntent(message: string): boolean {
+  const text = message.toLowerCase();
+  const zhPattern = /(\u66F4\u8FD1|\u8FD1\u4E00\u70B9|\u6700\u8FD1|\u79BB\u6211\u8FD1\u4E00\u70B9)/;
+  const enPattern = /(closer|closest|nearest|shorter distance|less far)/;
+  return zhPattern.test(text) || enPattern.test(text);
+}
+
+function buildIntlNearbySeedPrompt(
+  seed: NearbySearchResult,
+  userMessage: string,
+  preferCloser = false
+): string {
+  const orderedCandidates = preferCloser
+    ? sortCandidatesByDistance(seed.candidates)
+    : seed.candidates;
+
+  const dataset = orderedCandidates.slice(0, 8).map((candidate) => ({
     id: candidate.id,
     name: candidate.name,
     category: candidate.category,
@@ -406,6 +563,7 @@ function buildIntlNearbySeedPrompt(seed: NearbySearchResult, userMessage: string
     "2. Do not output generic names like Restaurant/Food/Shop/Store.",
     "3. Keep the response fully in English.",
     "4. Explain recommendation reasons in each candidate description (distance, tags, opening hours, etc.).",
+    ...(preferCloser ? ["5. The user asked for closer options, so prioritize shortest distance first."] : []),
     `Nearby radius: ${seed.radiusKm}km, matched: ${seed.matchedCount}`,
     `User request: ${JSON.stringify(userMessage)}`,
     `nearbyData=${JSON.stringify(dataset)}`,
@@ -518,7 +676,8 @@ function buildDefaultNearbyFollowUps(locale: "zh" | "en") {
 function enforceConcreteIntlCandidates(
   response: AssistantResponse,
   seed: NearbySearchResult,
-  locale: "zh" | "en"
+  locale: "zh" | "en",
+  preferCloser: boolean
 ): AssistantResponse {
   if (response.type !== "results") {
     return response;
@@ -530,7 +689,7 @@ function enforceConcreteIntlCandidates(
   }
 
   if (!response.candidates || response.candidates.length === 0) {
-    const fallbackCandidates = seedCandidates.slice(0, 5);
+    const fallbackCandidates = pickTopCandidates(seedCandidates, 5, preferCloser);
     return {
       ...response,
       intent: "search_nearby",
@@ -571,7 +730,7 @@ function enforceConcreteIntlCandidates(
   }
 
   if (mergedCandidates.length === 0) {
-    const fallbackCandidates = seedCandidates.slice(0, 5);
+    const fallbackCandidates = pickTopCandidates(seedCandidates, 5, preferCloser);
     return {
       ...response,
       type: "results",
@@ -589,7 +748,11 @@ function enforceConcreteIntlCandidates(
     };
   }
 
-  for (const seedCandidate of seedCandidates) {
+  const orderedSeedCandidates = preferCloser
+    ? sortCandidatesByDistance(seedCandidates)
+    : seedCandidates;
+
+  for (const seedCandidate of orderedSeedCandidates) {
     if (mergedCandidates.length >= 5) {
       break;
     }
@@ -599,11 +762,15 @@ function enforceConcreteIntlCandidates(
     mergedCandidates.push(seedCandidate);
   }
 
+  const normalizedCandidates = preferCloser
+    ? sortCandidatesByDistance(mergedCandidates)
+    : mergedCandidates;
+
   return {
     ...response,
     type: "results",
     intent: response.intent || "search_nearby",
-    candidates: mergedCandidates.slice(0, 5),
+    candidates: normalizedCandidates.slice(0, 5),
   };
 }
 

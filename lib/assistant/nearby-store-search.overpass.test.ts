@@ -53,7 +53,7 @@ describe("nearby-store-search Overpass INTL", () => {
     expect(result.candidates).toHaveLength(1);
     expect(result.candidates[0]?.name).toBe("Joe's Pizza");
     expect(result.candidates[0]?.platform).toBe("Google Maps");
-    expect(result.candidates[0]?.distance).toMatch(/m|km/);
+    expect(result.candidates[0]?.distance).toMatch(/mile/);
 
     const requestOptions = mockFetch.mock.calls[0]?.[1] as RequestInit;
     const body = decodeURIComponent(String(requestOptions.body || ""));
@@ -196,7 +196,7 @@ describe("nearby-store-search Overpass INTL", () => {
     expect(mockFetch).toHaveBeenCalledTimes(2);
     expect(result.candidates).toHaveLength(1);
     expect(result.candidates[0]?.name).toBe("Apple Premium Reseller Pingnan");
-    expect(result.candidates[0]?.platform).toBe("Google Maps");
+    expect(result.candidates[0]?.platform).toBe("高德地图");
   });
 
   it("uses Amap fallback in INTL China coordinates and returns 5 concrete store names", async () => {
@@ -274,5 +274,7 @@ describe("nearby-store-search Overpass INTL", () => {
     expect(result.candidates).toHaveLength(5);
     expect(result.candidates.map((candidate) => candidate.name)).toContain("Apple Digital Plaza");
     expect(result.candidates.every((candidate) => Boolean(candidate.name))).toBe(true);
+    expect(result.candidates.every((candidate) => candidate.platform === "高德地图")).toBe(true);
+    expect(result.candidates.every((candidate) => /mile/.test(candidate.distance || ""))).toBe(true);
   });
 });
