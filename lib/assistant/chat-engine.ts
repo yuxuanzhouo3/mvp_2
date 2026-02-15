@@ -22,6 +22,146 @@ import { buildOutboundHref } from "@/lib/outbound/outbound-url";
 import type { AssistantResponse, ChatRequest, CandidateResult, AssistantAction } from "./types";
 import type { DeploymentRegion } from "@/lib/outbound/provider-catalog";
 
+const DEFAULT_ASSISTANT_HISTORY_LIMIT = 8;
+const DEFAULT_ASSISTANT_MAX_TOKENS = 800;
+const DEFAULT_ASSISTANT_LOCATION_HINT_TIMEOUT_MS = 1200;
+const DEFAULT_ASSISTANT_NEARBY_SEED_TIMEOUT_MS = 2200;
+const DEFAULT_ASSISTANT_PREFERENCES_WAIT_MS = 180;
+const DEFAULT_ASSISTANT_CONTEXT_WAIT_MS = 250;
+const DEFAULT_ASSISTANT_NEARBY_PROMPT_WAIT_MS = 500;
+const ASSISTANT_CHAT_DEBUG =
+  String(process.env.ASSISTANT_CHAT_DEBUG || "").toLowerCase() === "true";
+
+function logChatDebug(message: string, payload: Record<string, unknown>): void {
+  if (!ASSISTANT_CHAT_DEBUG || process.env.NODE_ENV === "test") {
+    return;
+  }
+
+  console.info(message, payload);
+}
+
+function parseBoundedIntEnv(
+  value: string | undefined,
+  fallback: number,
+  min: number,
+  max: number
+): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+
+  return Math.max(min, Math.min(max, Math.round(parsed)));
+}
+
+function getAssistantHistoryLimit(): number {
+  return parseBoundedIntEnv(
+    process.env.ASSISTANT_HISTORY_LIMIT ?? process.env.AI_HISTORY_LIMIT,
+    DEFAULT_ASSISTANT_HISTORY_LIMIT,
+    0,
+    20
+  );
+}
+
+function getAssistantMaxTokens(): number {
+  return parseBoundedIntEnv(
+    process.env.ASSISTANT_MAX_TOKENS,
+    DEFAULT_ASSISTANT_MAX_TOKENS,
+    400,
+    3000
+  );
+}
+
+function getAssistantLocationHintTimeoutMs(): number {
+  return parseBoundedIntEnv(
+    process.env.ASSISTANT_LOCATION_HINT_TIMEOUT_MS,
+    DEFAULT_ASSISTANT_LOCATION_HINT_TIMEOUT_MS,
+    300,
+    8000
+  );
+}
+
+function getAssistantNearbySeedTimeoutMs(): number {
+  return parseBoundedIntEnv(
+    process.env.ASSISTANT_NEARBY_SEED_TIMEOUT_MS,
+    DEFAULT_ASSISTANT_NEARBY_SEED_TIMEOUT_MS,
+    300,
+    8000
+  );
+}
+
+function getAssistantPreferencesWaitMs(): number {
+  return parseBoundedIntEnv(
+    process.env.ASSISTANT_PREFERENCES_WAIT_MS,
+    DEFAULT_ASSISTANT_PREFERENCES_WAIT_MS,
+    0,
+    3000
+  );
+}
+
+function getAssistantContextWaitMs(): number {
+  return parseBoundedIntEnv(
+    process.env.ASSISTANT_CONTEXT_WAIT_MS,
+    DEFAULT_ASSISTANT_CONTEXT_WAIT_MS,
+    0,
+    3000
+  );
+}
+
+function getAssistantNearbyPromptWaitMs(): number {
+  return parseBoundedIntEnv(
+    process.env.ASSISTANT_NEARBY_PROMPT_WAIT_MS,
+    DEFAULT_ASSISTANT_NEARBY_PROMPT_WAIT_MS,
+    0,
+    4000
+  );
+}
+
+async function runWithTimeout<T>(
+  runner: () => Promise<T>,
+  timeoutMs: number,
+  label: string
+): Promise<T> {
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutHandle = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([runner(), timeoutPromise]);
+  } finally {
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+    }
+  }
+}
+
+async function resolveWithin<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  fallback: T
+): Promise<T> {
+  if (timeoutMs <= 0) {
+    return fallback;
+  }
+
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+  const timeoutPromise = new Promise<T>((resolve) => {
+    timeoutHandle = setTimeout(() => resolve(fallback), timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+    }
+  }
+}
+
 /**
  * 处理用户聊天消息，返回结构化 AI 响应
  *
@@ -36,11 +176,55 @@ export async function processChat(
   const { message, history, location, locale, region, isMobile, isAndroid } = request;
   const effectiveLocale: "zh" | "en" = region === "INTL" ? "en" : locale;
   const nearbyIntent = isNearbyIntent(message);
+  const directCarWashNearbyIntent = nearbyIntent && isCarWashNearbyIntent(message);
+  const historyCarWashNearbyIntent =
+    nearbyIntent &&
+    !directCarWashNearbyIntent &&
+    isNearbyRefinementMessage(message) &&
+    hasCarWashNearbyIntentInHistory(history);
+  const carWashNearbyIntent = directCarWashNearbyIntent || historyCarWashNearbyIntent;
+  const nearbySeedSearchMessage = buildNearbySeedSearchMessage(
+    message,
+    effectiveLocale,
+    carWashNearbyIntent
+  );
   const closerRefinementIntent = isCloserRefinementIntent(message);
   const normalizedLocation = normalizeLocation(location);
   const hasLocation = Boolean(normalizedLocation);
+  const historyLimit = getAssistantHistoryLimit();
+  const aiMaxTokens = getAssistantMaxTokens();
+  const locationHintTimeoutMs = getAssistantLocationHintTimeoutMs();
+  const nearbySeedTimeoutMs = getAssistantNearbySeedTimeoutMs();
+  const preferencesWaitMs = getAssistantPreferencesWaitMs();
+  const contextWaitMs = getAssistantContextWaitMs();
+  const nearbyPromptWaitMs = getAssistantNearbyPromptWaitMs();
+
+  logChatDebug("[ChatEngine] processChat start", {
+    region,
+    locale: effectiveLocale,
+    nearbyIntent,
+    directCarWashNearbyIntent,
+    historyCarWashNearbyIntent,
+    carWashNearbyIntent,
+    closerRefinementIntent,
+    hasLocation,
+    historyCount: history?.length || 0,
+    messageChars: message.length,
+    timeoutConfig: {
+      locationHintTimeoutMs,
+      nearbySeedTimeoutMs,
+      preferencesWaitMs,
+      contextWaitMs,
+      nearbyPromptWaitMs,
+    },
+  });
 
   if (!hasLocation && nearbyIntent) {
+    logChatDebug("[ChatEngine] nearby intent without location", {
+      region,
+      locale: effectiveLocale,
+      messageChars: message.length,
+    });
     return {
       type: "clarify",
       message:
@@ -78,7 +262,51 @@ export async function processChat(
   }
 
   // 1. 加载用户偏好
-  const preferences = await getUserPreferences(userId);
+  const preferencesPromise = getUserPreferences(userId).catch((error) => {
+    console.warn("[ChatEngine] Failed to load user preferences:", error);
+    return [];
+  });
+  const locationHintPromise: Promise<string | null> = normalizedLocation
+    ? runWithTimeout(
+      () =>
+        buildLocationContext(
+          normalizedLocation.lat,
+          normalizedLocation.lng,
+          effectiveLocale,
+          region
+        ),
+      locationHintTimeoutMs,
+      "Assistant location hint"
+    ).catch((error) => {
+      console.warn("[ChatEngine] Failed to build location context:", error);
+      return null;
+    })
+    : Promise.resolve(null);
+  const nearbySeedPromise: Promise<NearbySearchResult | null> =
+    normalizedLocation && nearbyIntent
+      ? runWithTimeout(
+        () =>
+          searchNearbyStores({
+            lat: normalizedLocation.lat,
+            lng: normalizedLocation.lng,
+            locale: effectiveLocale,
+            region,
+            message: nearbySeedSearchMessage,
+            limit: 8,
+          }),
+        nearbySeedTimeoutMs,
+        "Assistant nearby seed"
+      ).catch((error) => {
+        console.error("[ChatEngine] Failed to fetch nearby seed:", error);
+        return null;
+      })
+      : Promise.resolve(null);
+  let latestNearbySeed: NearbySearchResult | null = null;
+  void nearbySeedPromise.then((seed) => {
+    latestNearbySeed = seed;
+  });
+
+  const preferences = await resolveWithin(preferencesPromise, preferencesWaitMs, []);
   const preferencesMap: Record<string, unknown> = {};
   for (const pref of preferences) {
     preferencesMap[pref.name] = pref.filters;
@@ -100,50 +328,69 @@ export async function processChat(
   ];
 
   // 添加历史消息（最多保留 10 条）
-  if (history && history.length > 0) {
-    const recentHistory = history.slice(-10);
+  if (historyLimit > 0 && history && history.length > 0) {
+    const recentHistory = history.slice(-historyLimit);
     for (const msg of recentHistory) {
       messages.push({ role: msg.role, content: msg.content });
     }
   }
 
   // 添加位置上下文（如果有）— 反向地理编码为可读城市名
-  if (normalizedLocation) {
-    const locationHint = await buildLocationContext(
-      normalizedLocation.lat,
-      normalizedLocation.lng,
-      effectiveLocale,
-      region
-    );
+  const [locationHint, quickNearbySeed] = await Promise.all([
+    resolveWithin(locationHintPromise, contextWaitMs, null),
+    resolveWithin(nearbySeedPromise, nearbyPromptWaitMs, null),
+  ]);
+  if (quickNearbySeed) {
+    latestNearbySeed = quickNearbySeed;
+  }
+
+  if (locationHint) {
     messages.push({ role: "system", content: locationHint });
   }
 
-  let intlNearbySeed: NearbySearchResult | null = null;
-  if (region === "INTL" && normalizedLocation && nearbyIntent) {
-    try {
-      intlNearbySeed = await searchNearbyStores({
-        lat: normalizedLocation.lat,
-        lng: normalizedLocation.lng,
-        locale: "en",
-        region: "INTL",
-        message,
-        limit: 8,
+  let nearbySeed = latestNearbySeed;
+  if (region === "CN" && nearbyIntent) {
+    nearbySeed = await nearbySeedPromise;
+    latestNearbySeed = nearbySeed;
+  }
+  logChatDebug("[ChatEngine] nearby seed resolved", {
+    hasSeed: Boolean(nearbySeed),
+    nearbyIntent,
+    source: nearbySeed?.source,
+    radiusKm: nearbySeed?.radiusKm,
+    matchedCount: nearbySeed?.matchedCount,
+    candidateCount: nearbySeed?.candidates.length || 0,
+    topNames: nearbySeed?.candidates.slice(0, 5).map((candidate) => candidate.name) || [],
+  });
+  if (region === "CN" && nearbyIntent && hasLocation) {
+    if (!nearbySeed) {
+      return buildAmapUnavailableNearbyResponse(effectiveLocale);
+    }
+    if (nearbySeed.candidates.length === 0) {
+      return buildAmapNoResultNearbyResponse(
+        effectiveLocale,
+        nearbySeed.radiusKm,
+        carWashNearbyIntent
+      );
+    }
+  }
+  if (nearbySeed) {
+    if (nearbySeed.candidates.length > 0) {
+      messages.push({
+        role: "system",
+        content: buildIntlNearbySeedPrompt(
+          nearbySeed,
+          message,
+          closerRefinementIntent,
+          effectiveLocale
+        ),
       });
-
-      if (intlNearbySeed.candidates.length > 0) {
-        messages.push({
-          role: "system",
-          content: buildIntlNearbySeedPrompt(intlNearbySeed, message, closerRefinementIntent),
-        });
-      } else {
-        messages.push({
-          role: "system",
-          content:
-            "[System: Nearby overpass search returned no concrete places in the current radius. If user still wants nearby options, ask to widen the radius or refine the area.]",
-        });
-      }
-    } catch (error) {
-      console.error("[ChatEngine] Failed to fetch INTL nearby seed:", error);
+    } else {
+      messages.push({
+        role: "system",
+        content:
+          "[System: Nearby overpass search returned no concrete places in the current radius. If user still wants nearby options, ask to widen the radius or refine the area.]",
+      });
     }
   }
 
@@ -152,16 +399,47 @@ export async function processChat(
 
   // 4. 调用 AI
   let aiContent: string;
+  logChatDebug("[ChatEngine] invoking AI", {
+    messageCountForModel: messages.length,
+    nearbyIntent,
+    hasNearbySeed: Boolean(nearbySeed),
+  });
   try {
     const aiResponse = await callAI({
       messages,
       temperature: 0.7,
-      maxTokens: 3000,
+      maxTokens: aiMaxTokens,
     });
     aiContent = aiResponse.content;
     console.log(`[ChatEngine] AI model used: ${aiResponse.model}`);
   } catch (error) {
     console.error("[ChatEngine] AI call failed:", error);
+    const nearbyFallback =
+      nearbyIntent && normalizedLocation
+        ? await buildNearbyFallbackOnAiFailure(
+            message,
+            effectiveLocale,
+            region,
+            normalizedLocation,
+            closerRefinementIntent,
+            isMobile,
+            nearbySeed,
+            nearbySeedSearchMessage
+          )
+        : null;
+
+    logChatDebug("[ChatEngine] AI failure fallback decision", {
+      nearbyIntent,
+      hasLocation: Boolean(normalizedLocation),
+      usedNearbyFallback: Boolean(nearbyFallback),
+      nearbySeedCandidates: nearbySeed?.candidates.length || 0,
+      error: error instanceof Error ? error.message : String(error),
+    });
+
+    if (nearbyFallback) {
+      return nearbyFallback;
+    }
+
     return {
       type: "error",
       message:
@@ -209,10 +487,10 @@ export async function processChat(
     };
   }
 
-  if (intlNearbySeed && intlNearbySeed.candidates.length > 0) {
+  if (nearbySeed && nearbySeed.candidates.length > 0) {
     parsed = enforceConcreteIntlCandidates(
       parsed,
-      intlNearbySeed,
+      nearbySeed,
       effectiveLocale,
       closerRefinementIntent
     );
@@ -226,8 +504,25 @@ export async function processChat(
     hasLocation,
     nearbyIntent,
     closerRefinementIntent,
-    intlNearbySeed
+    nearbySeed
   );
+  if (region === "CN" && nearbyIntent && nearbySeed && nearbySeed.candidates.length > 0) {
+    const beforeCount = parsed.candidates?.length || 0;
+    parsed = enforceStrictNearbySeedCandidates(
+      parsed,
+      nearbySeed,
+      effectiveLocale,
+      region,
+      normalizedLocation,
+      closerRefinementIntent
+    );
+    logChatDebug("[ChatEngine] applied strict CN nearby Amap-only candidate enforcement", {
+      beforeCount,
+      afterCount: parsed.candidates?.length || 0,
+      source: nearbySeed.source,
+      topNames: parsed.candidates?.slice(0, 5).map((candidate) => candidate.name) || [],
+    });
+  }
   parsed = normalizeAssistantResponseForContext(parsed, region, normalizedLocation);
 
   // 5.1 归一化 thinking 字段，保证前端可稳定展示
@@ -440,6 +735,103 @@ function pickTopCandidates(
   return sortCandidatesByDistance(candidates).slice(0, limit);
 }
 
+async function buildNearbyFallbackOnAiFailure(
+  message: string,
+  locale: "zh" | "en",
+  region: "CN" | "INTL",
+  location: { lat: number; lng: number } | null,
+  preferCloser: boolean,
+  isMobile?: boolean,
+  preloadedSeed?: NearbySearchResult | null,
+  seedSearchMessage?: string
+): Promise<AssistantResponse | null> {
+  if (!location) {
+    return null;
+  }
+
+  let nearbySeed: NearbySearchResult | null = preloadedSeed ?? null;
+  if (!nearbySeed) {
+    try {
+      nearbySeed = await searchNearbyStores({
+        lat: location.lat,
+        lng: location.lng,
+        locale,
+        region,
+        message: seedSearchMessage || message,
+        limit: 8,
+      });
+    } catch (error) {
+      console.warn("[ChatEngine] Nearby fallback search failed:", error);
+    }
+  }
+
+  const candidates =
+    nearbySeed && nearbySeed.candidates.length > 0
+      ? pickTopCandidates(nearbySeed.candidates, 5, preferCloser)
+      : buildFallbackNearbyCandidates(message, locale, region, location);
+
+  logChatDebug("[ChatEngine] built nearby fallback", {
+    region,
+    locale,
+    preferCloser,
+    usedPreloadedSeed: Boolean(preloadedSeed),
+    hasNearbySeed: Boolean(nearbySeed),
+    nearbySeedSource: nearbySeed?.source,
+    nearbySeedCount: nearbySeed?.candidates.length || 0,
+    returnedCandidates: candidates.length,
+    topNames: candidates.slice(0, 5).map((candidate) => candidate.name),
+  });
+
+  const fallbackResponse: AssistantResponse = {
+    type: "results",
+    intent: "search_nearby",
+    message:
+      nearbySeed && nearbySeed.candidates.length > 0
+        ? locale === "zh"
+          ? `\u5df2\u4f7f\u7528\u4f60\u7684\u5f53\u524d\u4f4d\u7f6e\uff0c\u627e\u5230 ${candidates.length} \u4e2a\u9644\u8fd1\u5730\u70b9\u3002`
+          : `I used your current location and found ${candidates.length} nearby places.`
+        : locale === "zh"
+          ? "\u5df2\u4f7f\u7528\u4f60\u7684\u5f53\u524d\u4f4d\u7f6e\uff0c\u4e3a\u4f60\u51c6\u5907\u4e86\u53ef\u76f4\u63a5\u6253\u5f00\u7684\u9644\u8fd1\u641c\u7d22\u3002"
+          : "I used your current location and prepared a nearby search you can open directly.",
+    plan: buildDefaultNearbyPlan(locale),
+    candidates,
+    followUps: buildDefaultNearbyFollowUps(locale),
+    thinking:
+      locale === "zh"
+        ? [
+            "\u68c0\u6d4b\u5230 AI \u6a21\u578b\u8c03\u7528\u5931\u8d25\uff0c\u542f\u7528\u9644\u8fd1\u641c\u7d22\u964d\u7ea7\u6d41\u7a0b",
+            "\u57fa\u4e8e\u5f53\u524d\u5b9a\u4f4d\u68c0\u7d22\u9644\u8fd1\u95e8\u5e97",
+            "\u8fd4\u56de\u53ef\u76f4\u63a5\u8df3\u8f6c\u7684\u5019\u9009\u7ed3\u679c",
+          ]
+        : [
+            "Detected AI provider failure and switched to nearby fallback flow",
+            "Queried nearby places from location-aware data sources",
+            "Returned actionable candidates with direct links",
+          ],
+  };
+
+  let normalizedFallback = normalizeAssistantResponseForContext(
+    fallbackResponse,
+    region,
+    location
+  );
+
+  if (normalizedFallback.candidates && normalizedFallback.candidates.length > 0) {
+    normalizedFallback = {
+      ...normalizedFallback,
+      actions: enrichActionsWithDeepLinks(
+        normalizedFallback.candidates,
+        [],
+        locale,
+        region,
+        isMobile
+      ),
+    };
+  }
+
+  return normalizedFallback;
+}
+
 function buildFallbackNearbyCandidates(
   message: string,
   locale: "zh" | "en",
@@ -521,9 +913,65 @@ function preventRedundantLocationClarify(
 
 function isNearbyIntent(message: string): boolean {
   const text = message.toLowerCase();
-  const zhPattern = /(\u9644\u8FD1|\u5468\u8FB9|\u5C31\u8FD1|\u79BB\u6211\u8FD1|\u6700\u8FD1|\u66F4\u8FD1|\u8FD1\u4E00\u70B9)/;
+  const zhPattern =
+    /(\u9644\u8FD1|\u5468\u8FB9|\u5C31\u8FD1|\u79BB\u6211\u8FD1|\u6700\u8FD1|\u66F4\u8FD1|\u8FD1\u4E00\u70B9|\d+(?:\.\d+)?\s*(?:\u516C\u91CC|\u5343\u7C73|\u7C73)\s*(?:\u5185|\u4EE5\u5185)?)/;
   const enPattern = /(nearby|near me|around me|close by|nearest|closer|closest|within \d+\s?(km|miles?|meters?|m))/;
   return zhPattern.test(text) || enPattern.test(text);
+}
+
+function isCarWashNearbyIntent(message: string): boolean {
+  const normalized = message.toLowerCase();
+  const enPattern =
+    /(car wash|auto wash|vehicle wash|auto detail|detailing|car detailing|car care)/;
+  const zhPattern =
+    /(\u6d17\u8f66|\u6c7d\u8f66\u7f8e\u5bb9|\u7cbe\u6d17|\u6253\u8721|\u5185\u9970\u6e05\u6d17|\u6f06\u9762)/;
+  return enPattern.test(normalized) || zhPattern.test(message);
+}
+
+function isNearbyRefinementMessage(message: string): boolean {
+  const text = message.toLowerCase();
+  const zhPattern =
+    /(\u6269\u5927|\u6269\u5c55|\u653e\u5927|\u66f4\u8fdc|\u66f4\u5927\u8303\u56f4|\u534a\u5f84|\u8303\u56f4)/;
+  const enPattern = /(expand|widen|increase|broaden|radius|range|within \d+\s?(km|miles?|meters?|m))/;
+  return zhPattern.test(text) || enPattern.test(text);
+}
+
+function hasCarWashNearbyIntentInHistory(
+  history: ChatRequest["history"] | undefined
+): boolean {
+  if (!history || history.length === 0) {
+    return false;
+  }
+
+  let inspected = 0;
+  for (let index = history.length - 1; index >= 0 && inspected < 6; index -= 1) {
+    const item = history[index];
+    if (!item || item.role !== "user") {
+      continue;
+    }
+    inspected += 1;
+    if (isNearbyIntent(item.content) && isCarWashNearbyIntent(item.content)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function buildNearbySeedSearchMessage(
+  message: string,
+  locale: "zh" | "en",
+  forceCarWash: boolean
+): string {
+  const trimmed = message.trim();
+  if (!trimmed) {
+    return message;
+  }
+  if (!forceCarWash || isCarWashNearbyIntent(trimmed)) {
+    return trimmed;
+  }
+
+  return locale === "zh" ? `${trimmed} 洗车` : `${trimmed} car wash`;
 }
 
 function isCloserRefinementIntent(message: string): boolean {
@@ -536,7 +984,8 @@ function isCloserRefinementIntent(message: string): boolean {
 function buildIntlNearbySeedPrompt(
   seed: NearbySearchResult,
   userMessage: string,
-  preferCloser = false
+  preferCloser = false,
+  locale: "zh" | "en" = "en"
 ): string {
   const orderedCandidates = preferCloser
     ? sortCandidatesByDistance(seed.candidates)
@@ -555,8 +1004,24 @@ function buildIntlNearbySeedPrompt(
     platform: candidate.platform,
   }));
 
+  if (locale === "zh") {
+    return [
+      "[System: 已基于用户坐标预取附近真实 POI，数据在 nearbyData。]",
+      "请仅使用 nearbyData 里的真实商家进行排序与推荐。",
+      "硬约束：",
+      "1. 候选名称必须来自 nearbyData，不要杜撰。",
+      "2. 不要使用“洗车店/餐厅/商店”这类泛化名称。",
+      "3. 用中文输出。",
+      "4. 推荐理由需结合距离、标签、营业时间等具体信息。",
+      ...(preferCloser ? ["5. 用户要求更近，优先按距离从近到远排序。"] : []),
+      `搜索半径: ${seed.radiusKm}km, 命中数: ${seed.matchedCount}`,
+      `用户需求: ${JSON.stringify(userMessage)}`,
+      `nearbyData=${JSON.stringify(dataset)}`,
+    ].join("\n");
+  }
+
   return [
-    "[System: Nearby places are pre-fetched from OpenStreetMap Overpass around the user's coordinates.]",
+    "[System: Nearby places are pre-fetched around the user's coordinates.]",
     "For this nearby request, rank and recommend using only places from nearbyData.",
     "Hard constraints:",
     "1. Every candidate name must be a concrete place name from nearbyData.",
@@ -673,6 +1138,122 @@ function buildDefaultNearbyFollowUps(locale: "zh" | "en") {
   ];
 }
 
+function buildAmapUnavailableNearbyResponse(locale: "zh" | "en"): AssistantResponse {
+  return {
+    type: "clarify",
+    intent: "search_nearby",
+    message:
+      locale === "zh"
+        ? "附近结果仅基于高德地图周边搜索。当前高德服务暂时不可用，请稍后重试。"
+        : "Nearby results are based on Amap only. The Amap service is temporarily unavailable.",
+    clarifyQuestions:
+      locale === "zh"
+        ? ["是否稍后重试高德周边搜索？"]
+        : ["Do you want to retry Amap nearby search later?"],
+    followUps:
+      locale === "zh"
+        ? [
+            { text: "稍后重试", type: "refine" },
+            { text: "换个关键词", type: "refine" },
+          ]
+        : [
+            { text: "Retry later", type: "refine" },
+            { text: "Use another keyword", type: "refine" },
+          ],
+    thinking:
+      locale === "zh"
+        ? [
+            "已按 Amap-only 策略执行附近检索",
+            "当前无法获取可用的高德周边结果",
+            "返回重试引导，避免使用非高德数据源",
+          ]
+        : [
+            "Applied Amap-only nearby strategy",
+            "No usable Amap nearby result is available right now",
+            "Returned retry guidance without using non-Amap sources",
+          ],
+  };
+}
+
+function buildAmapNoResultNearbyResponse(
+  locale: "zh" | "en",
+  radiusKm: number,
+  isCarWash: boolean
+): AssistantResponse {
+  const radiusDisplay = Math.max(1, Math.round(radiusKm || 10));
+  if (isCarWash) {
+    return {
+      type: "clarify",
+      intent: "search_nearby",
+      message:
+        locale === "zh"
+          ? `我已按你的位置用高德地图查了 ${radiusDisplay}km 内的洗车店，暂无符合结果。要不要扩大到 20km？`
+          : `I searched Amap for car wash options within ${radiusDisplay}km of your location and found none. Expand to 20km?`,
+      clarifyQuestions:
+        locale === "zh"
+          ? ["是否扩大搜索半径到 20km？"]
+          : ["Should I expand the search radius to 20km?"],
+      followUps:
+        locale === "zh"
+          ? [
+              { text: "扩大到 20km", type: "refine" },
+              { text: "给我最近的 3 家（可超出 10km）", type: "refine" },
+            ]
+          : [
+              { text: "Expand to 20km", type: "refine" },
+              { text: "Show 3 nearest even if beyond 10km", type: "refine" },
+            ],
+      thinking:
+        locale === "zh"
+          ? [
+              "已使用高德地图周边检索洗车店",
+              "在当前半径内未命中可用门店",
+              "建议扩大半径继续检索",
+            ]
+          : [
+              "Searched Amap nearby for car wash options",
+              "No usable place found within current radius",
+              "Suggested expanding radius for next search",
+            ],
+    };
+  }
+
+  return {
+    type: "clarify",
+    intent: "search_nearby",
+    message:
+      locale === "zh"
+        ? `我已按你的位置用高德地图查了 ${radiusDisplay}km 内的附近结果，暂无匹配地点。要不要扩大到 20km 或换个关键词？`
+        : `I searched Amap nearby within ${radiusDisplay}km of your location and found no matching places. Expand to 20km or change the keyword?`,
+    clarifyQuestions:
+      locale === "zh"
+        ? ["是否扩大搜索半径到 20km，或更换搜索词？"]
+        : ["Should I expand the radius to 20km or use a different keyword?"],
+    followUps:
+      locale === "zh"
+        ? [
+            { text: "扩大到 20km", type: "refine" },
+            { text: "换个关键词重试", type: "refine" },
+          ]
+        : [
+            { text: "Expand to 20km", type: "refine" },
+            { text: "Try another keyword", type: "refine" },
+          ],
+    thinking:
+      locale === "zh"
+        ? [
+            "已使用高德地图周边检索",
+            "当前半径下没有匹配地点",
+            "建议扩大范围或调整关键词",
+          ]
+        : [
+            "Searched nearby places via Amap",
+            "No matching place in current radius",
+            "Suggested wider radius or refined keyword",
+          ],
+  };
+}
+
 function enforceConcreteIntlCandidates(
   response: AssistantResponse,
   seed: NearbySearchResult,
@@ -771,6 +1352,46 @@ function enforceConcreteIntlCandidates(
     type: "results",
     intent: response.intent || "search_nearby",
     candidates: normalizedCandidates.slice(0, 5),
+  };
+}
+
+function enforceStrictNearbySeedCandidates(
+  response: AssistantResponse,
+  seed: NearbySearchResult,
+  locale: "zh" | "en",
+  region: "CN" | "INTL",
+  location: { lat: number; lng: number } | null,
+  preferCloser: boolean
+): AssistantResponse {
+  const strictSeedCandidates = pickTopCandidates(seed.candidates, 5, preferCloser);
+  if (strictSeedCandidates.length === 0) {
+    return response;
+  }
+
+  const mapPlatform = resolveMapPlatformForContext(region, location);
+  const normalizedCandidates = strictSeedCandidates.map((candidate) => ({
+    ...candidate,
+    platform: mapPlatform,
+  }));
+  const hasResultsMessage = response.type === "results" && Boolean(response.message?.trim());
+
+  return {
+    ...response,
+    type: "results",
+    intent: "search_nearby",
+    message: hasResultsMessage
+      ? response.message
+      : locale === "zh"
+        ? `已基于高德地图周边搜索找到 ${normalizedCandidates.length} 个结果。`
+        : `Found ${normalizedCandidates.length} nearby places from map POIs.`,
+    plan: response.plan && response.plan.length > 0 ? response.plan : buildDefaultNearbyPlan(locale),
+    candidates: normalizedCandidates,
+    actions: undefined,
+    clarifyQuestions: undefined,
+    followUps:
+      response.followUps && response.followUps.length > 0
+        ? response.followUps
+        : buildDefaultNearbyFollowUps(locale),
   };
 }
 

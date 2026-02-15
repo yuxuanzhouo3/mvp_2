@@ -82,7 +82,16 @@ const AMAP_PLACE_TIMEOUT_MS = Math.max(
   2500,
   Number(process.env.AMAP_PLACE_TIMEOUT_MS || "5000")
 );
+const AMAP_DISTANCE_ENDPOINT =
+  process.env.AMAP_DISTANCE_ENDPOINT || "https://restapi.amap.com/v3/distance";
+const AMAP_DISTANCE_TIMEOUT_MS = Math.max(
+  1500,
+  Number(process.env.AMAP_DISTANCE_TIMEOUT_MS || "4000")
+);
+const AMAP_DISTANCE_MAX_POINTS = 20;
 const KM_TO_MILES = 0.621371;
+const ASSISTANT_NEARBY_DEBUG =
+  String(process.env.ASSISTANT_NEARBY_DEBUG || "").toLowerCase() === "true";
 
 type OverpassEntityType = "node" | "way" | "relation";
 
@@ -121,6 +130,17 @@ type AmapPlaceResponse = {
   pois?: AmapPoi[];
 };
 
+type AmapDistanceItem = {
+  distance?: number | string;
+  duration?: number | string;
+};
+
+type AmapDistanceResponse = {
+  status?: string;
+  info?: string;
+  results?: AmapDistanceItem[];
+};
+
 type OverpassFilter = {
   key: string;
   valueRegex: string;
@@ -130,7 +150,16 @@ type RankedOverpassCandidate = {
   candidate: CandidateResult;
   score: number;
   distanceKm: number;
+  coordinates?: { lat: number; lng: number };
 };
+
+function logNearbyDebug(message: string, payload: Record<string, unknown>): void {
+  if (!ASSISTANT_NEARBY_DEBUG || process.env.NODE_ENV === "test") {
+    return;
+  }
+
+  console.info(message, payload);
+}
 
 const OVERPASS_FILTERS_BY_CATEGORY: Record<string, OverpassFilter[]> = {
   food: [
@@ -269,6 +298,85 @@ function getAmapTypeCodes(category?: string): string {
   }
 }
 
+function isCarWashIntent(message: string): boolean {
+  const normalized = message.toLowerCase();
+  const enPattern =
+    /(car wash|auto wash|vehicle wash|auto detail|detailing|car detailing|car care)/;
+  const zhPattern =
+    /(\u6d17\u8f66|\u6c7d\u8f66\u7f8e\u5bb9|\u7cbe\u6d17|\u6253\u8721|\u5185\u9970\u6e05\u6d17|\u6f06\u9762\u62a4\u7406)/;
+  return enPattern.test(normalized) || zhPattern.test(message);
+}
+
+function buildAmapSearchProfile(
+  message: string,
+  category: string | undefined,
+  locale: "zh" | "en"
+): { types: string; keywords?: string; strictCarWash: boolean } {
+  if (isCarWashIntent(message)) {
+    return {
+      // Auto service + car wash related subtypes (use with keyword to avoid broad noise).
+      types: "010500|010501|010502|010503|010504|010505",
+      keywords: locale === "zh" ? "洗车" : "car wash",
+      strictCarWash: true,
+    };
+  }
+
+  return {
+    types: getAmapTypeCodes(category),
+    strictCarWash: false,
+  };
+}
+
+const CAR_WASH_POSITIVE_EN =
+  /(car wash|auto wash|vehicle wash|auto detail|detailing|car detailing|car care|wash station|self[-\s]?serve wash)/;
+const CAR_WASH_POSITIVE_ZH =
+  /(\u6d17\u8f66|\u6c7d\u8f66\u7f8e\u5bb9|\u7cbe\u6d17|\u6253\u8721|\u5185\u9970\u6e05\u6d17|\u6f06\u9762)/;
+const CAR_WASH_EXCLUSION_EN =
+  /(disinfection|sanitize|sanitation|quarantine|livestock|animal transport|logistics|hazmat|waste truck|sprayer)/;
+const CAR_WASH_EXCLUSION_ZH =
+  /(\u6d17\u6d88|\u6d88\u6bd2|\u68c0\u75ab|\u52a8\u7269\u8fd0\u8f93|\u8fd0\u8f93\u8f66\u8f86|\u7269\u6d41\u8f66\u8f86|\u73af\u536b|\u5e9f\u7269|\u5371\u5316|\u6d88\u6740|\u6d17\u6d88\u4e2d\u5fc3|\u6d88\u6d17\u4e2d\u5fc3)/;
+const CAR_WASH_RETAIL_OVERRIDE_EN =
+  /(car wash shop|car wash station|self[-\s]?serve wash|auto spa|detailing shop)/;
+const CAR_WASH_RETAIL_OVERRIDE_ZH =
+  /(\u6d17\u8f66\u5e97|\u81ea\u52a9\u6d17\u8f66|\u81ea\u52a9\u6d17\u8f66\u7ad9|\u6c7d\u8f66\u7f8e\u5bb9\u5e97)/;
+
+function hasCarWashExclusion(text: string): boolean {
+  const normalized = text.toLowerCase();
+  return CAR_WASH_EXCLUSION_EN.test(normalized) || CAR_WASH_EXCLUSION_ZH.test(text);
+}
+
+function isAmapPoiCarWashRelevant(poi: AmapPoi): boolean {
+  const text = [poi.name || "", poi.type || "", poi.address || ""].join(" ");
+  return isCarWashTextRelevant(text);
+}
+
+function isCarWashTextRelevant(text: string): boolean {
+  const normalized = text.toLowerCase();
+
+  if (hasCarWashExclusion(text)) {
+    const retailOverride =
+      CAR_WASH_RETAIL_OVERRIDE_EN.test(normalized) ||
+      CAR_WASH_RETAIL_OVERRIDE_ZH.test(text);
+    if (!retailOverride) {
+      return false;
+    }
+  }
+
+  return CAR_WASH_POSITIVE_EN.test(normalized) || CAR_WASH_POSITIVE_ZH.test(text);
+}
+
+function isCarWashCandidateRelevant(candidate: CandidateResult): boolean {
+  const text = [
+    candidate.name || "",
+    candidate.description || "",
+    candidate.category || "",
+    candidate.searchQuery || "",
+    candidate.address || "",
+    ...(candidate.tags || []),
+  ].join(" ");
+  return isCarWashTextRelevant(text);
+}
+
 function parseAmapLocation(location: string | undefined): { lat: number; lng: number } | null {
   if (!location) return null;
   const [lngRaw, latRaw] = location.split(",");
@@ -277,6 +385,88 @@ function parseAmapLocation(location: string | undefined): { lat: number; lng: nu
   if (lat === null || lng === null) return null;
   if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
   return { lat, lng };
+}
+
+async function fetchAmapDrivingDistancesKm(
+  key: string,
+  origin: { lat: number; lng: number },
+  points: Array<{ lat: number; lng: number }>
+): Promise<Array<number | null> | null> {
+  const normalizedPoints = points
+    .filter(
+      (point) =>
+        Number.isFinite(point.lat) &&
+        Number.isFinite(point.lng) &&
+        point.lat >= -90 &&
+        point.lat <= 90 &&
+        point.lng >= -180 &&
+        point.lng <= 180
+    )
+    .slice(0, AMAP_DISTANCE_MAX_POINTS);
+
+  if (normalizedPoints.length === 0) {
+    return [];
+  }
+
+  const origins = normalizedPoints
+    .map((point) => `${point.lng},${point.lat}`)
+    .join("|");
+  const destination = `${origin.lng},${origin.lat}`;
+  const url =
+    `${AMAP_DISTANCE_ENDPOINT}?key=${encodeURIComponent(key)}` +
+    `&origins=${encodeURIComponent(origins)}` +
+    `&destination=${encodeURIComponent(destination)}` +
+    "&type=1&output=JSON";
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(AMAP_DISTANCE_TIMEOUT_MS),
+    });
+  } catch (error) {
+    console.warn("[NearbyStoreSearch] Amap driving distance request failed:", error);
+    return null;
+  }
+
+  if (!response.ok) {
+    console.warn("[NearbyStoreSearch] Amap driving distance status:", response.status);
+    return null;
+  }
+
+  let data: AmapDistanceResponse;
+  try {
+    data = (await response.json()) as AmapDistanceResponse;
+  } catch (error) {
+    console.warn("[NearbyStoreSearch] Failed to parse Amap driving distance JSON:", error);
+    return null;
+  }
+
+  if (data.status !== "1") {
+    if (data.info) {
+      console.warn("[NearbyStoreSearch] Amap driving distance returned error:", data.info);
+    }
+    return null;
+  }
+
+  const results = Array.isArray(data.results) ? data.results : [];
+  if (results.length === 0) {
+    return null;
+  }
+
+  const distances = results.map((item) => {
+    const meters = toNumber(item.distance);
+    if (meters === null || !Number.isFinite(meters) || meters < 0) {
+      return null;
+    }
+    return meters / 1000;
+  });
+
+  while (distances.length < normalizedPoints.length) {
+    distances.push(null);
+  }
+
+  return distances.slice(0, normalizedPoints.length);
 }
 
 function buildAmapDescription(
@@ -395,6 +585,11 @@ function inferCategoryFromMessage(message: string, locale: "zh" | "en"): string 
   const text = message.toLowerCase();
 
   const zhRules: Array<{ pattern: RegExp; category: string }> = [
+    {
+      pattern:
+        /(\u6d17\u8f66|\u6c7d\u8f66\u7f8e\u5bb9|\u517b\u8f66|\u4fee\u8f66|\u8f66\u670d\u52a1|car wash|auto detail|detailing|car care)/,
+      category: "local_life",
+    },
     { pattern: /(吃|餐|外卖|美食|咖啡|奶茶|火锅|烧烤)/, category: "food" },
     { pattern: /(健身|运动|瑜伽|游泳|羽毛球|跑步|gym|fitness)/, category: "fitness" },
     { pattern: /(酒店|景点|出行|旅行|机票|火车)/, category: "travel" },
@@ -403,6 +598,7 @@ function inferCategoryFromMessage(message: string, locale: "zh" | "en"): string 
   ];
 
   const enRules: Array<{ pattern: RegExp; category: string }> = [
+    { pattern: /(car wash|auto detail|detailing|car service|auto repair)/, category: "local_life" },
     { pattern: /(food|restaurant|coffee|cafe|tea|delivery|eat)/, category: "food" },
     { pattern: /(gym|fitness|workout|yoga|sports)/, category: "fitness" },
     { pattern: /(travel|hotel|flight|trip|sightseeing)/, category: "travel" },
@@ -820,6 +1016,7 @@ function mapOverpassElementsToResult(
       score: scoreOverpassCandidate(candidate, distanceKm, tokens),
       distanceKm,
       candidate,
+      coordinates,
     });
     dedupe.add(normalizedName);
   }
@@ -937,14 +1134,29 @@ async function fetchNearbyStoresFromAmap(
 
   const radiusMeters = radiusKmToMeters(radiusKm);
   const offset = Math.max(5, Math.min(20, limit));
-  const types = getAmapTypeCodes(category);
+  const profile = buildAmapSearchProfile(params.message, category, params.locale);
+  const types = profile.types;
   const url =
     `${AMAP_PLACE_AROUND_ENDPOINT}?key=${encodeURIComponent(key)}` +
     `&location=${encodeURIComponent(`${params.lng},${params.lat}`)}` +
     `&types=${encodeURIComponent(types)}` +
+    (profile.keywords ? `&keywords=${encodeURIComponent(profile.keywords)}` : "") +
     `&radius=${encodeURIComponent(String(radiusMeters))}` +
     `&sortrule=distance&offset=${encodeURIComponent(String(offset))}` +
     "&page=1&extensions=all&output=JSON";
+
+  if (profile.strictCarWash) {
+    logNearbyDebug("[NearbyStoreSearch] Amap car wash query", {
+      region: params.region,
+      locale: params.locale,
+      lat: params.lat,
+      lng: params.lng,
+      radiusMeters,
+      types,
+      keywords: profile.keywords,
+      offset,
+    });
+  }
 
   let response: Response;
   try {
@@ -995,6 +1207,10 @@ async function fetchNearbyStoresFromAmap(
   const dedupe = new Set<string>();
 
   for (const poi of pois) {
+    if (profile.strictCarWash && !isAmapPoiCarWashRelevant(poi)) {
+      continue;
+    }
+
     const name = (poi.name || "").trim();
     if (!name || isGenericPoiName(name)) {
       continue;
@@ -1046,6 +1262,7 @@ async function fetchNearbyStoresFromAmap(
       score: scoreOverpassCandidate(candidate, distanceKm, messageTokens),
       distanceKm,
       candidate,
+      coordinates: coordinates || undefined,
     });
     dedupe.add(normalizedName);
   }
@@ -1058,11 +1275,81 @@ async function fetchNearbyStoresFromAmap(
     return left.distanceKm - right.distanceKm;
   });
 
-  const candidates = ranked.slice(0, limit).map((item) => item.candidate);
+  let finalRanked = ranked;
+  if (profile.strictCarWash && ranked.length > 0) {
+    const points = ranked
+      .map((item) => item.coordinates || null)
+      .filter((point): point is { lat: number; lng: number } => Boolean(point));
+
+    const drivingDistances = await fetchAmapDrivingDistancesKm(
+      key,
+      { lat: params.lat, lng: params.lng },
+      points
+    );
+
+    if (drivingDistances && drivingDistances.length > 0) {
+      let distanceIndex = 0;
+      const routeFiltered: RankedOverpassCandidate[] = [];
+      const beforeCount = ranked.length;
+
+      for (const item of ranked) {
+        if (!item.coordinates) {
+          routeFiltered.push(item);
+          continue;
+        }
+
+        const drivingKm = drivingDistances[distanceIndex];
+        distanceIndex += 1;
+
+        if (drivingKm !== null && Number.isFinite(drivingKm)) {
+          if (drivingKm > radiusKm) {
+            continue;
+          }
+
+          routeFiltered.push({
+            ...item,
+            distanceKm: drivingKm,
+            candidate: {
+              ...item.candidate,
+              distance: formatDistance(drivingKm, unitSystem),
+            },
+          });
+          continue;
+        }
+
+        routeFiltered.push(item);
+      }
+
+      routeFiltered.sort((left, right) => {
+        const scoreDiff = right.score - left.score;
+        if (Math.abs(scoreDiff) > 0.001) {
+          return scoreDiff;
+        }
+        return left.distanceKm - right.distanceKm;
+      });
+
+      finalRanked = routeFiltered;
+      logNearbyDebug("[NearbyStoreSearch] Amap car wash driving-distance filter", {
+        radiusKm,
+        beforeCount,
+        afterCount: finalRanked.length,
+      });
+    }
+  }
+
+  if (profile.strictCarWash) {
+    logNearbyDebug("[NearbyStoreSearch] Amap car wash result summary", {
+      totalPois: pois.length,
+      matchedCandidates: finalRanked.length,
+      topNames: finalRanked.slice(0, 5).map((item) => item.candidate.name),
+    });
+  }
+
+  const candidates = finalRanked.slice(0, limit).map((item) => item.candidate);
   return {
     candidates,
     radiusKm,
-    matchedCount: ranked.length,
+    matchedCount: finalRanked.length,
     category,
     source: "overpass",
   };
@@ -1202,6 +1489,7 @@ export async function searchNearbyStores(
   const radiusKm = parseRadiusKmFromMessage(params.message);
   const inferredCategory = inferCategoryFromMessage(params.message, params.locale);
   const limit = Math.max(1, Math.min(10, params.limit ?? 5));
+  const strictCarWash = isCarWashIntent(params.message);
 
   if (params.region === "INTL") {
     const shouldTryAmap = isLikelyInChina(params.lat, params.lng);
@@ -1214,6 +1502,13 @@ export async function searchNearbyStores(
         radiusKm,
         Math.max(limit, 8)
       );
+      if (strictCarWash && amapResult && amapResult.candidates.length > 0) {
+        amapResult.category = inferredCategory;
+        return {
+          ...amapResult,
+          candidates: amapResult.candidates.slice(0, limit),
+        };
+      }
       if (amapResult && amapResult.candidates.length >= limit) {
         amapResult.category = inferredCategory;
         return {
@@ -1254,24 +1549,36 @@ export async function searchNearbyStores(
     return overpassResult;
   }
 
-  const primaryRows =
-    params.region === "CN"
-      ? await fetchNearbyStoresFromCloudBase(params.region, inferredCategory)
-      : await fetchNearbyStoresFromSupabase(params.region, inferredCategory);
-
-  const result = mapRowsToCandidates(primaryRows, params, radiusKm, limit);
-  result.category = inferredCategory;
-
-  if (result.candidates.length >= Math.min(3, limit) || !inferredCategory) {
-    return result;
+  const shouldTryAmap = isLikelyInChina(params.lat, params.lng);
+  let amapResult: NearbySearchResult | null = null;
+  if (shouldTryAmap) {
+    amapResult = await fetchNearbyStoresFromAmap(
+      params,
+      inferredCategory,
+      radiusKm,
+      Math.max(limit, 8)
+    );
   }
 
-  const fallbackRows =
-    params.region === "CN"
-      ? await fetchNearbyStoresFromCloudBase(params.region)
-      : await fetchNearbyStoresFromSupabase(params.region);
+  if (amapResult) {
+    amapResult.category = inferredCategory;
+    return {
+      ...amapResult,
+      candidates: amapResult.candidates.slice(0, limit),
+    };
+  }
 
-  const fallbackResult = mapRowsToCandidates(fallbackRows, params, radiusKm, limit);
-  fallbackResult.category = inferredCategory;
-  return fallbackResult;
+  logNearbyDebug("[NearbyStoreSearch] CN nearby Amap-only mode no result", {
+    reason: shouldTryAmap ? "amap_unavailable_or_failed" : "outside_china_coordinates",
+    radiusKm,
+    limit,
+    strictCarWash,
+  });
+  return {
+    candidates: [],
+    radiusKm,
+    matchedCount: 0,
+    category: inferredCategory,
+    source: "database",
+  };
 }

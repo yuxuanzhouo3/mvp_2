@@ -19,12 +19,41 @@ import { processChat } from "@/lib/assistant/chat-engine";
 import {
   canUseAssistant,
   recordAssistantUsage,
-  getAssistantUsageStats,
 } from "@/lib/assistant/usage-limiter";
 import { saveConversationMessage } from "@/lib/assistant/conversation-store";
-import type { ChatRequest } from "@/lib/assistant/types";
+import type { AssistantUsageStats, ChatRequest } from "@/lib/assistant/types";
+
+const ASSISTANT_CHAT_DEBUG =
+  String(process.env.ASSISTANT_CHAT_DEBUG || "").toLowerCase() === "true";
+
+function logApiChatDebug(message: string, payload: Record<string, unknown>): void {
+  if (!ASSISTANT_CHAT_DEBUG || process.env.NODE_ENV === "test") {
+    return;
+  }
+
+  console.info(message, payload);
+}
+
+function applyUsageConsumption(
+  usage: AssistantUsageStats,
+  shouldConsume: boolean
+): AssistantUsageStats {
+  if (!shouldConsume || usage.remaining === -1 || usage.limit === -1) {
+    return usage;
+  }
+
+  const used = Math.min(usage.limit, usage.used + 1);
+  return {
+    ...usage,
+    used,
+    remaining: Math.max(0, usage.limit - used),
+  };
+}
 
 export async function POST(request: NextRequest) {
+  const startedAt = Date.now();
+  const requestId = `${startedAt.toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+
   try {
     // 1. 验证认证
     const authResult = await requireAuth(request);
@@ -66,6 +95,18 @@ export async function POST(request: NextRequest) {
     const client = (body?.client as "app" | "web" | undefined) || "web";
     const isMobile = /iphone|ipad|ipod|android/i.test(userAgent);
     const isAndroid = /android/i.test(userAgent);
+    logApiChatDebug("[API /assistant/chat] Request summary", {
+      requestId,
+      userId,
+      region: region || "CN",
+      locale: locale || "zh",
+      client,
+      isMobile,
+      isAndroid,
+      messageChars: message.trim().length,
+      historyCount: Array.isArray(history) ? history.length : 0,
+      hasLocation: Boolean(location),
+    });
 
     // 4. 处理聊天
     const response = await processChat(
@@ -83,13 +124,17 @@ export async function POST(request: NextRequest) {
     );
 
     // 5. 记录使用次数（仅在成功生成结果时计数，clarify 不计数）
-    if (response.type !== "clarify" && response.type !== "error") {
-      await recordAssistantUsage(userId, {
+    const shouldConsumeUsage = response.type !== "clarify" && response.type !== "error";
+    if (shouldConsumeUsage) {
+      void recordAssistantUsage(userId, {
         intent: response.intent,
         type: response.type,
         candidateCount: response.candidates?.length || 0,
+      }).catch((error) => {
+        console.error("[API /assistant/chat] Failed to record usage:", error);
       });
     }
+    const usage = applyUsageConsumption(usageCheck.stats, shouldConsumeUsage);
 
     // 6. 持久化对话（异步，不阻断响应）
     const userCreatedAt = new Date().toISOString();
@@ -108,7 +153,14 @@ export async function POST(request: NextRequest) {
       });
 
     // 7. 获取最新使用统计
-    const usage = await getAssistantUsageStats(userId);
+    logApiChatDebug("[API /assistant/chat] Response summary", {
+      requestId,
+      elapsedMs: Date.now() - startedAt,
+      responseType: response.type,
+      intent: response.intent,
+      candidateCount: response.candidates?.length || 0,
+      consumedUsage: shouldConsumeUsage,
+    });
 
     return NextResponse.json({
       success: true,
@@ -116,7 +168,11 @@ export async function POST(request: NextRequest) {
       usage,
     });
   } catch (error) {
-    console.error("[API /assistant/chat] Error:", error);
+    console.error("[API /assistant/chat] Error:", {
+      requestId,
+      elapsedMs: Date.now() - startedAt,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return NextResponse.json(
       { success: false, error: "Internal server error" },
       { status: 500 }

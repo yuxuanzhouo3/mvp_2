@@ -70,7 +70,7 @@ docs/                # 架构、优化、验证文档
 - `pnpm run test:zhipu`：本地智谱 API 连通性测试
 
 ## 关键配置与提示
-- AI 调优：`AI_FAST_MODE`、`AI_PROVIDER_TIMEOUT_MS`、`AI_HISTORY_LIMIT` 等位于 `.env.local`，详见 `docs/2025-12-24/AI_RECOMMENDATION_OPTIMIZATION.md`。
+- AI 调优：`AI_FAST_MODE`、`AI_PROVIDER_TIMEOUT_MS`、`AI_HISTORY_LIMIT`，以及助手专用 `ASSISTANT_AI_TOTAL_TIMEOUT_MS`、`ASSISTANT_INTL_PARALLEL_RACE`、`ASSISTANT_MAX_TOKENS` 等位于 `.env.local`，详见 `docs/2025-12-24/AI_RECOMMENDATION_OPTIMIZATION.md`。
 - 区域切换：`NEXT_PUBLIC_DEPLOYMENT_REGION=INTL|CN` 控制 Auth/DB/支付/AI 的适配逻辑，相关说明见 `docs/2025-12-19/DUAL_ENVIRONMENT_GUIDE.md`。
 - 下载入口：INTL 使用 `NEXT_PUBLIC_INTL_*_URL` 外链，CN 使用 `CN_*_FILE_ID` CloudBase 文件 ID。
 - 演示账户：`LOGIN_INFO.md` 提供 Free/Pro/Enterprise 示例账号（如需本地验证可按文档补充数据）。

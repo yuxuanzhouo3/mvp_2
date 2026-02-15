@@ -11,8 +11,9 @@ export function getDeploymentAdminProviderName(
 }
 
 export function normalizeAdminSourceToDeployment(
-  _source: string | null | undefined
+  source: string | null | undefined
 ): AdminDeploymentSource {
+  void source;
   return getDeploymentAdminSource();
 }
 

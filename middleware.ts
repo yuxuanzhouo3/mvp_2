@@ -7,25 +7,76 @@ import {
   verifyAdminSessionToken,
 } from "@/lib/admin/session";
 
+const GEO_IP_DEBUG = String(process.env.GEO_IP_DEBUG || "").toLowerCase() === "true";
+
+function logGeoDebug(message: string, payload: Record<string, unknown>): void {
+  if (!GEO_IP_DEBUG || process.env.NODE_ENV === "test") {
+    return;
+  }
+
+  console.info(message, payload);
+}
+
+function maskIp(raw: string | null | undefined): string | null {
+  if (!raw) {
+    return null;
+  }
+
+  const value = raw.trim();
+  if (!value) {
+    return null;
+  }
+
+  if (value.includes(".")) {
+    const parts = value.split(".");
+    if (parts.length === 4) {
+      return `${parts[0]}.${parts[1]}.${parts[2]}.***`;
+    }
+  }
+
+  if (value.includes(":")) {
+    const parts = value.split(":").filter(Boolean);
+    if (parts.length >= 2) {
+      return `${parts.slice(0, 2).join(":")}::****`;
+    }
+  }
+
+  return "***";
+}
+
+function buildIpHeaderSnapshot(request: NextRequest): Record<string, unknown> {
+  return {
+    xRealIp: maskIp(request.headers.get("x-real-ip")),
+    xForwardedFor: (request.headers.get("x-forwarded-for") || "")
+      .split(",")
+      .map((ip) => maskIp(ip))
+      .filter(Boolean),
+    xClientIp: maskIp(request.headers.get("x-client-ip")),
+    forwarded: request.headers.get("forwarded") || null,
+    cfConnectingIp: maskIp(request.headers.get("cf-connecting-ip")),
+    trueClientIp: maskIp(request.headers.get("true-client-ip")),
+    requestIp: maskIp(request.ip || null),
+  };
+}
+
 /**
- * IP检测和访问控制中间件
- * 实现以下功能：
- * 1. 检测用户IP地理位置
- * 2. 完全禁止欧洲IP访问（符合GDPR合规要求）- 仅国际版 (INTL) 启用
- * 3. 为响应添加地理信息头供前端使用
- *
- * 注意：不进行任何重定向，用户访问哪个域名就使用哪个系统
+ * Middleware responsibilities:
+ * 1. Handle CORS preflight and response headers for API routes.
+ * 2. Protect admin routes with session validation.
+ * 3. Detect client region from IP and attach geo headers.
+ * 4. Enforce region block policy for INTL deployment.
+ * 5. Apply CSRF protection.
  */
 export async function middleware(request: NextRequest) {
   const { pathname, searchParams } = request.nextUrl;
 
-  // 获取部署区域配置
+  // Deployment region mode.
   const deploymentRegion = process.env.NEXT_PUBLIC_DEPLOYMENT_REGION || "INTL";
   const isInternationalDeployment = deploymentRegion === "INTL";
 
   // =====================
-  // CORS 预检统一处理（仅 API 路由）
-  // 允许基于环境变量 ALLOWED_ORIGINS 的白名单反射 Origin
+  // CORS handling for /api routes.
+  // Allowed origins are read from ALLOWED_ORIGINS.
   // =====================
   if (pathname.startsWith("/api/")) {
     const origin = request.headers.get("origin") || "";
@@ -35,7 +86,7 @@ export async function middleware(request: NextRequest) {
       .filter(Boolean);
     const isAllowedOrigin = origin && allowedOrigins.includes(origin);
 
-    // 预检请求快速返回
+    // Handle preflight request.
     if (request.method === "OPTIONS") {
       if (isAllowedOrigin) {
         return new NextResponse(null, {
@@ -48,7 +99,8 @@ export async function middleware(request: NextRequest) {
           },
         });
       }
-      // 非白名单直接拒绝
+
+      // Reject unknown origin preflight.
       return new NextResponse(null, {
         status: 403,
         headers: {
@@ -58,7 +110,7 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // 跳过静态资源和Next.js内部路由（但保留 API 路由以便设置区域 Header）
+  // Skip static assets and Next.js internals.
   if (
     pathname.startsWith("/_next/") ||
     pathname.startsWith("/favicon.ico") ||
@@ -82,10 +134,10 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // 请求体大小限制 (10MB) - 仅API路由
+  // Limit API POST body size to 10MB.
   if (pathname.startsWith("/api/") && request.method === "POST") {
     const contentLength = request.headers.get("content-length");
-    if (contentLength && parseInt(contentLength) > 10 * 1024 * 1024) {
+    if (contentLength && parseInt(contentLength, 10) > 10 * 1024 * 1024) {
       return new NextResponse(
         JSON.stringify({
           error: "Request body too large",
@@ -99,17 +151,16 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // 注意：认证重定向由前端处理，middleware只处理地理路由
-  // 这样可以避免与前端useEffect产生重定向循环
-
   try {
-    // 检查URL参数中的debug模式（仅开发环境支持）
+    // Read debug flag from query string.
     const debugParam = searchParams.get("debug");
     const isDevelopment = process.env.NODE_ENV === "development";
 
-    // 🚨 生产环境安全检查：禁止调试模式访问
+    // Block debug mode in production.
     if (debugParam && !isDevelopment) {
-      console.warn(`🚨 生产环境检测到调试模式参数，已禁止访问: ${debugParam}`);
+      console.warn(
+        `[GeoMiddleware] Blocked debug query param in production: ${debugParam}`
+      );
       return new NextResponse(
         JSON.stringify({
           error: "Access Denied",
@@ -126,7 +177,7 @@ export async function middleware(request: NextRequest) {
       );
     }
 
-    // 如果是 API 请求，也检查 Referer 中的 debug 参数
+    // Block debug mode if it appears in referer query for API calls.
     if (pathname.startsWith("/api/") && !isDevelopment) {
       const referer = request.headers.get("referer");
       if (referer) {
@@ -134,10 +185,9 @@ export async function middleware(request: NextRequest) {
           const refererUrl = new URL(referer);
           const refererDebug = refererUrl.searchParams.get("debug");
 
-          // 生产环境禁用来自referer的调试模式
           if (refererDebug) {
             console.warn(
-              `🚨 生产环境检测到来自referer的调试模式参数，已禁止访问: ${refererDebug}`
+              `[GeoMiddleware] Blocked debug param from referer in production: ${refererDebug}`
             );
             return new NextResponse(
               JSON.stringify({
@@ -155,18 +205,18 @@ export async function middleware(request: NextRequest) {
             );
           }
         } catch {
-          // 忽略无效的referer URL
+          // Ignore malformed referer URLs.
         }
       }
     }
 
     let geoResult;
 
-    // 开发环境支持调试模式
+    // In development, allow debug geo override.
     if (debugParam && isDevelopment) {
-      console.log(`🔧 调试模式启用: ${debugParam}`);
+      console.log(`[GeoMiddleware] Debug mode enabled: ${debugParam}`);
 
-      // 根据debug参数设置模拟的地理位置
+      // Map debug values to fixed geo regions.
       switch (debugParam.toLowerCase()) {
         case "china":
           geoResult = {
@@ -192,38 +242,55 @@ export async function middleware(request: NextRequest) {
           };
           break;
         default:
-          // 无效的debug参数，回退到正常检测
+          // Unknown debug value: fallback to IP-based detection.
           const clientIP = getClientIP(request);
+          logGeoDebug("[GeoMiddleware] Debug mode fallback IP detection", {
+            pathname,
+            clientIP: maskIp(clientIP),
+            headers: buildIpHeaderSnapshot(request),
+          });
           geoResult = await geoRouter.detect(clientIP || "");
       }
     } else {
-      // 正常地理位置检测
-      // 获取客户端真实IP并检测地理位置
+      // Detect geo by IP in normal flow.
       const clientIP = getClientIP(request);
+      logGeoDebug("[GeoMiddleware] Client IP detection", {
+        pathname,
+        clientIP: maskIp(clientIP),
+        headers: buildIpHeaderSnapshot(request),
+      });
 
       if (!clientIP) {
-        console.warn("无法获取客户端IP，使用默认处理");
-        // 使用空字符串触发geoRouter内部的降级策略（本地/默认海外）
+        console.warn("Unable to resolve client IP, fallback to default geo detection");
+        // Empty IP lets geoRouter apply its default behavior.
         geoResult = await geoRouter.detect("");
       } else {
-        // 检测地理位置
         geoResult = await geoRouter.detect(clientIP);
       }
     }
 
     console.log(
-      `IP检测结果 - 国家: ${geoResult.countryCode}, 地区: ${geoResult.region}${
-        debugParam && isDevelopment ? " (调试模式)" : ""
+      `[GeoMiddleware] Geo detection result - Country: ${geoResult.countryCode}, Region: ${geoResult.region}${
+        debugParam && isDevelopment ? " (debug override)" : ""
       }`
     );
+    logGeoDebug("[GeoMiddleware] Geo detect result", {
+      pathname,
+      region: geoResult.region,
+      countryCode: geoResult.countryCode,
+      currency: geoResult.currency,
+      debugMode: Boolean(debugParam && isDevelopment),
+    });
 
-    // 1. 禁止欧洲IP访问（仅国际版启用，开发环境调试模式除外）
+    // Region policy: block EU access for INTL deployment.
     if (
       isInternationalDeployment &&
       geoResult.region === RegionType.EUROPE &&
       !(debugParam && isDevelopment)
     ) {
-      console.log(`禁止欧洲IP访问: ${geoResult.countryCode}`);
+      console.log(
+        `[GeoMiddleware] Request blocked by region policy: ${geoResult.countryCode}`
+      );
       return new NextResponse(
         JSON.stringify({
           error: "Access Denied",
@@ -245,7 +312,8 @@ export async function middleware(request: NextRequest) {
     const response = NextResponse.next({
       request: { headers: requestHeaders },
     });
-    // 为 API 路由添加 CORS 响应头（基于白名单反射）
+
+    // Apply CORS headers for API responses.
     if (pathname.startsWith("/api/")) {
       const origin = request.headers.get("origin") || "";
       const allowedOrigins = (process.env.ALLOWED_ORIGINS || "")
@@ -265,16 +333,17 @@ export async function middleware(request: NextRequest) {
         response.headers.set("Access-Control-Allow-Credentials", "true");
       }
     }
+
     response.headers.set("X-User-Region", geoResult.region);
     response.headers.set("X-User-Country", geoResult.countryCode);
     response.headers.set("X-User-Currency", geoResult.currency);
 
-    // 开发环境添加调试模式标识
+    // Expose debug mode to response headers in development only.
     if (debugParam && isDevelopment) {
       response.headers.set("X-Debug-Mode", debugParam);
     }
 
-    // 4. CSRF防护 - 对状态改变请求进行CSRF验证
+    // Apply CSRF protection.
     const csrfResponse = await csrfProtection(request, response);
     if (csrfResponse.status !== 200) {
       return csrfResponse;
@@ -282,9 +351,13 @@ export async function middleware(request: NextRequest) {
 
     return response;
   } catch (error) {
-    console.error("地理分流中间件错误:", error);
+    console.error("[GeoMiddleware] Middleware execution failed", error);
+    logGeoDebug("[GeoMiddleware] Middleware error context", {
+      pathname: request.nextUrl.pathname,
+      headers: buildIpHeaderSnapshot(request),
+    });
 
-    // 出错时使用降级策略：允许访问但记录错误
+    // Fail open to avoid breaking non-critical traffic; mark the response.
     const response = NextResponse.next();
     response.headers.set("X-Geo-Error", "true");
 
@@ -293,22 +366,20 @@ export async function middleware(request: NextRequest) {
 }
 
 /**
- * 获取客户端真实IP地址
- * 处理各种代理和CDN的情况
+ * Resolve client IP from common proxy headers.
  */
 function getClientIP(request: NextRequest): string | null {
-  // 优先级：X-Real-IP > X-Forwarded-For > request.ip
+  // Priority: X-Real-IP > X-Forwarded-For > other headers > request.ip
 
-  // 1. 检查 X-Real-IP（Nginx等代理设置）
+  // 1. Direct proxy header.
   const realIP = request.headers.get("x-real-ip");
   if (realIP && isValidIP(realIP)) {
     return realIP;
   }
 
-  // 2. 检查 X-Forwarded-For（多个代理的情况）
+  // 2. First valid IP from chain.
   const forwardedFor = request.headers.get("x-forwarded-for");
   if (forwardedFor) {
-    // X-Forwarded-For 可能包含多个IP，取第一个（最原始的客户端IP）
     const ips = forwardedFor.split(",").map((ip) => ip.trim());
     for (const ip of ips) {
       if (isValidIP(ip)) {
@@ -317,7 +388,7 @@ function getClientIP(request: NextRequest): string | null {
     }
   }
 
-  // 3. 检查其他可能的头
+  // 3. Other possible vendor headers.
   const possibleHeaders = [
     "x-client-ip",
     "x-forwarded",
@@ -334,7 +405,7 @@ function getClientIP(request: NextRequest): string | null {
     }
   }
 
-  // 4. 使用 Next.js 提供的 request.ip 作为最后的兜底
+  // 4. Next.js fallback.
   const fallbackIp = request.ip;
   if (fallbackIp && isValidIP(fallbackIp)) {
     return fallbackIp;
@@ -344,17 +415,17 @@ function getClientIP(request: NextRequest): string | null {
 }
 
 /**
- * 验证IP地址格式
+ * Validate IPv4 or IPv6 format.
  */
 function isValidIP(ip: string): boolean {
-  // IPv4 验证
+  // IPv4
   const ipv4Regex = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
   if (ipv4Regex.test(ip)) {
     const parts = ip.split(".").map(Number);
     return parts.every((part) => part >= 0 && part <= 255);
   }
 
-  // IPv6 验证（简化版）
+  // IPv6 (full form)
   const ipv6Regex = /^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$/;
   return ipv6Regex.test(ip);
 }
@@ -362,12 +433,10 @@ function isValidIP(ip: string): boolean {
 export const config = {
   matcher: [
     /*
-     * 匹配所有路径，包括 API 路由（需要设置区域 Header）
-     * 排除：
-     * - Next.js 内部路由 (/_next/...)
-     * - 静态文件 (favicon.ico 等)
+     * Match all routes except static/internal resources.
+     * - Exclude Next.js internals (`/_next/...`)
+     * - Exclude `favicon.ico`
      */
     "/((?!_next/|favicon.ico).*)",
   ],
 };
-

@@ -1157,6 +1157,8 @@ function CandidateCards({
               {openAction && (
                 <a
                   href={openAction.payload}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="flex-1 inline-flex items-center justify-center gap-1 text-[11px] font-medium text-white bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 rounded-lg px-2 py-1 transition-colors"
                 >
                   <ExternalLink className="h-3 w-3" />
