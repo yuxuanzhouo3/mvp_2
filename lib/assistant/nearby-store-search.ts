@@ -168,8 +168,19 @@ function getDistanceUnitSystem(region: NearbyRegion): DistanceUnitSystem {
   return region === "INTL" ? "imperial" : "metric";
 }
 
-function resolveMapPlatformForRegion(region: NearbyRegion): "高德地图" | "Google Maps" {
-  return region === "CN" ? "高德地图" : "Google Maps";
+function isLikelyInChina(lat: number, lng: number): boolean {
+  return lat >= 3.8 && lat <= 53.6 && lng >= 73.5 && lng <= 135.1;
+}
+
+function shouldUseAmapForLocation(lat: number, lng: number): boolean {
+  return isLikelyInChina(lat, lng);
+}
+
+function resolveMapPlatformForLocation(
+  lat: number,
+  lng: number
+): "高德地图" | "Google Maps" {
+  return shouldUseAmapForLocation(lat, lng) ? "高德地图" : "Google Maps";
 }
 
 function getAmapApiKey(): string | undefined {
@@ -802,7 +813,7 @@ function mapOverpassElementsToResult(
   limit: number
 ): NearbySearchResult {
   const tokens = tokenizeForRanking(params.message);
-  const mapPlatform = resolveMapPlatformForRegion(params.region);
+  const mapPlatform = resolveMapPlatformForLocation(params.lat, params.lng);
   const unitSystem = getDistanceUnitSystem(params.region);
   const ranked: RankedOverpassCandidate[] = [];
   const dedupe = new Set<string>();
@@ -1046,7 +1057,7 @@ async function fetchNearbyStoresFromAmap(
   }
 
   const messageTokens = tokenizeForRanking(params.message);
-  const mapPlatform = resolveMapPlatformForRegion(params.region);
+  const mapPlatform = resolveMapPlatformForLocation(params.lat, params.lng);
   const unitSystem = getDistanceUnitSystem(params.region);
   const ranked: RankedOverpassCandidate[] = [];
   const dedupe = new Set<string>();
@@ -1192,8 +1203,9 @@ export async function searchNearbyStores(
   const radiusKm = parseRadiusKmFromMessage(params.message);
   const inferredCategory = inferCategoryFromMessage(params.message, params.locale);
   const limit = Math.max(1, Math.min(10, params.limit ?? 5));
+  const useAmapForLocation = shouldUseAmapForLocation(params.lat, params.lng);
 
-  if (params.region === "INTL") {
+  if (!useAmapForLocation) {
     const overpassResult = await fetchNearbyStoresFromOverpass(
       params,
       inferredCategory,

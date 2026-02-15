@@ -29,6 +29,9 @@ const DEFAULT_ASSISTANT_NEARBY_SEED_TIMEOUT_MS = 2200;
 const DEFAULT_ASSISTANT_PREFERENCES_WAIT_MS = 180;
 const DEFAULT_ASSISTANT_CONTEXT_WAIT_MS = 250;
 const DEFAULT_ASSISTANT_NEARBY_PROMPT_WAIT_MS = 500;
+const MAP_PROVIDER_AMAP = "高德地图" as const;
+const MAP_PROVIDER_GOOGLE = "Google Maps" as const;
+type NearbyMapProvider = typeof MAP_PROVIDER_AMAP | typeof MAP_PROVIDER_GOOGLE;
 
 function parseBoundedIntEnv(
   value: string | undefined,
@@ -182,6 +185,9 @@ export async function processChat(
   const closerRefinementIntent = isCloserRefinementIntent(message);
   const normalizedLocation = normalizeLocation(location);
   const hasLocation = Boolean(normalizedLocation);
+  const targetMapProvider = resolveMapPlatformForContext(region, normalizedLocation);
+  const useAmapNearbyFlow =
+    nearbyIntent && targetMapProvider === MAP_PROVIDER_AMAP;
   const historyLimit = getAssistantHistoryLimit();
   const aiMaxTokens = getAssistantMaxTokens();
   const locationHintTimeoutMs = getAssistantLocationHintTimeoutMs();
@@ -315,11 +321,11 @@ export async function processChat(
   }
 
   let nearbySeed = latestNearbySeed;
-  if (region === "CN" && nearbyIntent) {
+  if (useAmapNearbyFlow) {
     nearbySeed = await nearbySeedPromise;
     latestNearbySeed = nearbySeed;
   }
-  if (region === "CN" && nearbyIntent && hasLocation) {
+  if (useAmapNearbyFlow && hasLocation) {
     if (!nearbySeed) {
       return buildAmapUnavailableNearbyResponse(effectiveLocale);
     }
@@ -375,7 +381,8 @@ export async function processChat(
           closerRefinementIntent,
           isMobile,
           nearbySeed,
-          nearbySeedSearchMessage
+          nearbySeedSearchMessage,
+          targetMapProvider
         )
         : null;
 
@@ -447,18 +454,19 @@ export async function processChat(
     hasLocation,
     nearbyIntent,
     closerRefinementIntent,
-    nearbySeed
+    nearbySeed,
+    targetMapProvider
   );
-  if (region === "CN" && nearbyIntent && nearbySeed && nearbySeed.candidates.length > 0) {
+  if (useAmapNearbyFlow && nearbySeed && nearbySeed.candidates.length > 0) {
     parsed = enforceStrictNearbySeedCandidates(
       parsed,
       nearbySeed,
       effectiveLocale,
-      region,
+      targetMapProvider,
       closerRefinementIntent
     );
   }
-  parsed = normalizeAssistantResponseForContext(parsed, region);
+  parsed = normalizeAssistantResponseForContext(parsed, region, targetMapProvider);
 
   // 5.1 归一化 thinking 字段，保证前端可稳定展示
   const normalizedThinking = normalizeThinkingSteps(parsed.thinking);
@@ -473,21 +481,19 @@ export async function processChat(
 
   // 6. 为候选结果补充真实深链
   if (parsed.candidates && parsed.candidates.length > 0) {
-    const forceGoogleMapsForIntlNearby =
-      region === "INTL" && (nearbyIntent || parsed.intent === "search_nearby");
-    const forceAmapForCnNearby =
-      region === "CN" && (nearbyIntent || parsed.intent === "search_nearby");
+    const forceMapProviderForNearby =
+      nearbyIntent || parsed.intent === "search_nearby"
+        ? targetMapProvider
+        : undefined;
     parsed.actions = enrichActionsWithDeepLinks(
       parsed.candidates,
       parsed.actions || [],
       effectiveLocale,
       region,
       isMobile,
-      forceGoogleMapsForIntlNearby
-        ? { forceProvider: "Google Maps" }
-        : forceAmapForCnNearby
-          ? { forceProvider: "高德地图" }
-          : undefined
+      forceMapProviderForNearby
+        ? { forceProvider: forceMapProviderForNearby }
+        : undefined
     );
   }
 
@@ -534,10 +540,20 @@ function normalizeLocation(
   return { lat, lng };
 }
 
+function isLikelyInChinaCoordinates(lat: number, lng: number): boolean {
+  return lat >= 3.8 && lat <= 53.6 && lng >= 73.5 && lng <= 135.1;
+}
+
 function resolveMapPlatformForContext(
-  region: "CN" | "INTL"
-): "高德地图" | "Google Maps" {
-  return region === "CN" ? "高德地图" : "Google Maps";
+  region: "CN" | "INTL",
+  location?: { lat: number; lng: number } | null
+): NearbyMapProvider {
+  if (location) {
+    return isLikelyInChinaCoordinates(location.lat, location.lng)
+      ? MAP_PROVIDER_AMAP
+      : MAP_PROVIDER_GOOGLE;
+  }
+  return region === "CN" ? MAP_PROVIDER_AMAP : MAP_PROVIDER_GOOGLE;
 }
 
 function isMapPlatformValue(platform: string | undefined): boolean {
@@ -572,13 +588,13 @@ function normalizeDistanceLabelForIntl(distance: string | undefined): string | u
 
 function normalizeAssistantResponseForContext(
   response: AssistantResponse,
-  region: "CN" | "INTL"
+  region: "CN" | "INTL",
+  targetMapPlatform: NearbyMapProvider
 ): AssistantResponse {
   if (!response.candidates || response.candidates.length === 0) {
     return response;
   }
 
-  const targetMapPlatform = resolveMapPlatformForContext(region);
   const normalizedCandidates = response.candidates.map((candidate) => ({
     ...candidate,
     platform: isMapPlatformValue(candidate.platform)
@@ -677,7 +693,8 @@ async function buildNearbyFallbackOnAiFailure(
   preferCloser: boolean,
   isMobile?: boolean,
   preloadedSeed?: NearbySearchResult | null,
-  seedSearchMessage?: string
+  seedSearchMessage?: string,
+  mapProvider: NearbyMapProvider = MAP_PROVIDER_GOOGLE
 ): Promise<AssistantResponse | null> {
   if (!location) {
     return null;
@@ -702,7 +719,7 @@ async function buildNearbyFallbackOnAiFailure(
   const candidates =
     nearbySeed && nearbySeed.candidates.length > 0
       ? pickTopCandidates(nearbySeed.candidates, 5, preferCloser)
-      : buildFallbackNearbyCandidates(message, locale, region);
+      : buildFallbackNearbyCandidates(message, locale, mapProvider);
 
   const fallbackResponse: AssistantResponse = {
     type: "results",
@@ -734,7 +751,8 @@ async function buildNearbyFallbackOnAiFailure(
 
   let normalizedFallback = normalizeAssistantResponseForContext(
     fallbackResponse,
-    region
+    region,
+    mapProvider
   );
 
   if (normalizedFallback.candidates && normalizedFallback.candidates.length > 0) {
@@ -746,11 +764,7 @@ async function buildNearbyFallbackOnAiFailure(
         locale,
         region,
         isMobile,
-        region === "INTL"
-          ? { forceProvider: "Google Maps" }
-          : region === "CN"
-            ? { forceProvider: "高德地图" }
-            : undefined
+        { forceProvider: mapProvider }
       ),
     };
   }
@@ -761,10 +775,10 @@ async function buildNearbyFallbackOnAiFailure(
 function buildFallbackNearbyCandidates(
   message: string,
   locale: "zh" | "en",
-  region: "CN" | "INTL"
+  mapProvider: NearbyMapProvider
 ): CandidateResult[] {
   const query = sanitizeNearbySearchQuery(message);
-  const platform = resolveMapPlatformForContext(region);
+  const platform = mapProvider;
 
   return [
     {
@@ -793,7 +807,8 @@ function preventRedundantLocationClarify(
   hasLocation: boolean,
   nearbyIntent: boolean,
   preferCloser: boolean,
-  nearbySeed?: NearbySearchResult | null
+  nearbySeed?: NearbySearchResult | null,
+  mapProvider: NearbyMapProvider = MAP_PROVIDER_GOOGLE
 ): AssistantResponse {
   if (!hasLocation || !nearbyIntent || response.type !== "clarify") {
     return response;
@@ -833,7 +848,7 @@ function preventRedundantLocationClarify(
       response.plan && response.plan.length > 0
         ? response.plan
         : buildDefaultNearbyPlan(locale),
-    candidates: buildFallbackNearbyCandidates(message, locale, region),
+    candidates: buildFallbackNearbyCandidates(message, locale, mapProvider),
     clarifyQuestions: undefined,
     followUps: followUps.length > 0 ? followUps : buildDefaultNearbyFollowUps(locale),
   };
@@ -1261,7 +1276,7 @@ function enforceStrictNearbySeedCandidates(
   response: AssistantResponse,
   seed: NearbySearchResult,
   locale: "zh" | "en",
-  region: "CN" | "INTL",
+  mapPlatform: NearbyMapProvider,
   preferCloser: boolean
 ): AssistantResponse {
   const strictSeedCandidates = pickTopCandidates(seed.candidates, 5, preferCloser);
@@ -1269,7 +1284,6 @@ function enforceStrictNearbySeedCandidates(
     return response;
   }
 
-  const mapPlatform = resolveMapPlatformForContext(region);
   const normalizedCandidates = strictSeedCandidates.map((candidate) => ({
     ...candidate,
     platform: mapPlatform,

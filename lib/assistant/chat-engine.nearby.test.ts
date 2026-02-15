@@ -130,7 +130,7 @@ describe("processChat INTL nearby flow", () => {
     expect(response.candidates?.[0]?.searchQuery).toContain("Joe's Pizza");
   });
 
-  it("forces Google Maps with search query for INTL nearby actions", async () => {
+  it("switches to Amap for INTL nearby actions when location is in China", async () => {
     vi.mocked(searchNearbyStores).mockResolvedValueOnce({
       source: "overpass",
       radiusKm: 5,
@@ -181,14 +181,14 @@ describe("processChat INTL nearby flow", () => {
     );
 
     expect(response.type).toBe("results");
-    expect(response.candidates?.[0]?.platform).toBe("Google Maps");
-    expect(response.actions?.some((action) => action.providerId === "Google Maps")).toBe(true);
+    expect(response.candidates?.[0]?.platform).not.toBe("Google Maps");
+    expect(response.actions?.some((action) => action.providerId === "Google Maps")).toBe(false);
 
     const resolverCalls = vi.mocked(resolveCandidateLink).mock.calls;
     expect(
       resolverCalls.some(
         (call) =>
-          call?.[0]?.provider === "Google Maps" &&
+          call?.[0]?.provider !== "Google Maps" &&
           typeof call?.[0]?.query === "string" &&
           call[0].query.includes("Joe's Pizza")
       )
@@ -931,13 +931,33 @@ describe("processChat INTL nearby flow", () => {
     expect(response.candidates?.[0]?.name).toBe("Ocean Car Wash");
   });
 
-  it("returns clarify when CN nearby request has no Amap result", async () => {
+  it("uses Google Maps when CN nearby request location is outside China", async () => {
     vi.mocked(searchNearbyStores).mockResolvedValueOnce({
       source: "database",
       radiusKm: 10,
       matchedCount: 0,
       category: "local_life",
       candidates: [],
+    });
+
+    vi.mocked(callAI).mockResolvedValueOnce({
+      model: "mock",
+      content: JSON.stringify({
+        type: "results",
+        message: "Found nearby coffee options",
+        intent: "search_nearby",
+        candidates: [
+          {
+            id: "tmp_outside_cn_1",
+            name: "Bay Coffee",
+            description: "nice place",
+            category: "food",
+            distance: "1.2km",
+            platform: "Amap",
+            searchQuery: "Bay Coffee",
+          },
+        ],
+      }),
     });
 
     const response = await processChat(
@@ -950,9 +970,11 @@ describe("processChat INTL nearby flow", () => {
       "test-user"
     );
 
-    expect(response.type).toBe("clarify");
+    expect(response.type).toBe("results");
     expect(response.intent).toBe("search_nearby");
-    expect(response.message).toContain("高德");
-    expect(callAI).not.toHaveBeenCalled();
+    expect(response.candidates?.[0]?.platform).toBe("Google Maps");
+    expect(response.candidates?.[0]?.distance).toBe("1.2km");
+    expect(response.actions?.some((action) => action.providerId === "Google Maps")).toBe(true);
+    expect(callAI).toHaveBeenCalledTimes(1);
   });
 });

@@ -126,8 +126,8 @@ describe("nearby-store-search Overpass INTL", () => {
           {
             type: "node",
             id: 301,
-            lat: 23.541,
-            lon: 110.392,
+            lat: 40.7131,
+            lon: -74.0058,
             tags: {
               name: "Pingnan Apple Tech Store",
               shop: "electronics",
@@ -138,8 +138,8 @@ describe("nearby-store-search Overpass INTL", () => {
     });
 
     await searchNearbyStores({
-      lat: 23.54,
-      lng: 110.39,
+      lat: 40.7128,
+      lng: -74.006,
       locale: "en",
       region: "INTL",
       message: "Find Mac computer stores within 10km",
@@ -172,8 +172,8 @@ describe("nearby-store-search Overpass INTL", () => {
           {
             type: "node",
             id: 201,
-            lat: 23.541,
-            lon: 110.392,
+            lat: 40.7132,
+            lon: -74.0062,
             tags: {
               name: "Apple Premium Reseller Pingnan",
               shop: "electronics",
@@ -186,8 +186,8 @@ describe("nearby-store-search Overpass INTL", () => {
     });
 
     const result = await searchNearbyStores({
-      lat: 23.54,
-      lng: 110.39,
+      lat: 40.7128,
+      lng: -74.006,
       locale: "en",
       region: "INTL",
       message: "Find Mac computer stores within 10km",
@@ -200,24 +200,22 @@ describe("nearby-store-search Overpass INTL", () => {
     expect(result.candidates[0]?.platform).toBeTruthy();
   });
 
-  it("uses Overpass only in INTL even when coordinates are in China", async () => {
+  it("uses Amap in INTL when coordinates are in China", async () => {
     process.env.AMAP_WEB_SERVICE_KEY = "test-amap-key";
 
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({
-        elements: [
+        status: "1",
+        info: "OK",
+        pois: [
           {
-            type: "node",
-            id: 401,
-            lat: 23.5402,
-            lon: 110.3902,
-            tags: {
-              name: "Apple Digital Plaza",
-              shop: "electronics",
-              "addr:street": "Jiangbin Rd",
-              "addr:city": "Pingnan",
-            },
+            id: "amap_intl_cn_1",
+            name: "Apple Digital Plaza",
+            type: "shopping;electronics",
+            address: "Jiangbin Rd",
+            location: "110.390200,23.540200",
+            distance: "420",
           },
         ],
       }),
@@ -233,10 +231,10 @@ describe("nearby-store-search Overpass INTL", () => {
     });
 
     expect(mockFetch).toHaveBeenCalledTimes(1);
-    expect(String(mockFetch.mock.calls[0]?.[0] || "")).toContain("overpass-api.de/api/interpreter");
+    expect(String(mockFetch.mock.calls[0]?.[0] || "")).toContain("restapi.amap.com/v3/place/around");
     expect(result.candidates).toHaveLength(1);
     expect(result.candidates[0]?.name).toBe("Apple Digital Plaza");
-    expect(result.candidates[0]?.platform).toBe("Google Maps");
+    expect(result.candidates[0]?.platform).not.toBe("Google Maps");
     expect(result.candidates[0]?.distance).toMatch(/mile/);
   });
 
