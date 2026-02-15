@@ -570,7 +570,7 @@ export default function ChatInterface({
   // ====== 渲染函数 ======
 
   return (
-    <div className="flex flex-col h-full max-h-[calc(100vh-120px)]">
+    <div className="flex h-full min-h-0 flex-col">
       {/* 使用次数状态栏 */}
       <div className="flex items-center justify-between px-4 py-2 bg-gradient-to-r from-purple-50 to-blue-50 border-b border-purple-100/50 rounded-t-xl">
         <div className="flex items-center gap-2">
@@ -617,7 +617,7 @@ export default function ChatInterface({
       </div>
 
       {/* 消息列表 */}
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 py-3 space-y-4">
         {/* 欢迎消息 */}
         {messages.length === 0 && (
           <WelcomeMessage isZh={isZh} location={location} onRequestLocation={requestLocation} locationLoading={locationLoading} onSendExample={sendMessage} />

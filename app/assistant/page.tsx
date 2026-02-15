@@ -86,8 +86,8 @@ export default function AssistantPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50">
-      <div className="max-w-md mx-auto flex flex-col h-screen">
+    <div className="h-dvh overflow-hidden bg-gradient-to-br from-gray-50 via-white to-gray-50">
+      <div className="max-w-md mx-auto flex h-full min-h-0 flex-col">
         {/* 顶部导航栏 */}
         <div className="flex items-center gap-3 px-4 pt-4 pb-2">
           <Button
@@ -112,8 +112,8 @@ export default function AssistantPage() {
         </div>
 
         {/* 聊天界面 */}
-        <div className="flex-1 px-2 pb-2">
-          <div className="bg-white rounded-2xl shadow-sm h-full">
+        <div className="flex-1 min-h-0 px-2 pb-2">
+          <div className="bg-white rounded-2xl shadow-sm h-full min-h-0">
             <ChatInterface
               locale={locale}
               region={region}

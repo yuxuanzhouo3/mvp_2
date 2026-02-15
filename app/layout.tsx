@@ -39,6 +39,7 @@ export default function RootLayout({
 }) {
   const pathname = headers().get("x-pathname") ?? ""
   const isAdminRoute = pathname === "/admin" || pathname.startsWith("/admin/")
+  const isAssistantRoute = pathname === "/assistant" || pathname.startsWith("/assistant/")
   const userAgent = headers().get("user-agent") ?? ""
   const initialIsIPhone = /iphone/i.test(userAgent)
   const initialIsMac = !/iphone|ipad|ipod/i.test(userAgent) && /macintosh|mac os x/i.test(userAgent)
@@ -74,7 +75,7 @@ export default function RootLayout({
                 <AnalyticsBootstrap />
                 <div className="min-h-screen bg-[#F7F9FC]">{children}</div>
                 <Toaster />
-                {isCN && (
+                {isCN && !isAssistantRoute && (
                   <footer className="w-full py-4 px-4 text-center text-xs text-gray-400 bg-gray-50 border-t border-gray-100">
                     <p>本页面含AI生成的内容，请仔细辨别</p>
                     <p className="mt-1">

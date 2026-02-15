@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { createClient } from "@supabase/supabase-js";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -59,6 +60,15 @@ type UploadReleaseResponse = {
   version: string;
   platform: string;
   fileName?: string | null;
+};
+
+type SignedUploadResponse = {
+  ok: boolean;
+  source: DataSource;
+  bucket: string;
+  objectPath: string;
+  token: string;
+  storageRef: string;
 };
 
 function parseQuery(params: URLSearchParams): {
@@ -119,6 +129,15 @@ function formatBytes(bytes: number | null): string {
   if (mb < 1024) return `${mb.toFixed(1)} MB`;
   const gb = mb / 1024;
   return `${gb.toFixed(2)} GB`;
+}
+
+function getSupabaseBrowserClient() {
+  const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || "").trim();
+  const anonKey = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "").trim();
+  if (!supabaseUrl || !anonKey) return null;
+  return createClient(supabaseUrl, anonKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
 }
 
 export default function AdminReleasesPage() {
@@ -249,7 +268,46 @@ export default function AdminReleasesPage() {
       fd.set("arch", uploadArch.trim());
       fd.set("notes", uploadNotes.trim());
       fd.set("active", uploadActive ? "true" : "false");
-      fd.set("file", f);
+
+      if (uploadSource === "INTL") {
+        const signedUrl = new URL("/api/admin/releases/upload", window.location.origin);
+        signedUrl.searchParams.set("source", uploadSource);
+        signedUrl.searchParams.set("version", uploadVersion.trim());
+        signedUrl.searchParams.set("platform", uploadPlatform.trim());
+        signedUrl.searchParams.set("fileName", f.name || "file");
+
+        const signedRes = await fetch(signedUrl.toString(), { cache: "no-store" });
+        if (!signedRes.ok) {
+          const body = await signedRes.text().catch(() => "");
+          throw new Error(`HTTP ${signedRes.status}${body ? `: ${body}` : ""}`);
+        }
+        const signed = (await signedRes.json()) as SignedUploadResponse;
+        if (!signed?.ok || !signed.bucket || !signed.objectPath || !signed.token || !signed.storageRef) {
+          throw new Error("签名上传参数无效");
+        }
+
+        const supabase = getSupabaseBrowserClient();
+        if (!supabase) {
+          throw new Error("缺少 Supabase 浏览器上传配置（NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY）");
+        }
+
+        const { error: uploadError } = await supabase.storage
+          .from(signed.bucket)
+          .uploadToSignedUrl(signed.objectPath, signed.token, f, {
+            contentType: f.type || "application/octet-stream",
+            upsert: true,
+          });
+        if (uploadError) {
+          throw new Error(uploadError.message || "直传失败");
+        }
+
+        fd.set("storageRef", signed.storageRef);
+        fd.set("fileName", f.name || "file");
+        fd.set("fileSize", String(f.size || 0));
+      } else {
+        fd.set("file", f);
+      }
+
       const res = await fetch("/api/admin/releases/upload", { method: "POST", body: fd });
       if (!res.ok) {
         const body = await res.text().catch(() => "");
