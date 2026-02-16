@@ -394,24 +394,38 @@ class SupabaseAuthClient implements AuthClient {
   }
 
   async signOut(): Promise<{ error: Error | null }> {
+    let signOutError: Error | null = null;
+
     try {
       const supabase = await this.ensureSupabase();
       const result = await supabase.auth.signOut();
+      signOutError = result.error;
+    } catch (error) {
+      signOutError =
+        error instanceof Error
+          ? error
+          : new Error("Supabase client not initialized");
+    }
 
+    try {
+      const { signOutFromNativeGoogle } = await import(
+        "@/lib/auth/native-google"
+      );
+      await signOutFromNativeGoogle();
+    } catch (error) {
+      console.warn("[Supabase] Native Google sign-out cleanup failed:", error);
+    }
+
+    try {
       const { clearSupabaseUserCache } = await import(
         "@/lib/auth/auth-state-manager-intl"
       );
       clearSupabaseUserCache();
-
-      return result;
     } catch (error) {
-      return {
-        error:
-          error instanceof Error
-            ? error
-            : new Error("Supabase client not initialized"),
-      };
+      console.warn("[Supabase] Failed to clear user cache on sign out:", error);
     }
+
+    return { error: signOutError };
   }
 
   async getUser(): Promise<{

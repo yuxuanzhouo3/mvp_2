@@ -17,17 +17,33 @@ type NativeGoogleSignInResult = {
   account?: NativeGoogleAccount
 }
 
+type NativeGoogleSignOutResult = {
+  success?: boolean
+  status?: string
+  errorCode?: string
+  errorMessage?: string
+}
+
 type NativeGoogleSignInParams = {
   serverClientId: string
+}
+
+type NativeGoogleSignOutParams = {
+  revokeAccess?: boolean
 }
 
 type NativeGoogleSignInFn = (
   params: NativeGoogleSignInParams
 ) => Promise<NativeGoogleSignInResult>
 
+type NativeGoogleSignOutFn = (
+  params?: NativeGoogleSignOutParams
+) => Promise<NativeGoogleSignOutResult>
+
 type MedianLikeAuth = {
   auth?: {
     googleSignIn?: NativeGoogleSignInFn
+    googleSignOut?: NativeGoogleSignOutFn
   }
 }
 
@@ -46,6 +62,18 @@ function getNativeGoogleSignInFn(): NativeGoogleSignInFn | null {
 
   const goNativeSignIn = window.gonative?.auth?.googleSignIn
   if (typeof goNativeSignIn === "function") return goNativeSignIn
+
+  return null
+}
+
+function getNativeGoogleSignOutFn(): NativeGoogleSignOutFn | null {
+  if (typeof window === "undefined") return null
+
+  const medianSignOut = window.median?.auth?.googleSignOut
+  if (typeof medianSignOut === "function") return medianSignOut
+
+  const goNativeSignOut = window.gonative?.auth?.googleSignOut
+  if (typeof goNativeSignOut === "function") return goNativeSignOut
 
   return null
 }
@@ -77,11 +105,14 @@ function extractIdToken(result: NativeGoogleSignInResult): string {
   return token.trim()
 }
 
-function getNativeErrorMessage(result: NativeGoogleSignInResult): string {
+function getNativeErrorMessage(
+  result: NativeGoogleSignInResult | NativeGoogleSignOutResult,
+  fallbackMessage: string
+): string {
   return (
     result.errorMessage ||
     result.errorCode ||
-    "Google sign-in failed inside the app"
+    fallbackMessage
   )
 }
 
@@ -121,7 +152,12 @@ export async function signInWithNativeGoogleForSupabase(): Promise<void> {
     nativeResult.success === false ||
     nativeResult.status === "error"
   ) {
-    throw new Error(getNativeErrorMessage(nativeResult || {}))
+    throw new Error(
+      getNativeErrorMessage(
+        nativeResult || {},
+        "Google sign-in failed inside the app"
+      )
+    )
   }
 
   const idToken = extractIdToken(nativeResult)
@@ -170,5 +206,43 @@ export async function signInWithNativeGoogleForSupabase(): Promise<void> {
     }
   } catch (error) {
     console.warn("[native-google] failed to refresh profile cache:", error)
+  }
+}
+
+export async function signOutFromNativeGoogle(): Promise<boolean> {
+  if (typeof window === "undefined") {
+    return false
+  }
+
+  if (!isAppContainer()) {
+    return false
+  }
+
+  const nativeSignOut = getNativeGoogleSignOutFn()
+  if (!nativeSignOut) {
+    return false
+  }
+
+  try {
+    const nativeResult = await nativeSignOut()
+
+    if (
+      nativeResult &&
+      (nativeResult.success === false || nativeResult.status === "error")
+    ) {
+      console.warn(
+        "[native-google] native Google sign-out returned an error:",
+        getNativeErrorMessage(
+          nativeResult,
+          "Google sign-out failed inside the app"
+        )
+      )
+      return false
+    }
+
+    return true
+  } catch (error) {
+    console.warn("[native-google] native Google sign-out failed:", error)
+    return false
   }
 }
