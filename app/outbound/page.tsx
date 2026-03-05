@@ -322,6 +322,25 @@ export default function OutboundPage() {
     return true;
   }, [decoded.candidateLink, getFallbackGooglePlayUrl, handleStoreClick, isIntlAndroidContext]);
 
+  const isCnMobileTravelContext = useCallback(
+    (candidate: CandidateLink | null | undefined) => {
+      if (!candidate) return false;
+      if (candidate.metadata?.region !== "CN") return false;
+      if (candidate.metadata?.category !== "travel") return false;
+      const os = detectMobileOs();
+      return os === "ios" || os === "android";
+    },
+    []
+  );
+
+  const setInstallChoiceAfterOpenFailure = useCallback(() => {
+    if (isCnMobileTravelContext(decoded.candidateLink)) {
+      setInstallChoice("yes");
+      return;
+    }
+    setInstallChoice("asking");
+  }, [decoded.candidateLink, isCnMobileTravelContext]);
+
   // 自动尝试打开 App
   useEffect(() => {
     if (!decoded.candidateLink || hasTriedRef.current) return;
@@ -337,7 +356,7 @@ export default function OutboundPage() {
     if (autoTryLinks.length === 0) {
       setOpenState("failed");
       if (!redirectIntlAndroidToGooglePlay()) {
-        setInstallChoice("asking");
+        setInstallChoiceAfterOpenFailure();
       }
       return;
     }
@@ -352,11 +371,11 @@ export default function OutboundPage() {
         // App 未安装：INTL Android 直接跳 Google Play，其他平台显示安装询问
         setOpenState("failed");
         if (!redirectIntlAndroidToGooglePlay()) {
-          setInstallChoice("asking");
+          setInstallChoiceAfterOpenFailure();
         }
       }
     });
-  }, [decoded.candidateLink, isIntlAndroidContext, redirectIntlAndroidToGooglePlay]);
+  }, [decoded.candidateLink, isIntlAndroidContext, redirectIntlAndroidToGooglePlay, setInstallChoiceAfterOpenFailure]);
 
   // 当用户从 App 返回时，自动导航回推荐结果页
   useEffect(() => {
@@ -699,7 +718,7 @@ export default function OutboundPage() {
                       if (isIntlAndroid) {
                         redirectIntlAndroidToGooglePlay();
                       } else if (installChoice === "none") {
-                        setInstallChoice("asking");
+                        setInstallChoiceAfterOpenFailure();
                       }
                     }
                   }

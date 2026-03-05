@@ -165,6 +165,14 @@ function tencentMapSearchUrl(query: string) {
   return `https://map.qq.com/m/search?keyword=${encodeURIComponent(query)}`;
 }
 
+function resolveSearchKeyword(ctx: Pick<LinkContext, "query" | "title">): string {
+  const query = String(ctx.query || "").trim();
+  if (query.length > 0) return query;
+  const title = String(ctx.title || "").trim();
+  if (title.length > 0) return title;
+  return "旅行";
+}
+
 export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
   return {
     "Google Maps": {
@@ -1191,13 +1199,18 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       domains: ["ctrip.com"],
       hasApp: true,
       androidPackageId: "ctrip.android.view",
-      webLink: ({ query }) =>
-        `https://you.ctrip.com/globalsearch/?keyword=${encodeURIComponent(query)}`,
-      iosScheme: ({ query }) =>
-        `ctrip://wireless/h5?type=search&keyword=${encodeURIComponent(query)}&from=deeplink`,
-      androidScheme: ({ query }) => {
-        const web = `https://you.ctrip.com/globalsearch/?keyword=${encodeURIComponent(query)}`;
-        return `intent://wireless/h5?type=search&keyword=${encodeURIComponent(query)}#Intent;scheme=ctrip;package=ctrip.android.view;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      webLink: (ctx) => {
+        const keyword = resolveSearchKeyword(ctx);
+        return `https://you.ctrip.com/globalsearch/?keyword=${encodeURIComponent(keyword)}`;
+      },
+      iosScheme: (ctx) => {
+        const keyword = resolveSearchKeyword(ctx);
+        return `ctrip://wireless/h5?type=search&keyword=${encodeURIComponent(keyword)}&from=deeplink`;
+      },
+      androidScheme: (ctx) => {
+        const keyword = resolveSearchKeyword(ctx);
+        const web = `https://you.ctrip.com/globalsearch/?keyword=${encodeURIComponent(keyword)}`;
+        return `intent://wireless/h5?type=search&keyword=${encodeURIComponent(keyword)}#Intent;scheme=ctrip;package=ctrip.android.view;S.browser_fallback_url=${encodeURIComponent(web)};end`;
       },
     },
     "去哪儿": {

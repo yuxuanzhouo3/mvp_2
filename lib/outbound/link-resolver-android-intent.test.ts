@@ -171,6 +171,36 @@ describe("resolveCandidateLink android intent fallback", () => {
     expect(androidIntent?.url).toContain("beef%20noodle%20soup");
   });
 
+  it("uses recommendation title as Ctrip keyword fallback when query is empty", () => {
+    const title = "中国 杭州 西湖";
+    const result = resolveCandidateLink({
+      title,
+      query: "   ",
+      category: "travel",
+      locale: "zh",
+      region: "CN",
+      provider: "携程",
+      isMobile: true,
+    });
+
+    const encodedTitle = encodeURIComponent(title);
+    expect(result.primary.url).toContain(`keyword=${encodedTitle}`);
+
+    const webLink = result.fallbacks.find(
+      (link) =>
+        link.type === "web" &&
+        link.url.includes("you.ctrip.com/globalsearch")
+    );
+    expect(webLink?.url).toContain(`keyword=${encodedTitle}`);
+
+    const androidIntent = result.fallbacks.find(
+      (link) =>
+        link.type === "intent" &&
+        link.url.includes("package=ctrip.android.view")
+    );
+    expect(androidIntent?.url).toContain(encodedTitle);
+  });
+
   it("supports fitness apps android deep links with search query", () => {
     const fixtures = [
       { provider: "Nike Training Club", packageId: "com.nike.ntc" },
