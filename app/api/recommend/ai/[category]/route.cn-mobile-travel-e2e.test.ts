@@ -7,6 +7,18 @@ import {
 } from "@/lib/outbound/deep-link-helpers";
 import type { CandidateLink } from "@/lib/types/recommendation";
 
+function decodeBase64Utf8(value: string): string {
+  return Buffer.from(value, "base64").toString("utf8");
+}
+
+function extractCtripEmbeddedUrl(linkUrl: string): string | null {
+  const match = linkUrl.match(/[?&]url=([^&#]+)/i);
+  if (!match?.[1]) return null;
+
+  const base64Payload = decodeURIComponent(match[1]);
+  return decodeBase64Utf8(base64Payload);
+}
+
 vi.mock("@/lib/ai/zhipu-recommendation", () => ({
   isAIProviderConfigured: vi.fn(() => false),
   generateRecommendations: vi.fn(),
@@ -119,8 +131,9 @@ describe("recommend travel CN mobile outbound e2e", () => {
 
     const encodedTitle = encodeURIComponent("中国 杭州 西湖");
 
-    expect(candidate?.primary.url).toContain("keyword=");
-    expect(candidate?.primary.url).toContain(encodedTitle);
+    expect(candidate?.primary.url).toContain("ctrip://wireless/h5?url=");
+    const primaryEmbeddedUrl = extractCtripEmbeddedUrl(candidate?.primary.url || "");
+    expect(primaryEmbeddedUrl).toContain(`keyword=${encodedTitle}`);
 
     const webLink = candidate?.fallbacks.find(
       (link) =>
@@ -132,7 +145,8 @@ describe("recommend travel CN mobile outbound e2e", () => {
     expect(autoTryLinks.length).toBeGreaterThan(0);
     expect(autoTryLinks[0]?.type).toBe("intent");
     expect(autoTryLinks[0]?.url).toContain("package=ctrip.android.view");
-    expect(autoTryLinks[0]?.url).toContain(encodedTitle);
+    const androidEmbeddedUrl = extractCtripEmbeddedUrl(autoTryLinks[0]?.url || "");
+    expect(androidEmbeddedUrl).toContain(`keyword=${encodedTitle}`);
 
     const androidStoreLinks = filterStoreLinksByOs(
       getStoreLinks(candidate!),

@@ -30,6 +30,7 @@ import {
 type OpenState = "idle" | "trying" | "opened" | "failed";
 type InstallChoice = "none" | "asking" | "yes" | "no";
 const STORE_RETURN_SESSION_KEY = "outbound:store-return";
+const STORE_RETURN_TTL_MS = 10 * 60 * 1000;
 const WEB_FALLBACK_RETURN_SESSION_KEY = "outbound:web-fallback-return";
 const WEB_FALLBACK_RETURN_TTL_MS = 15_000;
 
@@ -341,10 +342,25 @@ export default function OutboundPage() {
     setInstallChoice("asking");
   }, [decoded.candidateLink, isCnMobileTravelContext]);
 
+  const hasRecentStoreReturnMarker = useCallback((): boolean => {
+    try {
+      const raw = sessionStorage.getItem(STORE_RETURN_SESSION_KEY);
+      if (!raw) return false;
+      const parsed = JSON.parse(raw) as { ts?: number };
+      const ts = typeof parsed?.ts === "number" ? parsed.ts : 0;
+      if (!ts) return false;
+      return Date.now() - ts <= STORE_RETURN_TTL_MS;
+    } catch {
+      return false;
+    }
+  }, []);
+
   // 自动尝试打开 App
   useEffect(() => {
     if (!decoded.candidateLink || hasTriedRef.current) return;
     if (shouldSkipAutoTryRef.current) return;
+    // 如果是从应用商店返回，优先走“商店返回重试”流程，避免又回到安装询问
+    if (hasRecentStoreReturnMarker()) return;
     hasTriedRef.current = true;
 
     const os = detectMobileOs();
@@ -375,7 +391,7 @@ export default function OutboundPage() {
         }
       }
     });
-  }, [decoded.candidateLink, isIntlAndroidContext, redirectIntlAndroidToGooglePlay, setInstallChoiceAfterOpenFailure]);
+  }, [decoded.candidateLink, hasRecentStoreReturnMarker, isIntlAndroidContext, redirectIntlAndroidToGooglePlay, setInstallChoiceAfterOpenFailure]);
 
   // 当用户从 App 返回时，自动导航回推荐结果页
   useEffect(() => {
@@ -402,11 +418,18 @@ export default function OutboundPage() {
       tryBackToRecommendation();
     };
 
+    const onPageShow = () => {
+      if (document.visibilityState !== "visible") return;
+      tryBackToRecommendation();
+    };
+
     document.addEventListener("visibilitychange", onVisibilityChange);
     window.addEventListener("focus", onWindowFocus);
+    window.addEventListener("pageshow", onPageShow);
     return () => {
       document.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("focus", onWindowFocus);
+      window.removeEventListener("pageshow", onPageShow);
     };
   }, [handleBack]);
 
@@ -438,7 +461,7 @@ export default function OutboundPage() {
     if (!decoded.candidateLink) return;
     if (shouldSkipAutoTryRef.current) return;
 
-    const shouldHandleStoreReturn = (): boolean => {
+    const consumeStoreReturnMarker = (): boolean => {
       try {
         const raw = sessionStorage.getItem(STORE_RETURN_SESSION_KEY);
         if (!raw) return false;
@@ -446,7 +469,7 @@ export default function OutboundPage() {
         const ts = typeof parsed?.ts === "number" ? parsed.ts : 0;
         sessionStorage.removeItem(STORE_RETURN_SESSION_KEY);
         if (!ts) return false;
-        if (Date.now() - ts > 10 * 60 * 1000) return false;
+        if (Date.now() - ts > STORE_RETURN_TTL_MS) return false;
         return true;
       } catch {
         return false;
@@ -456,9 +479,10 @@ export default function OutboundPage() {
     const processStoreReturn = () => {
       if (document.visibilityState !== "visible") return;
       if (isHandlingStoreReturnRef.current) return;
-      if (!shouldHandleStoreReturn()) return;
+      if (!consumeStoreReturnMarker()) return;
 
       isHandlingStoreReturnRef.current = true;
+      hasTriedRef.current = true;
 
       // 从商店返回后，优先重试打开 App
       const os = detectMobileOs();
@@ -499,11 +523,20 @@ export default function OutboundPage() {
       processStoreReturn();
     };
 
+    const onPageShow = () => {
+      if (document.visibilityState !== "visible") return;
+      processStoreReturn();
+    };
+
     document.addEventListener("visibilitychange", onVisibilityChange);
     window.addEventListener("focus", onWindowFocus);
+    window.addEventListener("pageshow", onPageShow);
+    // 覆盖从应用宝网页/商店页通过 back 恢复场景（仅触发 pageshow 或直接恢复）
+    processStoreReturn();
     return () => {
       document.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("focus", onWindowFocus);
+      window.removeEventListener("pageshow", onPageShow);
     };
   }, [decoded.candidateLink, isIntlAndroidContext, navigateToWebFallback]);
 

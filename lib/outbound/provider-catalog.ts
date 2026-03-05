@@ -173,6 +173,37 @@ function resolveSearchKeyword(ctx: Pick<LinkContext, "query" | "title">): string
   return "旅行";
 }
 
+function ctripWebSearchUrl(keyword: string): string {
+  return `https://you.ctrip.com/globalsearch/?keyword=${encodeURIComponent(keyword)}`;
+}
+
+function encodeBase64Utf8(value: string): string {
+  if (typeof Buffer !== "undefined") {
+    return Buffer.from(value, "utf8").toString("base64");
+  }
+
+  if (typeof btoa !== "undefined") {
+    const bytes = new TextEncoder().encode(value);
+    let binary = "";
+    for (const byte of bytes) {
+      binary += String.fromCharCode(byte);
+    }
+    return btoa(binary);
+  }
+
+  return value;
+}
+
+function ctripH5DeepLinkFromWebUrl(webUrl: string): string {
+  const base64Url = encodeBase64Utf8(webUrl);
+  return `ctrip://wireless/h5?url=${encodeURIComponent(base64Url)}&type=1`;
+}
+
+function ctripAndroidIntentFromWebUrl(webUrl: string): string {
+  const base64Url = encodeBase64Utf8(webUrl);
+  return `intent://wireless/h5?url=${encodeURIComponent(base64Url)}&type=1#Intent;scheme=ctrip;package=ctrip.android.view;S.browser_fallback_url=${encodeURIComponent(webUrl)};end`;
+}
+
 export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
   return {
     "Google Maps": {
@@ -1201,16 +1232,17 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       androidPackageId: "ctrip.android.view",
       webLink: (ctx) => {
         const keyword = resolveSearchKeyword(ctx);
-        return `https://you.ctrip.com/globalsearch/?keyword=${encodeURIComponent(keyword)}`;
+        return ctripWebSearchUrl(keyword);
       },
       iosScheme: (ctx) => {
         const keyword = resolveSearchKeyword(ctx);
-        return `ctrip://wireless/h5?type=search&keyword=${encodeURIComponent(keyword)}&from=deeplink`;
+        const web = ctripWebSearchUrl(keyword);
+        return ctripH5DeepLinkFromWebUrl(web);
       },
       androidScheme: (ctx) => {
         const keyword = resolveSearchKeyword(ctx);
-        const web = `https://you.ctrip.com/globalsearch/?keyword=${encodeURIComponent(keyword)}`;
-        return `intent://wireless/h5?type=search&keyword=${encodeURIComponent(keyword)}#Intent;scheme=ctrip;package=ctrip.android.view;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+        const web = ctripWebSearchUrl(keyword);
+        return ctripAndroidIntentFromWebUrl(web);
       },
     },
     "去哪儿": {

@@ -1,6 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { resolveCandidateLink } from "./link-resolver";
 
+function decodeBase64Utf8(value: string): string {
+  return Buffer.from(value, "base64").toString("utf8");
+}
+
+function extractCtripEmbeddedUrl(linkUrl: string): string | null {
+  const match = linkUrl.match(/[?&]url=([^&#]+)/i);
+  if (!match?.[1]) return null;
+
+  const base64Payload = decodeURIComponent(match[1]);
+  return decodeBase64Utf8(base64Payload);
+}
+
 describe("resolveCandidateLink android intent fallback", () => {
   it("adds android intent deep link when provider has package but no android scheme", () => {
     const result = resolveCandidateLink({
@@ -184,7 +196,9 @@ describe("resolveCandidateLink android intent fallback", () => {
     });
 
     const encodedTitle = encodeURIComponent(title);
-    expect(result.primary.url).toContain(`keyword=${encodedTitle}`);
+    expect(result.primary.url).toContain("ctrip://wireless/h5?url=");
+    const primaryEmbeddedUrl = extractCtripEmbeddedUrl(result.primary.url);
+    expect(primaryEmbeddedUrl).toContain(`keyword=${encodedTitle}`);
 
     const webLink = result.fallbacks.find(
       (link) =>
@@ -198,7 +212,9 @@ describe("resolveCandidateLink android intent fallback", () => {
         link.type === "intent" &&
         link.url.includes("package=ctrip.android.view")
     );
-    expect(androidIntent?.url).toContain(encodedTitle);
+    expect(androidIntent?.url).toContain("intent://wireless/h5?url=");
+    const androidEmbeddedUrl = extractCtripEmbeddedUrl(androidIntent?.url || "");
+    expect(androidEmbeddedUrl).toContain(`keyword=${encodedTitle}`);
   });
 
   it("supports fitness apps android deep links with search query", () => {
