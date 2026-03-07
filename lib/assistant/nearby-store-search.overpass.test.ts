@@ -512,6 +512,57 @@ describe("nearby-store-search Overpass INTL", () => {
     expect(result.matchedCount).toBe(0);
   });
 
+  it("retries CN food query without keywords when conversational delivery phrasing returns empty", async () => {
+    process.env.AMAP_WEB_SERVICE_KEY = "test-amap-key";
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        status: "1",
+        info: "OK",
+        pois: [],
+      }),
+    });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        status: "1",
+        info: "OK",
+        pois: [
+          {
+            id: "amap_food_retry_1",
+            name: "张记麻辣烫",
+            type: "餐饮服务;中餐厅",
+            address: "解放路 88 号",
+            location: "110.391200,23.541100",
+            distance: "380",
+          },
+        ],
+      }),
+    });
+
+    const result = await searchNearbyStores({
+      lat: 23.54,
+      lng: 110.39,
+      locale: "zh",
+      region: "CN",
+      message: "我今晚想吃麻辣烫，离我近点，能 30 分钟送到",
+      limit: 5,
+    });
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+
+    const firstUrl = String(mockFetch.mock.calls[0]?.[0] || "");
+    const secondUrl = String(mockFetch.mock.calls[1]?.[0] || "");
+    expect(firstUrl).toContain("keywords=%E9%BA%BB%E8%BE%A3%E7%83%AB");
+    expect(firstUrl).not.toContain("%E5%88%86%E9%92%9F%E9%80%81%E5%88%B0");
+    expect(firstUrl).not.toContain("%E7%A6%BB%E6%88%91%E8%BF%91%E7%82%B9");
+    expect(secondUrl).not.toContain("keywords=");
+
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]?.name).toBe("张记麻辣烫");
+  });
+
   it("prioritizes bicycle official stores for CN shopping nearby query", async () => {
     process.env.AMAP_WEB_SERVICE_KEY = "test-amap-key";
 

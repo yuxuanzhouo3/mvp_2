@@ -564,7 +564,7 @@ describe("sanitizeAutoTryLinksForIntlAndroid", () => {
 });
 
 describe("getAutoTryLinks", () => {
-  // --- Criterion 1: Sorting logic intent(0) > app(1) > universal_link(2) ---
+  // --- Criterion 1: Android sorting ---
   describe("Android sorting: intent > app > universal_link (Req 1.2)", () => {
     it("sorts intent before app before universal_link on Android", () => {
       const candidateLink: CandidateLink = {
@@ -592,6 +592,31 @@ describe("getAutoTryLinks", () => {
       expect(links.length).toBe(2);
       expect(links[0].type).toBe("intent");
       expect(links[1].type).toBe("app");
+    });
+
+    it("prefers app before intent in CN Android context", () => {
+      const candidateLink: CandidateLink = {
+        provider: "TapTap",
+        title: "TapTap Test",
+        primary: {
+          type: "app",
+          url: "taptap://taptap.cn/search?keyword=test",
+        },
+        fallbacks: [
+          {
+            type: "intent",
+            url: "intent://#Intent;package=com.taptap;end",
+            label: "Android",
+          },
+        ],
+        metadata: {
+          region: "CN",
+        } as any,
+      };
+
+      const links = getAutoTryLinks(candidateLink, "android");
+      expect(links[0].type).toBe("app");
+      expect(links[1].type).toBe("intent");
     });
 
     it("places multiple intents before apps on Android", () => {
@@ -648,7 +673,7 @@ describe("getAutoTryLinks", () => {
       }
     });
 
-    it("does not apply Android sorting on iOS", () => {
+    it("prioritizes app links before universal_link on iOS", () => {
       const candidateLink: CandidateLink = {
         provider: "YouTube",
         title: "YouTube Test",
@@ -666,9 +691,8 @@ describe("getAutoTryLinks", () => {
       };
 
       const links = getAutoTryLinks(candidateLink, "ios");
-      // On iOS, universal_link comes first (from primary), then app — no re-sorting
-      expect(links[0].type).toBe("universal_link");
-      expect(links[1].type).toBe("app");
+      expect(links[0].type).toBe("app");
+      expect(links[1].type).toBe("universal_link");
     });
   });
 

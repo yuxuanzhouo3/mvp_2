@@ -10,8 +10,8 @@ function decodeOpaqueSearchPayload(url: string): Record<string, any> {
 }
 
 describe("resolveCandidateLink CN entertainment mobile deep links", () => {
-  it("TapTap Android intent keeps keyword in /search/{keyword}", () => {
-    const query = "原神";
+  it("TapTap Android auto-try prefers app scheme and keeps intent fallback", () => {
+    const query = "genshin impact";
 
     const result = resolveCandidateLink({
       title: query,
@@ -25,18 +25,21 @@ describe("resolveCandidateLink CN entertainment mobile deep links", () => {
 
     const autoTry = getAutoTryLinks(result, "android");
     expect(autoTry.length).toBeGreaterThan(0);
-    expect(autoTry[0]?.type).toBe("intent");
-    expect(autoTry[0]?.url).toContain("package=com.taptap");
-    expect(autoTry[0]?.url).toContain("scheme=https");
-    expect(autoTry[0]?.url).toContain(`intent://www.taptap.cn/search/${encodeURIComponent(query)}`);
-    expect(autoTry[0]?.url).not.toContain("keyword=");
+    expect(autoTry[0]?.type).toBe("app");
+    expect(autoTry[0]?.url).toContain("taptap://");
+    expect(autoTry[0]?.url).toContain(`keyword=${encodeURIComponent(query)}`);
+
+    const androidIntent = autoTry.find(
+      (link) => link.type === "intent" && link.url.includes("package=com.taptap")
+    );
+    expect(androidIntent).toBeTruthy();
 
     const webFallback = result.fallbacks.find((link) => link.type === "web");
     expect(webFallback?.url).toBe(`https://www.taptap.cn/search/${encodeURIComponent(query)}`);
   });
 
   it("Kugou Android intent uses cmd=116 payload and carries keyword", () => {
-    const query = "周杰伦 稻香";
+    const query = "jay chou rice fragrance";
 
     const result = resolveCandidateLink({
       title: query,
@@ -56,6 +59,9 @@ describe("resolveCandidateLink CN entertainment mobile deep links", () => {
     expect(primaryPayload.jsonStr?.keyword).toBe(query);
 
     const autoTry = getAutoTryLinks(result, "android");
+    expect(autoTry[0]?.type).toBe("app");
+    expect(autoTry[0]?.url).toContain("kugouurl://start.music/?");
+
     const androidIntent = autoTry.find(
       (link) => link.type === "intent" && link.url.includes("package=com.kugou.android")
     );
@@ -68,5 +74,25 @@ describe("resolveCandidateLink CN entertainment mobile deep links", () => {
     expect(intentPayload.cmd).toBe(116);
     expect(intentPayload.jsonStr?.keyword).toBe(query);
     expect(intentPayload.jsonStr?.searchKeyWord).toBe(query);
+  });
+
+  it("TapTap iOS auto-try prioritizes app scheme before universal link", () => {
+    const query = "honkai star rail";
+
+    const result = resolveCandidateLink({
+      title: query,
+      query,
+      category: "entertainment",
+      locale: "zh",
+      region: "CN",
+      provider: "TapTap",
+      isMobile: true,
+    });
+
+    const autoTry = getAutoTryLinks(result, "ios");
+    expect(autoTry.length).toBeGreaterThan(0);
+    expect(autoTry[0]?.type).toBe("app");
+    expect(autoTry[0]?.url).toContain("taptap://");
+    expect(autoTry.some((link) => link.type === "universal_link")).toBe(true);
   });
 });

@@ -15,6 +15,7 @@ import { TravelRecommendationCard } from "./TravelRecommendationCard";
 import { getIconForLinkType } from "@/lib/utils/icon-mapping";
 import { buildOutboundHref } from "@/lib/outbound/outbound-url";
 import { getClientHint } from "@/lib/app/app-container";
+import { detectMobileOs, getAutoTryLinks } from "@/lib/outbound/deep-link-helpers";
 
 // 图标组件
 const ExternalLinkIcon = () => (
@@ -151,6 +152,37 @@ export function RecommendationCard({
     };
   };
 
+  const openDeepLinkWithGesture = (url: string) => {
+    if (url.startsWith("intent://")) {
+      window.location.href = url;
+      return;
+    }
+
+    if (!url.startsWith("http://") && !url.startsWith("https://")) {
+      try {
+        const a = document.createElement("a");
+        a.href = url;
+        a.style.display = "none";
+        document.body.appendChild(a);
+        a.click();
+        window.setTimeout(() => {
+          try {
+            document.body.removeChild(a);
+          } catch {
+            /* ignore */
+          }
+        }, 100);
+        return;
+      } catch {
+        // fall through
+      }
+      window.location.href = url;
+      return;
+    }
+
+    window.location.href = url;
+  };
+
   const handleLinkClick = () => {
     onLinkClick?.(recommendation);
     const inAppContainer = getClientHint() === "app";
@@ -161,7 +193,58 @@ export function RecommendationCard({
     if (inAppContainer || isMobile) {
       const returnTo = typeof window !== "undefined" ? `${window.location.pathname}${window.location.search}` : "/";
       const candidateLink = recommendation.candidateLink ?? buildFallbackCandidateLink(recommendation);
-      window.location.href = buildOutboundHref(candidateLink, returnTo);
+      const outboundHref = buildOutboundHref(candidateLink, returnTo);
+      const os = detectMobileOs();
+      const gestureLaunchTargets = getAutoTryLinks(candidateLink, os).filter(
+        (item) => item.type === "app" || item.type === "intent"
+      );
+      const firstDeepLink = gestureLaunchTargets[0];
+
+      // 在“查看详情”点击手势内先尝试一次深链，提升 Android 内置浏览器唤醒成功率。
+      if (firstDeepLink) {
+        const cleanup = (() => {
+          let cleaned = false;
+          const onVisibilityChange = () => {
+            if (document.visibilityState === "hidden") {
+              cleanup();
+            }
+          };
+          const onBlur = () => {
+            window.setTimeout(() => {
+              if (document.visibilityState === "hidden") {
+                cleanup();
+              }
+            }, 120);
+          };
+          const timer = window.setTimeout(() => {
+            if (document.visibilityState === "visible") {
+              window.location.href = outboundHref;
+            }
+            cleanup();
+          }, 900);
+
+          document.addEventListener("visibilitychange", onVisibilityChange);
+          window.addEventListener("blur", onBlur);
+
+          return () => {
+            if (cleaned) return;
+            cleaned = true;
+            window.clearTimeout(timer);
+            document.removeEventListener("visibilitychange", onVisibilityChange);
+            window.removeEventListener("blur", onBlur);
+          };
+        })();
+
+        try {
+          openDeepLinkWithGesture(firstDeepLink.url);
+        } catch {
+          cleanup();
+          window.location.href = outboundHref;
+        }
+        return;
+      }
+
+      window.location.href = outboundHref;
       return;
     }
     // 桌面端：直接打开新标签

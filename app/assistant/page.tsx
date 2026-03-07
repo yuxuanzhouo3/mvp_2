@@ -105,10 +105,10 @@ export default function AssistantPage() {
   }
 
   return (
-    <div className="h-dvh overflow-hidden bg-gradient-to-br from-gray-50 via-white to-gray-50">
+    <div className="min-h-screen h-[100dvh] overflow-hidden bg-gradient-to-br from-gray-50 via-white to-gray-50 pt-[env(safe-area-inset-top)]">
       <div className="max-w-md mx-auto flex h-full min-h-0 flex-col">
         {/* 顶部导航栏 */}
-        <div className="flex items-center gap-3 px-4 pt-4 pb-2">
+        <div className="flex items-center gap-3 px-4 pt-3 pb-2">
           <Button
             variant="ghost"
             size="icon"

@@ -141,6 +141,13 @@ async function attemptOpenUrl(
       const isCustomScheme =
         !url.startsWith("http") && !url.startsWith("intent://");
       if (isCustomScheme) {
+        const os = detectMobileOs();
+        if (os === "ios") {
+          // iOS Safari/WebView 对 iframe 拉起自定义 scheme 的拦截更严格，
+          // 使用 location.href 触发成功率更高。
+          window.location.href = url;
+          return;
+        }
         try {
           const iframe = document.createElement("iframe");
           iframe.style.display = "none";

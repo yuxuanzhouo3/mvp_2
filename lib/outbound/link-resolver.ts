@@ -249,25 +249,30 @@ function resolvePrimary(provider: ProviderDefinition, ctx: LinkContext): Outboun
 
 function resolveAppSchemes(provider: ProviderDefinition, ctx: LinkContext): OutboundLink[] {
   const links: OutboundLink[] = [];
-  if (provider.iosScheme) {
-    const url = provider.iosScheme(ctx);
+  const iosUrl = provider.iosScheme ? provider.iosScheme(ctx) : null;
+  const androidUrl = provider.androidScheme ? provider.androidScheme(ctx) : null;
+  const hasSharedScheme = Boolean(iosUrl && androidUrl && iosUrl === androidUrl);
+
+  if (iosUrl) {
     links.push({
-      type: url.toLowerCase().startsWith("intent://") ? "intent" : "app",
-      url,
-      label: "iOS",
+      type: iosUrl.toLowerCase().startsWith("intent://") ? "intent" : "app",
+      url: iosUrl,
+      label: hasSharedScheme ? undefined : "iOS",
     });
   }
-  if (provider.androidScheme) {
-    const url = provider.androidScheme(ctx);
+  if (androidUrl) {
     links.push({
-      type: url.toLowerCase().startsWith("intent://") ? "intent" : "app",
-      url,
+      type: androidUrl.toLowerCase().startsWith("intent://") ? "intent" : "app",
+      url: androidUrl,
       label: "Android",
     });
   }
 
-  // Android 兜底：若平台有 packageId 但未提供 androidScheme，生成可直接唤起已安装 App 的 intent
-  if (provider.androidPackageId && !provider.androidScheme) {
+  // Android 兜底：若平台没有 intent 深链（缺失或仅有 app scheme），补一个 package intent。
+  if (
+    provider.androidPackageId &&
+    (!androidUrl || !androidUrl.toLowerCase().startsWith("intent://"))
+  ) {
     const web = provider.webLink(ctx);
     links.push({
       type: "intent",

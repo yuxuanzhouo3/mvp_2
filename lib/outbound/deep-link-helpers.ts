@@ -49,8 +49,10 @@ export function detectMobileOs(): MobileOs {
  * 获取可尝试打开的 App 链接列表（按优先级排序）
  * 包含 app scheme、universal_link、intent URL
  *
- * iOS: 排除 intent:// 链接，universal_link 优先
- * Android: intent > app > universal_link
+ * iOS: 排除 intent:// 链接，app 优先于 universal_link（避免先跳网页导致无法继续唤起）
+ * Android:
+ * - CN: app > intent > universal_link（优先自定义 scheme，减少内置浏览器对 intent 的拦截）
+ * - INTL: intent > app > universal_link
  */
 export function getAutoTryLinks(
   candidateLink: CandidateLink,
@@ -126,10 +128,23 @@ export function getAutoTryLinks(
     }
   }
 
-  // Android 排序：intent > app > universal_link
+  // Android 排序：
+  // - CN：app > intent > universal_link
+  // - INTL：intent > app > universal_link
   if (os === "android") {
+    const isCnRegion = String(candidateLink.metadata?.region || "").toUpperCase() === "CN";
     unique.sort((a, b) => {
-      const priority = { intent: 0, app: 1, universal_link: 2 } as Record<
+      const priority = isCnRegion
+        ? ({ app: 0, intent: 1, universal_link: 2 } as Record<string, number>)
+        : ({ intent: 0, app: 1, universal_link: 2 } as Record<string, number>);
+      return (priority[a.type] ?? 3) - (priority[b.type] ?? 3);
+    });
+  }
+
+  // iOS 排序：app > universal_link
+  if (os === "ios") {
+    unique.sort((a, b) => {
+      const priority = { app: 0, universal_link: 1, intent: 2 } as Record<
         string,
         number
       >;

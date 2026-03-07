@@ -264,14 +264,46 @@ function isAmapKeywordNoiseToken(
   }
 
   if (locale === "zh") {
-    return /^(附近|周边|搜索|查找|帮我|我想|买|购买|官方|自营|直营|旗舰|专卖|授权|店|门店|商店|以内|范围|公里|千米|米)$/i.test(
-      normalized
-    );
+    if (
+      /^(附近|周边|搜索|查找|帮我|我想|想吃|吃点|想喝|喝点|买|购买|官方|自营|直营|旗舰|专卖|授权|店|门店|商店|以内|范围|公里|千米|米|分钟|小时|今晚|今天|现在)$/i.test(
+        normalized
+      )
+    ) {
+      return true;
+    }
+    return /(离我|近点|更近|最近|分钟|小时|送到|送达|到家|今晚|今天|现在)/.test(normalized);
   }
 
   return /^(near|nearby|around|find|show|store|shop|official|authorized|flagship|within|me)$/i.test(
     normalized
   );
+}
+
+function sanitizeChineseIntentFoodTerm(term: string): string {
+  return term
+    .trim()
+    .replace(
+      /(附近|周边|离我|离这|离这儿|离这里|近点|更近|最近|分钟|小时|送到|送达|到家|以内|范围|左右|能|可以).*/g,
+      ""
+    )
+    .replace(/^(来点|来份|给我|帮我|想吃|吃点|想喝|喝点|吃|喝)/g, "")
+    .trim();
+}
+
+function extractChineseIntentKeywords(message: string): string[] {
+  const intentMatches = Array.from(
+    message.matchAll(/(?:想吃|吃点|吃|想喝|喝点|喝)\s*([\u3400-\u9fff]{2,12})/g)
+  )
+    .map((match) => sanitizeChineseIntentFoodTerm(match[1] || ""))
+    .filter((term) => term.length >= 2 && term.length <= 8);
+
+  const directFoodMatches = Array.from(
+    message.matchAll(
+      /(麻辣烫|麻辣香锅|螺蛳粉|串串香|火锅|烧烤|奶茶|咖啡|汉堡|披萨|炸鸡|拉面|米线|冒菜|烤鱼|寿司|酸菜鱼|盖饭)/g
+    )
+  ).map((match) => match[1]);
+
+  return Array.from(new Set([...intentMatches, ...directFoodMatches]));
 }
 
 function buildAmapKeywordTerms(
@@ -362,6 +394,23 @@ function buildAmapSearchProfile(
     preferOfficialStore: isOfficialStoreIntent(message),
     requireBicycleStore: isBicycleStoreIntent(message),
   };
+}
+
+function shouldRetryAmapWithoutKeywords(
+  message: string,
+  locale: "zh" | "en",
+  category: string | undefined,
+  profile: AmapSearchProfile
+): boolean {
+  if (!profile.keywords || profile.strictCarWash || category !== "food") {
+    return false;
+  }
+
+  if (locale === "zh") {
+    return /(想吃|吃点|今晚|今天|宵夜|夜宵|外卖|送到|送达|分钟|半小时)/.test(message);
+  }
+
+  return /\b(hungry|want to eat|takeout|delivery|deliverable|within\s+\d+\s*minutes?)\b/i.test(message);
 }
 
 const CAR_WASH_POSITIVE_EN =
@@ -734,16 +783,17 @@ function tokenizeForRanking(message: string): string[] {
 
   const cjkTokens = Array.from(
     message.matchAll(
-      /(自行车|单车|骑行|山地车|公路车|洗车|咖啡|奶茶|火锅|烧烤|官方|自营|直营|旗舰|专卖|授权|电脑|手机|数码|家电|商场|超市|健身|酒店|景点)/g
+      /(自行车|单车|骑行|山地车|公路车|洗车|麻辣烫|麻辣香锅|螺蛳粉|串串香|咖啡|奶茶|火锅|烧烤|汉堡|披萨|炸鸡|拉面|米线|冒菜|烤鱼|寿司|官方|自营|直营|旗舰|专卖|授权|电脑|手机|数码|家电|商场|超市|健身|酒店|景点)/g
     )
   ).map((match) => match[1]);
+  const intentTokens = extractChineseIntentKeywords(message);
 
   const enSignals: string[] = [];
   if (/\b(bicycle|bike|cycling)\b/i.test(message)) enSignals.push("bicycle");
   if (/\b(official|authorized|flagship|self[-\s]?operated)\b/i.test(message)) enSignals.push("official");
   if (/\b(car wash|detailing)\b/i.test(message)) enSignals.push("car wash");
 
-  const merged = [...normalized, ...cjkTokens, ...enSignals]
+  const merged = [...normalized, ...cjkTokens, ...intentTokens, ...enSignals]
     .map((token) => token.trim().toLowerCase())
     .filter((token) => token.length >= 2 && !stopWords.has(token));
 
@@ -1153,47 +1203,65 @@ async function fetchNearbyStoresFromAmap(
   const offset = Math.max(5, Math.min(20, limit));
   const profile = buildAmapSearchProfile(params.message, category, params.locale);
   const types = profile.types;
-  const url =
-    `${AMAP_PLACE_AROUND_ENDPOINT}?key=${encodeURIComponent(key)}` +
-    `&location=${encodeURIComponent(`${params.lng},${params.lat}`)}` +
-    `&types=${encodeURIComponent(types)}` +
-    (profile.keywords ? `&keywords=${encodeURIComponent(profile.keywords)}` : "") +
-    `&radius=${encodeURIComponent(String(radiusMeters))}` +
-    `&sortrule=distance&offset=${encodeURIComponent(String(offset))}` +
-    "&page=1&extensions=all&output=JSON";
+  const fetchAmapPois = async (keywords?: string): Promise<AmapPoi[] | null> => {
+    const url =
+      `${AMAP_PLACE_AROUND_ENDPOINT}?key=${encodeURIComponent(key)}` +
+      `&location=${encodeURIComponent(`${params.lng},${params.lat}`)}` +
+      `&types=${encodeURIComponent(types)}` +
+      (keywords ? `&keywords=${encodeURIComponent(keywords)}` : "") +
+      `&radius=${encodeURIComponent(String(radiusMeters))}` +
+      `&sortrule=distance&offset=${encodeURIComponent(String(offset))}` +
+      "&page=1&extensions=all&output=JSON";
 
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      cache: "no-store",
-      signal: AbortSignal.timeout(AMAP_PLACE_TIMEOUT_MS),
-    });
-  } catch (error) {
-    console.warn("[NearbyStoreSearch] Amap nearby request failed:", error);
-    return null;
-  }
-
-  if (!response.ok) {
-    console.warn("[NearbyStoreSearch] Amap nearby responded with status:", response.status);
-    return null;
-  }
-
-  let data: AmapPlaceResponse;
-  try {
-    data = (await response.json()) as AmapPlaceResponse;
-  } catch (error) {
-    console.warn("[NearbyStoreSearch] Failed to parse Amap nearby JSON:", error);
-    return null;
-  }
-
-  if (data.status !== "1") {
-    if (data.info) {
-      console.warn("[NearbyStoreSearch] Amap nearby returned error:", data.info);
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        cache: "no-store",
+        signal: AbortSignal.timeout(AMAP_PLACE_TIMEOUT_MS),
+      });
+    } catch (error) {
+      console.warn("[NearbyStoreSearch] Amap nearby request failed:", error);
+      return null;
     }
+
+    if (!response.ok) {
+      console.warn("[NearbyStoreSearch] Amap nearby responded with status:", response.status);
+      return null;
+    }
+
+    let data: AmapPlaceResponse;
+    try {
+      data = (await response.json()) as AmapPlaceResponse;
+    } catch (error) {
+      console.warn("[NearbyStoreSearch] Failed to parse Amap nearby JSON:", error);
+      return null;
+    }
+
+    if (data.status !== "1") {
+      if (data.info) {
+        console.warn("[NearbyStoreSearch] Amap nearby returned error:", data.info);
+      }
+      return null;
+    }
+
+    return Array.isArray(data.pois) ? data.pois : [];
+  };
+
+  let pois = await fetchAmapPois(profile.keywords);
+  if (!pois) {
     return null;
   }
 
-  const pois = Array.isArray(data.pois) ? data.pois : [];
+  if (
+    pois.length === 0 &&
+    shouldRetryAmapWithoutKeywords(params.message, params.locale, category, profile)
+  ) {
+    const fallbackPois = await fetchAmapPois(undefined);
+    if (fallbackPois && fallbackPois.length > 0) {
+      pois = fallbackPois;
+    }
+  }
+
   if (pois.length === 0) {
     return {
       candidates: [],

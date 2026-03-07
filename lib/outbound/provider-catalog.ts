@@ -392,8 +392,7 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       },
       androidScheme: ({ query, title }) => {
         const keyword = resolveSearchKeyword({ query, title });
-        const web = taptapSearchUrl(keyword);
-        return taptapAndroidIntentSearchUrl(keyword, web);
+        return `taptap://taptap.cn/search?keyword=${encodeURIComponent(keyword)}`;
       },
     },
     "小红书": {
