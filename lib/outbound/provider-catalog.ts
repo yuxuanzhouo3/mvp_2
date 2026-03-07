@@ -233,10 +233,6 @@ function taptapSearchUrl(keyword: string): string {
   return `https://www.taptap.cn/search/${encodeURIComponent(keyword)}`;
 }
 
-function taptapAndroidIntentSearchUrl(keyword: string, fallbackWebUrl: string): string {
-  return `intent://www.taptap.cn/search/${encodeURIComponent(keyword)}#Intent;scheme=https;package=com.taptap;S.browser_fallback_url=${encodeURIComponent(fallbackWebUrl)};end`;
-}
-
 export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
   return {
     "Google Maps": {
