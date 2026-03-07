@@ -48,6 +48,7 @@ import { isChinaDeployment } from "@/lib/config/deployment.config";
 import { dedupeRecommendations } from "@/lib/recommendation/dedupe";
 import { generateFallbackCandidates } from "@/lib/recommendation/fallback-generator";
 import { getUserFeedbackHistory, extractNegativeFeedbackSamples } from "@/lib/services/feedback-service";
+import { searchNearbyStores } from "@/lib/assistant/nearby-store-search";
 import { mapSearchPlatformToProvider } from "@/lib/outbound/provider-mapping";
 import {
   normalizeCnMobileCategoryPlatform,
@@ -111,6 +112,18 @@ function prioritizeEntertainmentCandidates<T extends { title?: string; searchQue
   });
 
   return [...picks, ...rest];
+}
+
+function shouldEnsureCnEntertainmentTypes(params: {
+  category: RecommendationCategory;
+  locale: "zh" | "en";
+  client: "app" | "web";
+  isChinaDeploymentEnabled: boolean;
+}): boolean {
+  const { category, locale, client, isChinaDeploymentEnabled } = params;
+  if (!isChinaDeploymentEnabled) return false;
+  if (category !== "entertainment" || locale !== "zh") return false;
+  return client === "web" || client === "app";
 }
 
 function normalizeIntlMobileEntertainmentType(
@@ -1232,8 +1245,7 @@ function selectWeightedPlatformForCategory(
               ? ([
                   { platform: "大众点评", weight: 0.16 },
                   { platform: "小红书美食", weight: 0.14 },
-                  { platform: "美团", weight: 0.12 },
-                  { platform: "美团外卖", weight: 0.12 },
+                  { platform: "美团外卖", weight: 0.24 },
                   { platform: "京东秒送", weight: 0.12 },
                   { platform: "淘宝闪购", weight: 0.12 },
                   { platform: "高德地图美食", weight: 0.1 },
@@ -1726,7 +1738,12 @@ export async function GET(request: NextRequest, { params }: { params: { category
           isAndroid,
         });
 
-        const shouldEnsureEntertainmentTypes = category === "entertainment" && locale === "zh" && client === "web" && isChinaDeployment();
+        const shouldEnsureEntertainmentTypes = shouldEnsureCnEntertainmentTypes({
+          category,
+          locale,
+          client,
+          isChinaDeploymentEnabled: isChinaDeployment(),
+        });
         const shouldEnsureFitnessTypes = category === "fitness" && isCnWeb;
         const fitnessRequiredTypes = category === "fitness" ? getFitnessRequiredTypes(isCnWeb) : null;
         let processedRecommendations = aiRecommendations;
@@ -1837,6 +1854,25 @@ export async function GET(request: NextRequest, { params }: { params: { category
 
         let webFoodReviewCount = 0;
 
+        let amapFitnessCandidates: any[] | null = null;
+        if (category === "fitness" && geo) {
+          try {
+            const seed = await searchNearbyStores({
+              lat: geo.lat,
+              lng: geo.lng,
+              locale,
+              region: isChinaDeployment() ? "CN" : "INTL",
+              message: "健身房",
+              limit: 10
+            });
+            if (seed?.candidates?.length > 0) {
+              amapFitnessCandidates = seed.candidates;
+            }
+          } catch (e) {
+            console.warn("[Amap Fitness] Failed to fetch real nearby gyms:", e);
+          }
+        }
+
         const finalRecommendations = processedRecommendations.map((rec, index) => {
           let enhancedRec = rec;
 
@@ -1851,6 +1887,17 @@ export async function GET(request: NextRequest, { params }: { params: { category
                 fitnessType
               );
               enhancedRec = { ...enhancedRec, searchQuery: adjustedQuery };
+            }
+
+            if ((enhancedRec as any).fitnessType === "nearby_place" && amapFitnessCandidates && amapFitnessCandidates.length > 0) {
+              const realGym = amapFitnessCandidates[index % amapFitnessCandidates.length];
+              enhancedRec = {
+                ...enhancedRec,
+                title: realGym.name,
+                searchQuery: realGym.name,
+                description: realGym.distance ? `[距离 ${realGym.distance}] ${realGym.description || enhancedRec.description}` : (realGym.description || enhancedRec.description),
+                tags: realGym.address ? [realGym.address, ...(Array.isArray(enhancedRec.tags) ? enhancedRec.tags : [])].slice(0, 3) : enhancedRec.tags
+              };
             }
           }
 
@@ -1937,7 +1984,7 @@ export async function GET(request: NextRequest, { params }: { params: { category
               } else if (fitnessType === "equipment") {
                 platform = "什么值得买";
               } else if (fitnessType === "tutorial") {
-                platform = "B站健身";
+                platform = "小红书";
               } else if (fitnessType === "nearby_place") {
                 platform = locale === "zh" ? (index % 2 === 0 ? "美团" : "高德地图健身") : "Google Maps";
               } else {
@@ -1955,7 +2002,7 @@ export async function GET(request: NextRequest, { params }: { params: { category
               } else if (client === "web" && fitnessType === "equipment") {
                 platform = "什么值得买";
               } else if (fitnessType === "tutorial") {
-                platform = locale === "zh" ? "B站健身" : "YouTube Fitness";
+                platform = locale === "zh" ? "小红书" : "YouTube Fitness";
               } else if (fitnessType === "nearby_place") {
                 platform = locale === "zh" ? (index % 2 === 0 ? "美团" : "高德地图健身") : "Google Maps";
               } else {

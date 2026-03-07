@@ -977,4 +977,64 @@ describe("processChat INTL nearby flow", () => {
     expect(response.actions?.some((action) => action.providerId === "Google Maps")).toBe(true);
     expect(callAI).toHaveBeenCalledTimes(1);
   });
+
+  it("inherits nearby context from recent history for follow-up refinement messages", async () => {
+    vi.mocked(searchNearbyStores).mockResolvedValueOnce({
+      source: "database",
+      radiusKm: 10,
+      matchedCount: 1,
+      category: "shopping",
+      candidates: [
+        {
+          id: "amap_followup_1",
+          name: "捷安特官方旗舰店",
+          description: "1.1km away, opening hours available",
+          category: "shopping",
+          distance: "1.1km",
+          rating: 4.7,
+          platform: "高德地图",
+          searchQuery: "捷安特官方旗舰店",
+        },
+      ],
+    });
+
+    vi.mocked(callAI).mockResolvedValueOnce({
+      model: "mock",
+      content: JSON.stringify({
+        type: "results",
+        message: "好的，我帮你筛选评分更高的结果",
+        intent: "search_nearby",
+        candidates: [
+          {
+            id: "tmp_followup",
+            name: "其他店铺",
+            description: "popular",
+            category: "shopping",
+            distance: "1.5km",
+            platform: "Dianping",
+            searchQuery: "其他店铺",
+          },
+        ],
+      }),
+    });
+
+    const response = await processChat(
+      {
+        message: "只看评分4.5以上的",
+        locale: "zh",
+        region: "CN",
+        location: { lat: 23.476458472108877, lng: 110.45730570700682 },
+        history: [
+          { role: "user", content: "帮我找附近10km自行车官方自营店" },
+          { role: "assistant", content: "好的，我先帮你找附近门店" },
+        ],
+      },
+      "test-user"
+    );
+
+    expect(searchNearbyStores).toHaveBeenCalledTimes(1);
+    expect(response.intent).toBe("search_nearby");
+    expect(response.type).toBe("results");
+    expect(response.candidates?.[0]?.name).toBe("捷安特官方旗舰店");
+  });
 });

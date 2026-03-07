@@ -208,6 +208,88 @@ function getAmapTypeCodes(category?: string): string {
   }
 }
 
+const BICYCLE_INTENT_ZH = /(自行车|单车|骑行|山地车|公路车|骑行装备)/;
+const BICYCLE_INTENT_EN = /\b(bicycle|bike|cycling|cycle shop|bike shop)\b/i;
+const OFFICIAL_STORE_INTENT_ZH = /(官方|自营|直营|旗舰|专卖|授权)/;
+const OFFICIAL_STORE_INTENT_EN =
+  /\b(official|self[-\s]?operated|authorized|flagship|brand store|direct store)\b/i;
+
+type AmapSearchProfile = {
+  types: string;
+  keywords?: string;
+  strictCarWash: boolean;
+  preferOfficialStore: boolean;
+  requireBicycleStore: boolean;
+};
+
+function isBicycleStoreIntent(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return BICYCLE_INTENT_ZH.test(message) || BICYCLE_INTENT_EN.test(normalized);
+}
+
+function isOfficialStoreIntent(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return OFFICIAL_STORE_INTENT_ZH.test(message) || OFFICIAL_STORE_INTENT_EN.test(normalized);
+}
+
+function hasBicycleSignal(text: string): boolean {
+  const normalized = text.toLowerCase();
+  return BICYCLE_INTENT_ZH.test(text) || BICYCLE_INTENT_EN.test(normalized);
+}
+
+function hasOfficialStoreSignal(text: string): boolean {
+  const normalized = text.toLowerCase();
+  return OFFICIAL_STORE_INTENT_ZH.test(text) || OFFICIAL_STORE_INTENT_EN.test(normalized);
+}
+
+function buildAmapKeywordTerms(
+  message: string,
+  locale: "zh" | "en",
+  category: string | undefined
+): string[] {
+  const terms: string[] = [];
+
+  if (isBicycleStoreIntent(message)) {
+    terms.push(locale === "zh" ? "自行车" : "bicycle");
+  }
+
+  if (isOfficialStoreIntent(message)) {
+    if (locale === "zh") {
+      terms.push("官方", "自营");
+    } else {
+      terms.push("official", "authorized");
+    }
+  }
+
+  if (category === "shopping") {
+    const shoppingHints = locale === "zh"
+      ? ["店", "专卖店"]
+      : ["store", "shop"];
+    terms.push(...shoppingHints);
+  }
+
+  const rankingTokens = tokenizeForRanking(message).slice(0, 6);
+  terms.push(...rankingTokens);
+
+  const normalized = terms
+    .map((term) => term.trim())
+    .filter((term) => term.length >= 2);
+
+  return Array.from(new Set(normalized)).slice(0, 6);
+}
+
+function buildCandidateSearchableText(candidate: CandidateResult): string {
+  return [
+    candidate.name,
+    candidate.description,
+    candidate.searchQuery,
+    candidate.address || "",
+    ...(candidate.tags || []),
+  ]
+    .join(" ")
+    .toLowerCase();
+}
+
 function isCarWashIntent(message: string): boolean {
   const normalized = message.toLowerCase();
   const enPattern =
@@ -221,19 +303,25 @@ function buildAmapSearchProfile(
   message: string,
   category: string | undefined,
   locale: "zh" | "en"
-): { types: string; keywords?: string; strictCarWash: boolean } {
+): AmapSearchProfile {
   if (isCarWashIntent(message)) {
     return {
       // Auto service + car wash related subtypes (use with keyword to avoid broad noise).
       types: "010500|010501|010502|010503|010504|010505",
       keywords: locale === "zh" ? "洗车" : "car wash",
       strictCarWash: true,
+      preferOfficialStore: false,
+      requireBicycleStore: false,
     };
   }
 
+  const keywordTerms = buildAmapKeywordTerms(message, locale, category);
   return {
     types: getAmapTypeCodes(category),
+    keywords: keywordTerms.length > 0 ? keywordTerms.join(" ") : undefined,
     strictCarWash: false,
+    preferOfficialStore: isOfficialStoreIntent(message),
+    requireBicycleStore: isBicycleStoreIntent(message),
   };
 }
 
@@ -462,7 +550,7 @@ function inferCategoryFromMessage(message: string, locale: "zh" | "en"): string 
     { pattern: /(吃|餐|外卖|美食|咖啡|奶茶|火锅|烧烤)/, category: "food" },
     { pattern: /(健身|运动|瑜伽|游泳|羽毛球|跑步|gym|fitness)/, category: "fitness" },
     { pattern: /(酒店|景点|出行|旅行|机票|火车)/, category: "travel" },
-    { pattern: /(商场|超市|电脑|手机|数码|家电|购物)/, category: "shopping" },
+    { pattern: /(商场|超市|电脑|手机|数码|家电|购物|买|购买|自行车|单车|骑行|山地车|公路车|专卖店|旗舰店)/, category: "shopping" },
     { pattern: /(电影院|剧本杀|KTV|娱乐|酒吧)/, category: "entertainment" },
   ];
 
@@ -590,6 +678,7 @@ function tokenizeForRanking(message: string): string[] {
     "a", "an", "the", "for", "with", "near", "nearby", "around", "find", "show",
     "please", "me", "to", "in", "on", "of", "my", "within", "公里", "附近", "周边",
     "找", "一下", "帮我", "我想", "restaurant", "restaurants", "shop", "store",
+    "官方", "自营", "直营", "旗舰", "专卖", "授权", "店",
   ]);
 
   const normalized = message
@@ -599,7 +688,22 @@ function tokenizeForRanking(message: string): string[] {
     .map((token) => token.trim())
     .filter((token) => token.length >= 2);
 
-  return normalized.filter((token) => !stopWords.has(token)).slice(0, 8);
+  const cjkTokens = Array.from(
+    message.matchAll(
+      /(自行车|单车|骑行|山地车|公路车|洗车|咖啡|奶茶|火锅|烧烤|官方|自营|直营|旗舰|专卖|授权|电脑|手机|数码|家电|商场|超市|健身|酒店|景点)/g
+    )
+  ).map((match) => match[1]);
+
+  const enSignals: string[] = [];
+  if (/\b(bicycle|bike|cycling)\b/i.test(message)) enSignals.push("bicycle");
+  if (/\b(official|authorized|flagship|self[-\s]?operated)\b/i.test(message)) enSignals.push("official");
+  if (/\b(car wash|detailing)\b/i.test(message)) enSignals.push("car wash");
+
+  const merged = [...normalized, ...cjkTokens, ...enSignals]
+    .map((token) => token.trim().toLowerCase())
+    .filter((token) => token.length >= 2 && !stopWords.has(token));
+
+  return Array.from(new Set(merged)).slice(0, 10);
 }
 
 function scoreOverpassCandidate(
@@ -717,7 +821,7 @@ function buildKeywordRegexFromMessage(
   const tokens = tokenizeForRanking(message).filter((token) => token.length >= 2).slice(0, 8);
   const categoryHints =
     category === "shopping"
-      ? ["apple", "mac", "computer", "laptop", "pc", "notebook", "electronics", "digital", "苹果", "电脑", "数码", "笔记本"]
+      ? ["apple", "mac", "computer", "laptop", "pc", "notebook", "electronics", "digital", "苹果", "电脑", "数码", "笔记本", "自行车", "单车", "骑行", "bike", "bicycle"]
       : [];
 
   const merged = [...tokens, ...categoryHints]
@@ -1114,8 +1218,27 @@ async function fetchNearbyStoresFromAmap(
       searchQuery: searchQuery || name,
     };
 
+    const searchableText = [
+      candidate.name,
+      candidate.description,
+      poi.type || "",
+      candidate.address || "",
+      ...(candidate.tags || []),
+    ].join(" ");
+    if (profile.requireBicycleStore && !hasBicycleSignal(searchableText)) {
+      continue;
+    }
+
+    let rankingScore = scoreOverpassCandidate(candidate, distanceKm, messageTokens);
+    if (profile.requireBicycleStore && hasBicycleSignal(searchableText)) {
+      rankingScore += 2.2;
+    }
+    if (profile.preferOfficialStore && hasOfficialStoreSignal(searchableText)) {
+      rankingScore += 2.4;
+    }
+
     ranked.push({
-      score: scoreOverpassCandidate(candidate, distanceKm, messageTokens),
+      score: rankingScore,
       distanceKm,
       candidate,
       coordinates: coordinates || undefined,
@@ -1184,6 +1307,15 @@ async function fetchNearbyStoresFromAmap(
       });
 
       finalRanked = routeFiltered;
+    }
+  }
+
+  if (profile.preferOfficialStore && finalRanked.length > 0) {
+    const officialRanked = finalRanked.filter((item) =>
+      hasOfficialStoreSignal(buildCandidateSearchableText(item.candidate))
+    );
+    if (officialRanked.length > 0) {
+      finalRanked = officialRanked;
     }
   }
 

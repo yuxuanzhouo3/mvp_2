@@ -279,6 +279,8 @@ export interface ChatRequest {
   isMobile?: boolean;
   /** 是否为 Android 端 */
   isAndroid?: boolean;
+  /** 是否使用流式返回 */
+  stream?: boolean;
 }
 
 /**

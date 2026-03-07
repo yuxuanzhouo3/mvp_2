@@ -117,8 +117,17 @@ export function RecommendationCard({
       /(食谱|菜谱|做法|recipe)/i.test(combined);
     if (isRecipe) return locale === "zh" ? "食谱" : "Recipe";
 
-    const isReview = /大众点评/.test(platformText) || /(点评|评价|口碑|评分)/.test(tagText);
+    // 外卖平台：淘宝闪购、京东秒送、美团外卖
+    const isDelivery = /淘宝闪购|京东秒送|美团外卖|DoorDash|Uber Eats|Fantuan|HungryPanda/.test(platformText);
+    if (isDelivery) return locale === "zh" ? "外卖" : "Delivery";
+
+    // 点评平台：小红书、大众点评
+    const isReview = /大众点评|小红书/.test(platformText) || /(点评|评价|口碑|评分)/.test(tagText);
     if (isReview) return locale === "zh" ? "点评" : "Review";
+
+    // 附近餐厅：高德地图
+    const isNearbyRestaurant = /高德地图/.test(platformText);
+    if (isNearbyRestaurant) return locale === "zh" ? "附近餐厅" : "Nearby";
 
     const isRestaurant =
       linkType === "restaurant" ||

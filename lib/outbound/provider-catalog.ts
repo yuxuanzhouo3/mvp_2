@@ -204,6 +204,39 @@ function ctripAndroidIntentFromWebUrl(webUrl: string): string {
   return `intent://wireless/h5?url=${encodeURIComponent(base64Url)}&type=1#Intent;scheme=ctrip;package=ctrip.android.view;S.browser_fallback_url=${encodeURIComponent(webUrl)};end`;
 }
 
+function kugouWebSearchUrl(keyword: string): string {
+  return `https://www.kugou.com/yy/html/search.html#searchType=song&searchKeyWord=${encodeURIComponent(keyword)}`;
+}
+
+function buildKugouSearchPayload(keyword: string): string {
+  return encodeURIComponent(
+    JSON.stringify({
+      cmd: 116,
+      jsonStr: {
+        keyword,
+        searchKeyWord: keyword,
+        keyWord: keyword,
+      },
+    })
+  );
+}
+
+function kugouSchemeSearchUrl(keyword: string): string {
+  return `kugouurl://start.music/?${buildKugouSearchPayload(keyword)}`;
+}
+
+function kugouAndroidIntentSearchUrl(keyword: string, fallbackWebUrl: string): string {
+  return `intent://start.music/?${buildKugouSearchPayload(keyword)}#Intent;scheme=kugouurl;package=com.kugou.android;S.browser_fallback_url=${encodeURIComponent(fallbackWebUrl)};end`;
+}
+
+function taptapSearchUrl(keyword: string): string {
+  return `https://www.taptap.cn/search/${encodeURIComponent(keyword)}`;
+}
+
+function taptapAndroidIntentSearchUrl(keyword: string, fallbackWebUrl: string): string {
+  return `intent://www.taptap.cn/search/${encodeURIComponent(keyword)}#Intent;scheme=https;package=com.taptap;S.browser_fallback_url=${encodeURIComponent(fallbackWebUrl)};end`;
+}
+
 export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
   return {
     "Google Maps": {
@@ -311,12 +344,18 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       domains: ["kugou.com"],
       hasApp: true,
       androidPackageId: "com.kugou.android",
-      webLink: ({ query }) =>
-        `https://www.kugou.com/yy/html/search.html#searchType=song&searchKeyWord=${encodeURIComponent(query)}`,
-      iosScheme: ({ query }) => `kugouURL://kg/search?keyword=${encodeURIComponent(query)}`,
-      androidScheme: ({ query }) => {
-        const web = `https://www.kugou.com/yy/html/search.html#searchType=song&searchKeyWord=${encodeURIComponent(query)}`;
-        return `intent://kg/search?keyword=${encodeURIComponent(query)}#Intent;scheme=kugouURL;package=com.kugou.android;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      webLink: ({ query, title }) => {
+        const keyword = resolveSearchKeyword({ query, title });
+        return kugouWebSearchUrl(keyword);
+      },
+      iosScheme: ({ query, title }) => {
+        const keyword = resolveSearchKeyword({ query, title });
+        return kugouSchemeSearchUrl(keyword);
+      },
+      androidScheme: ({ query, title }) => {
+        const keyword = resolveSearchKeyword({ query, title });
+        const web = kugouWebSearchUrl(keyword);
+        return kugouAndroidIntentSearchUrl(keyword, web);
       },
     },
     "网易云音乐": {
@@ -338,13 +377,23 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       domains: ["taptap.cn", "taptap.com"],
       hasApp: true,
       androidPackageId: "com.taptap",
-      // 使用 universal link 可靠地打开 TapTap 搜索页（已安装则 App 拦截，未安装走浏览器）
-      universalLink: ({ query }) => `https://www.taptap.cn/search/${encodeURIComponent(query)}`,
-      webLink: ({ query }) => `https://www.taptap.cn/search/${encodeURIComponent(query)}`,
-      iosScheme: ({ query }) => `taptap://taptap.cn/search?keyword=${encodeURIComponent(query)}`,
-      androidScheme: ({ query }) => {
-        const web = `https://www.taptap.cn/search/${encodeURIComponent(query)}`;
-        return `intent://taptap.cn/search?keyword=${encodeURIComponent(query)}#Intent;scheme=taptap;package=com.taptap;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      // Keep /search/{keyword}: this path preserves keyword in TapTap search SSR and app-link flow.
+      universalLink: ({ query, title }) => {
+        const keyword = resolveSearchKeyword({ query, title });
+        return taptapSearchUrl(keyword);
+      },
+      webLink: ({ query, title }) => {
+        const keyword = resolveSearchKeyword({ query, title });
+        return taptapSearchUrl(keyword);
+      },
+      iosScheme: ({ query, title }) => {
+        const keyword = resolveSearchKeyword({ query, title });
+        return `taptap://taptap.cn/search?keyword=${encodeURIComponent(keyword)}`;
+      },
+      androidScheme: ({ query, title }) => {
+        const keyword = resolveSearchKeyword({ query, title });
+        const web = taptapSearchUrl(keyword);
+        return taptapAndroidIntentSearchUrl(keyword, web);
       },
     },
     "小红书": {
@@ -357,8 +406,10 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
         `https://www.xiaohongshu.com/search_result?keyword=${encodeURIComponent(query)}&type=note`,
       iosScheme: ({ query }) =>
         `xhsdiscover://search/result?keyword=${encodeURIComponent(query)}&target_search=notes&source=deeplink`,
-      androidScheme: ({ query }) =>
-        `xhsdiscover://search/result?keyword=${encodeURIComponent(query)}&target_search=notes&source=deeplink`,
+      androidScheme: ({ query }) => {
+        const web = `https://www.xiaohongshu.com/search_result?keyword=${encodeURIComponent(query)}&type=note`;
+        return `intent://search/result?keyword=${encodeURIComponent(query)}&target_search=notes&source=deeplink#Intent;scheme=xhsdiscover;package=com.xingin.xhs;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      },
     },
     Steam: {
       id: "Steam",
@@ -555,13 +606,19 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       domains: ["vip.com"],
       hasApp: true,
       androidPackageId: "com.achievo.vipshop",
-      webLink: ({ query }) =>
-        `https://category.vip.com/suggest.php?keyword=${encodeURIComponent(query)}`,
+      webLink: ({ query, title }) => {
+        const keyword = resolveSearchKeyword({ query, title });
+        return `https://category.vip.com/suggest.php?keyword=${encodeURIComponent(keyword)}`;
+      },
       // 唯品会深链：使用 search 路径进行搜索而非 goHome
-      iosScheme: ({ query }) => `vipshop://search?keyword=${encodeURIComponent(query)}`,
-      androidScheme: ({ query }) => {
-        const web = `https://category.vip.com/suggest.php?keyword=${encodeURIComponent(query)}`;
-        return `intent://search?keyword=${encodeURIComponent(query)}#Intent;scheme=vipshop;package=com.achievo.vipshop;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      iosScheme: ({ query, title }) => {
+        const keyword = resolveSearchKeyword({ query, title });
+        return `vipshop://search?keyword=${encodeURIComponent(keyword)}`;
+      },
+      androidScheme: ({ query, title }) => {
+        const keyword = resolveSearchKeyword({ query, title });
+        const web = `https://category.vip.com/suggest.php?keyword=${encodeURIComponent(keyword)}`;
+        return `intent://search?keyword=${encodeURIComponent(keyword)}#Intent;scheme=vipshop;package=com.achievo.vipshop;S.browser_fallback_url=${encodeURIComponent(web)};end`;
       },
     },
     "1688": {
@@ -1253,10 +1310,10 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       androidPackageId: "com.qunar.atom",
       webLink: ({ query }) => `https://www.qunar.com/search?searchWord=${encodeURIComponent(query)}`,
       iosScheme: ({ query }) =>
-        `qunarphone://hotel/hotelList?keyword=${encodeURIComponent(query)}&from=deeplink`,
+        `qunarphone://search?searchWord=${encodeURIComponent(query)}&from=deeplink`,
       androidScheme: ({ query }) => {
         const web = `https://www.qunar.com/search?searchWord=${encodeURIComponent(query)}`;
-        return `intent://hotel/hotelList?keyword=${encodeURIComponent(query)}#Intent;scheme=qunarphone;package=com.qunar.atom;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+        return `intent://search?searchWord=${encodeURIComponent(query)}#Intent;scheme=qunarphone;package=com.qunar.atom;S.browser_fallback_url=${encodeURIComponent(web)};end`;
       },
     },
     "马蜂窝": {
@@ -1264,13 +1321,13 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       displayName: { zh: "马蜂窝", en: "Mafengwo" },
       domains: ["mafengwo.cn"],
       hasApp: true,
-      androidPackageId: "com.mfwsc.mafengwo",
+      androidPackageId: "com.mfw.roadbook",
       webLink: ({ query }) => `https://www.mafengwo.cn/search/q.php?t=sales&q=${encodeURIComponent(query)}`,
       iosScheme: ({ query }) =>
         `mafengwo://search?keyword=${encodeURIComponent(query)}&from=deeplink`,
       androidScheme: ({ query }) => {
         const web = `https://www.mafengwo.cn/search/q.php?t=sales&q=${encodeURIComponent(query)}`;
-        return `intent://search?keyword=${encodeURIComponent(query)}#Intent;scheme=mafengwo;package=com.mfwsc.mafengwo;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+        return `intent://search?keyword=${encodeURIComponent(query)}#Intent;scheme=mafengwo;package=com.mfw.roadbook;S.browser_fallback_url=${encodeURIComponent(web)};end`;
       },
     },
     "穷游": {
@@ -1302,7 +1359,7 @@ export function getWeightedProvidersForCategory(
           return [
             { provider: "小红书", weight: 0.18, tier: "mainstream" },
             { provider: "大众点评", weight: 0.18, tier: "mainstream" },
-            { provider: "美团", weight: 0.16, tier: "mainstream" },
+            { provider: "美团外卖", weight: 0.16, tier: "mainstream" },
             { provider: "淘宝闪购", weight: 0.12, tier: "mainstream" },
             { provider: "京东秒送", weight: 0.12, tier: "mainstream" },
             { provider: "高德地图", weight: 0.10, tier: "mainstream" },

@@ -22,7 +22,7 @@ import { buildOutboundHref } from "@/lib/outbound/outbound-url";
 import type { AssistantResponse, ChatRequest, CandidateResult, AssistantAction } from "./types";
 import type { DeploymentRegion } from "@/lib/outbound/provider-catalog";
 
-const DEFAULT_ASSISTANT_HISTORY_LIMIT = 8;
+const DEFAULT_ASSISTANT_HISTORY_LIMIT = 12;
 const DEFAULT_ASSISTANT_MAX_TOKENS = 800;
 const DEFAULT_ASSISTANT_LOCATION_HINT_TIMEOUT_MS = 1200;
 const DEFAULT_ASSISTANT_NEARBY_SEED_TIMEOUT_MS = 2200;
@@ -32,6 +32,49 @@ const DEFAULT_ASSISTANT_NEARBY_PROMPT_WAIT_MS = 500;
 const MAP_PROVIDER_AMAP = "高德地图" as const;
 const MAP_PROVIDER_GOOGLE = "Google Maps" as const;
 type NearbyMapProvider = typeof MAP_PROVIDER_AMAP | typeof MAP_PROVIDER_GOOGLE;
+type ChatProgressStage =
+  | "intent"
+  | "context"
+  | "nearby_seed"
+  | "calling_ai"
+  | "postprocess"
+  | "complete";
+
+export type ChatProgressUpdate = {
+  stage: ChatProgressStage;
+  message: string;
+  thinkingStep?: string;
+};
+
+export type ProcessChatOptions = {
+  onProgress?: (update: ChatProgressUpdate) => void;
+};
+
+function reportChatProgress(
+  locale: "zh" | "en",
+  reporter: ProcessChatOptions["onProgress"] | undefined,
+  payload: {
+    stage: ChatProgressStage;
+    zhMessage: string;
+    enMessage: string;
+    zhThinkingStep?: string;
+    enThinkingStep?: string;
+  }
+): void {
+  if (!reporter) {
+    return;
+  }
+
+  try {
+    reporter({
+      stage: payload.stage,
+      message: locale === "zh" ? payload.zhMessage : payload.enMessage,
+      thinkingStep: locale === "zh" ? payload.zhThinkingStep : payload.enThinkingStep,
+    });
+  } catch {
+    // ignore progress reporter failures to avoid affecting main flow
+  }
+}
 
 function parseBoundedIntEnv(
   value: string | undefined,
@@ -164,17 +207,24 @@ async function resolveWithin<T>(
  */
 export async function processChat(
   request: ChatRequest,
-  userId: string
+  userId: string,
+  options?: ProcessChatOptions
 ): Promise<AssistantResponse> {
+  const onProgress = options?.onProgress;
   const { message, history, location, locale, region, isMobile, isAndroid } = request;
   const nearbyIntent = isNearbyIntent(message);
+  const historyNearbyIntent =
+    !nearbyIntent &&
+    isNearbyContinuationMessage(message) &&
+    hasNearbyIntentInHistory(history);
+  const effectiveNearbyIntent = nearbyIntent || historyNearbyIntent;
   const effectiveLocale: "zh" | "en" =
-    region === "INTL" ? "en" : nearbyIntent ? "zh" : locale;
-  const directCarWashNearbyIntent = nearbyIntent && isCarWashNearbyIntent(message);
+    region === "INTL" ? "en" : effectiveNearbyIntent ? "zh" : locale;
+  const directCarWashNearbyIntent = effectiveNearbyIntent && isCarWashNearbyIntent(message);
   const historyCarWashNearbyIntent =
-    nearbyIntent &&
+    effectiveNearbyIntent &&
     !directCarWashNearbyIntent &&
-    isNearbyRefinementMessage(message) &&
+    (historyNearbyIntent || isNearbyRefinementMessage(message)) &&
     hasCarWashNearbyIntentInHistory(history);
   const carWashNearbyIntent = directCarWashNearbyIntent || historyCarWashNearbyIntent;
   const nearbySeedSearchMessage = buildNearbySeedSearchMessage(
@@ -187,7 +237,7 @@ export async function processChat(
   const hasLocation = Boolean(normalizedLocation);
   const targetMapProvider = resolveMapPlatformForContext(region, normalizedLocation);
   const useAmapNearbyFlow =
-    nearbyIntent && targetMapProvider === MAP_PROVIDER_AMAP;
+    effectiveNearbyIntent && targetMapProvider === MAP_PROVIDER_AMAP;
   const historyLimit = getAssistantHistoryLimit();
   const aiMaxTokens = getAssistantMaxTokens();
   const locationHintTimeoutMs = getAssistantLocationHintTimeoutMs();
@@ -196,7 +246,22 @@ export async function processChat(
   const contextWaitMs = getAssistantContextWaitMs();
   const nearbyPromptWaitMs = getAssistantNearbyPromptWaitMs();
 
-  if (!hasLocation && nearbyIntent) {
+  reportChatProgress(effectiveLocale, onProgress, {
+    stage: "intent",
+    zhMessage: "正在识别你的需求意图...",
+    enMessage: "Understanding your request intent...",
+    zhThinkingStep: "解析用户问题并识别核心意图",
+    enThinkingStep: "Parsed the request and identified core intent",
+  });
+
+  if (!hasLocation && effectiveNearbyIntent) {
+    reportChatProgress(effectiveLocale, onProgress, {
+      stage: "complete",
+      zhMessage: "需要先获取位置信息才能继续附近搜索。",
+      enMessage: "Location is required before continuing nearby search.",
+      zhThinkingStep: "缺少定位信息，先引导用户补充位置",
+      enThinkingStep: "Missing location context, asked user to provide location first",
+    });
     return {
       type: "clarify",
       message:
@@ -234,6 +299,14 @@ export async function processChat(
   }
 
   // 1. 加载用户偏好
+  reportChatProgress(effectiveLocale, onProgress, {
+    stage: "context",
+    zhMessage: "正在准备上下文与历史信息...",
+    enMessage: "Preparing context and recent history...",
+    zhThinkingStep: "加载历史上下文与偏好设置",
+    enThinkingStep: "Loaded recent history and preference context",
+  });
+
   const preferencesPromise = getUserPreferences(userId).catch((error) => {
     console.warn("[ChatEngine] Failed to load user preferences:", error);
     return [];
@@ -255,7 +328,7 @@ export async function processChat(
     })
     : Promise.resolve(null);
   const nearbySeedPromise: Promise<NearbySearchResult | null> =
-    normalizedLocation && nearbyIntent
+    normalizedLocation && effectiveNearbyIntent
       ? runWithTimeout(
         () =>
           searchNearbyStores({
@@ -299,7 +372,7 @@ export async function processChat(
     { role: "system", content: systemPrompt },
   ];
 
-  // 添加历史消息（最多保留 10 条）
+  // 添加历史消息（按 historyLimit 截断）
   if (historyLimit > 0 && history && history.length > 0) {
     const recentHistory = history.slice(-historyLimit);
     for (const msg of recentHistory) {
@@ -316,6 +389,16 @@ export async function processChat(
     latestNearbySeed = quickNearbySeed;
   }
 
+  if (effectiveNearbyIntent) {
+    reportChatProgress(effectiveLocale, onProgress, {
+      stage: "nearby_seed",
+      zhMessage: "正在检索附近真实门店数据...",
+      enMessage: "Fetching real nearby place data...",
+      zhThinkingStep: "基于定位预取附近候选门店",
+      enThinkingStep: "Pre-fetched nearby candidates using location context",
+    });
+  }
+
   if (locationHint) {
     messages.push({ role: "system", content: locationHint });
   }
@@ -327,9 +410,23 @@ export async function processChat(
   }
   if (useAmapNearbyFlow && hasLocation) {
     if (!nearbySeed) {
+      reportChatProgress(effectiveLocale, onProgress, {
+        stage: "complete",
+        zhMessage: "当前附近服务不可用，已返回重试建议。",
+        enMessage: "Nearby service is unavailable right now and retry guidance was returned.",
+        zhThinkingStep: "高德附近检索不可用，返回重试引导",
+        enThinkingStep: "Amap nearby lookup unavailable, returned retry guidance",
+      });
       return buildAmapUnavailableNearbyResponse(effectiveLocale);
     }
     if (nearbySeed.candidates.length === 0) {
+      reportChatProgress(effectiveLocale, onProgress, {
+        stage: "complete",
+        zhMessage: "当前半径未找到匹配地点，已返回扩圈建议。",
+        enMessage: "No match in current radius, returned a wider-radius suggestion.",
+        zhThinkingStep: "当前半径无结果，建议扩大搜索范围",
+        enThinkingStep: "No result in current radius, suggested expanding radius",
+      });
       return buildAmapNoResultNearbyResponse(
         effectiveLocale,
         nearbySeed.radiusKm,
@@ -361,6 +458,14 @@ export async function processChat(
   messages.push({ role: "user", content: message });
 
   // 4. 调用 AI
+  reportChatProgress(effectiveLocale, onProgress, {
+    stage: "calling_ai",
+    zhMessage: "正在生成答案...",
+    enMessage: "Generating your answer...",
+    zhThinkingStep: "调用模型生成结构化结果",
+    enThinkingStep: "Invoked model to generate structured output",
+  });
+
   let aiContent: string;
   try {
     const aiResponse = await callAI({
@@ -372,7 +477,7 @@ export async function processChat(
   } catch (error) {
     console.error("[ChatEngine] AI call failed:", error);
     const nearbyFallback =
-      nearbyIntent && normalizedLocation
+      effectiveNearbyIntent && normalizedLocation
         ? await buildNearbyFallbackOnAiFailure(
           message,
           effectiveLocale,
@@ -387,9 +492,23 @@ export async function processChat(
         : null;
 
     if (nearbyFallback) {
+      reportChatProgress(effectiveLocale, onProgress, {
+        stage: "complete",
+        zhMessage: "模型异常，已切换到附近搜索降级结果。",
+        enMessage: "Model failed, switched to nearby fallback results.",
+        zhThinkingStep: "模型失败后启用附近检索降级策略",
+        enThinkingStep: "Applied nearby fallback strategy after model failure",
+      });
       return nearbyFallback;
     }
 
+    reportChatProgress(effectiveLocale, onProgress, {
+      stage: "complete",
+      zhMessage: "模型暂时不可用，已返回安全错误提示。",
+      enMessage: "Model is temporarily unavailable and a safe error was returned.",
+      zhThinkingStep: "调用模型失败，返回稳定错误提示",
+      enThinkingStep: "Model invocation failed, returned stable error message",
+    });
     return {
       type: "error",
       message:
@@ -419,6 +538,13 @@ export async function processChat(
     console.error("[ChatEngine] Failed to parse AI response:", error);
     console.error("[ChatEngine] Raw content:", aiContent);
     // 如果解析失败，作为纯文本返回
+    reportChatProgress(effectiveLocale, onProgress, {
+      stage: "complete",
+      zhMessage: "响应解析失败，已切换为文本回复。",
+      enMessage: "Response parsing failed, switched to text reply.",
+      zhThinkingStep: "结构化解析失败，回退到纯文本结果",
+      enThinkingStep: "Structured parsing failed, fell back to plain text result",
+    });
     return {
       type: "text",
       message: aiContent,
@@ -437,6 +563,14 @@ export async function processChat(
     };
   }
 
+  reportChatProgress(effectiveLocale, onProgress, {
+    stage: "postprocess",
+    zhMessage: "正在整理结果与可执行动作...",
+    enMessage: "Organizing results and actionable steps...",
+    zhThinkingStep: "清洗候选结果并补充可执行操作",
+    enThinkingStep: "Normalized candidates and enriched actionable links",
+  });
+
   if (nearbySeed && nearbySeed.candidates.length > 0) {
     parsed = enforceConcreteIntlCandidates(
       parsed,
@@ -452,7 +586,7 @@ export async function processChat(
     normalizedLocation,
     message,
     hasLocation,
-    nearbyIntent,
+    effectiveNearbyIntent,
     closerRefinementIntent,
     nearbySeed,
     targetMapProvider
@@ -482,7 +616,7 @@ export async function processChat(
   // 6. 为候选结果补充真实深链
   if (parsed.candidates && parsed.candidates.length > 0) {
     const forceMapProviderForNearby =
-      nearbyIntent || parsed.intent === "search_nearby"
+      effectiveNearbyIntent || parsed.intent === "search_nearby"
         ? targetMapProvider
         : undefined;
     parsed.actions = enrichActionsWithDeepLinks(
@@ -504,6 +638,14 @@ export async function processChat(
       await savePreference(userId, prefData.name, prefData.filters);
     }
   }
+
+  reportChatProgress(effectiveLocale, onProgress, {
+    stage: "complete",
+    zhMessage: "结果已准备完成。",
+    enMessage: "Your result is ready.",
+    zhThinkingStep: "完成结果生成并返回给用户",
+    enThinkingStep: "Completed result generation and returned response",
+  });
 
   return parsed;
 }
@@ -877,6 +1019,47 @@ function isNearbyRefinementMessage(message: string): boolean {
     /(扩大|扩展|放大|更远|更大范围|半径|范围)/;
   const enPattern = /(expand|widen|increase|broaden|radius|range|within \d+\s?(km|miles?|meters?|m))/;
   return zhPattern.test(text) || enPattern.test(text);
+}
+
+function isNearbyContinuationMessage(message: string): boolean {
+  const text = message.toLowerCase().trim();
+  if (!text) {
+    return false;
+  }
+
+  if (isNearbyIntent(text)) {
+    return true;
+  }
+
+  const zhContinuationPattern =
+    /(继续|再找|再来|换一批|只看|筛选|评分|预算|官方|自营|直营|旗舰|专卖|扩大|缩小|更近|最近|\d+(?:\.\d+)?\s*(?:公里|千米|米|km))/;
+  const enContinuationPattern =
+    /(continue|refine|filter|rating|budget|official|authorized|flagship|expand|shrink|closer|nearest|within \d+\s?(km|miles?|meters?|m))/;
+
+  const shortFollowUp = text.length <= 28;
+  return shortFollowUp && (zhContinuationPattern.test(text) || enContinuationPattern.test(text));
+}
+
+function hasNearbyIntentInHistory(
+  history: ChatRequest["history"] | undefined
+): boolean {
+  if (!history || history.length === 0) {
+    return false;
+  }
+
+  let inspected = 0;
+  for (let index = history.length - 1; index >= 0 && inspected < 8; index -= 1) {
+    const item = history[index];
+    if (!item || item.role !== "user") {
+      continue;
+    }
+    inspected += 1;
+    if (isNearbyIntent(item.content)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function hasCarWashNearbyIntentInHistory(

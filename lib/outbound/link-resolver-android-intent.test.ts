@@ -217,6 +217,36 @@ describe("resolveCandidateLink android intent fallback", () => {
     expect(androidEmbeddedUrl).toContain(`keyword=${encodedTitle}`);
   });
 
+  it("uses recommendation title as Vipshop keyword fallback when query is empty", () => {
+    const title = "春季防晒外套";
+    const encodedTitle = encodeURIComponent(title);
+    const result = resolveCandidateLink({
+      title,
+      query: "   ",
+      category: "shopping",
+      locale: "zh",
+      region: "CN",
+      provider: "唯品会",
+      isMobile: true,
+    });
+
+    expect(result.primary.url).toContain(`keyword=${encodedTitle}`);
+
+    const webLink = result.fallbacks.find(
+      (link) =>
+        link.type === "web" &&
+        link.url.includes("category.vip.com/suggest.php")
+    );
+    expect(webLink?.url).toContain(`keyword=${encodedTitle}`);
+
+    const androidIntent = result.fallbacks.find(
+      (link) =>
+        link.type === "intent" &&
+        link.url.includes("package=com.achievo.vipshop")
+    );
+    expect(androidIntent?.url).toContain(`keyword=${encodedTitle}`);
+  });
+
   it("supports fitness apps android deep links with search query", () => {
     const fixtures = [
       { provider: "Nike Training Club", packageId: "com.nike.ntc" },

@@ -136,6 +136,85 @@ function mergeVoicePrompt(baseText: string, nextText: string): string {
   return `${base} ${next}`;
 }
 
+type AssistantStreamPacket = {
+  event: "progress" | "result" | "error" | "done";
+  data?: Record<string, unknown>;
+};
+
+function buildAssistantHistoryContext(message: ChatMessage): string {
+  const sr = message.structuredResponse;
+  if (!sr) {
+    return message.content;
+  }
+
+  const sections: string[] = [];
+  if (sr.intent) {
+    sections.push(`intent=${sr.intent}`);
+  }
+  if (sr.message) {
+    sections.push(`message=${sr.message}`);
+  }
+  if (sr.candidates && sr.candidates.length > 0) {
+    const candidateSummary = sr.candidates
+      .slice(0, 3)
+      .map((candidate) =>
+        [candidate.name, candidate.distance, candidate.platform].filter(Boolean).join(" | ")
+      )
+      .join("; ");
+    sections.push(`candidates=${candidateSummary}`);
+  }
+  if (sr.followUps && sr.followUps.length > 0) {
+    const followUpSummary = sr.followUps.slice(0, 2).map((item) => item.text).join(" | ");
+    sections.push(`followUps=${followUpSummary}`);
+  }
+  if (sr.clarifyQuestions && sr.clarifyQuestions.length > 0) {
+    sections.push(`clarify=${sr.clarifyQuestions.slice(0, 2).join(" | ")}`);
+  }
+
+  const summary = sections.join("\n");
+  return summary.length > 0 ? summary : message.content;
+}
+
+function buildHistoryPayload(messages: ChatMessage[]) {
+  return messages
+    .filter((message) => !message.isLoading && (message.role === "user" || message.role === "assistant"))
+    .slice(-16)
+    .map((message) => ({
+      role: message.role as "user" | "assistant",
+      content:
+        message.role === "assistant"
+          ? buildAssistantHistoryContext(message)
+          : message.content,
+    }));
+}
+
+function parseNdjsonChunk(
+  chunk: string,
+  previousBuffer: string
+): { packets: AssistantStreamPacket[]; rest: string } {
+  const merged = `${previousBuffer}${chunk}`;
+  const lines = merged.split("\n");
+  const rest = lines.pop() || "";
+  const packets: AssistantStreamPacket[] = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+    try {
+      const parsed = JSON.parse(trimmed) as AssistantStreamPacket;
+      if (parsed && typeof parsed.event === "string") {
+        packets.push(parsed);
+      }
+    } catch {
+      // ignore malformed stream lines
+    }
+  }
+
+  return { packets, rest };
+}
+
 export default function ChatInterface({
   locale,
   region,
@@ -472,14 +551,7 @@ export default function ChatInterface({
     setIsLoading(true);
 
     try {
-      // 构建历史
-      const history = messages
-        .filter((m) => !m.isLoading)
-        .slice(-10)
-        .map((m) => ({
-          role: m.role as "user" | "assistant",
-          content: m.content,
-        }));
+      const history = buildHistoryPayload(messages);
 
       const res = await fetchWithAuth("/api/assistant/chat", {
         method: "POST",
@@ -490,48 +562,163 @@ export default function ChatInterface({
           locale: effectiveLocale,
           region,
           client: detectClientType(),
+          stream: true,
         }),
       });
 
-      const data = await res.json();
+      const contentType = (res.headers.get("content-type") || "").toLowerCase();
+      const isNdjsonStream = contentType.includes("application/x-ndjson") && Boolean(res.body);
 
-      if (!data.success) {
-        // 处理限制错误
-        if (res.status === 403) {
-          const errorMsg: ChatMessage = {
-            id: generateId(),
-            role: "assistant",
-            content: "",
-            structuredResponse: {
-              type: "error",
-              message:
-                data.error === "monthly_limit_reached" || data.error === "free_limit_reached"
-                  ? isZh
-                    ? "本月免费使用次数已达上限，开通 VIP 可获得更多使用次数。"
-                    : "Your free monthly limit has been reached. Subscribe to VIP for more usage."
-                  : data.error === "daily_limit_reached"
-                    ? isZh
-                      ? "今日使用次数已达上限，明天再来吧！"
-                      : "Daily limit reached. Come back tomorrow!"
-                    : (data.error || (isZh ? "请求失败" : "Request failed")),
-            },
-            createdAt: new Date().toISOString(),
+      if (isNdjsonStream && res.body) {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let finalResponse: AssistantResponse | null = null;
+        let finalUsage: AssistantUsageStats | null = null;
+        const streamedThinking: string[] = [];
+
+        const updateStreamingMessage = (progressMessage: string, thinkingStep?: string) => {
+          if (thinkingStep && !streamedThinking.includes(thinkingStep)) {
+            streamedThinking.push(thinkingStep);
+          }
+
+          const interimMessage = progressMessage || (isZh ? "思考中..." : "Thinking...");
+          const interimStructured: AssistantResponse = {
+            type: "text",
+            message: interimMessage,
+            thinking: streamedThinking.slice(0, 8),
           };
-          setMessages((prev) => [...prev.slice(0, -1), errorMsg]);
-        } else {
-          throw new Error(data.error);
+
+          setMessages((prev) => [
+            ...prev.slice(0, -1),
+            {
+              id: loadingMsg.id,
+              role: "assistant",
+              content: interimMessage,
+              structuredResponse: interimStructured,
+              createdAt: loadingMsg.createdAt,
+            },
+          ]);
+        };
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) {
+            break;
+          }
+
+          const chunk = decoder.decode(value, { stream: true });
+          const parsed = parseNdjsonChunk(chunk, buffer);
+          buffer = parsed.rest;
+
+          for (const packet of parsed.packets) {
+            if (packet.event === "progress") {
+              const progressMessage =
+                typeof packet.data?.message === "string" ? packet.data.message : "";
+              const thinkingStep =
+                typeof packet.data?.thinkingStep === "string" ? packet.data.thinkingStep : undefined;
+              updateStreamingMessage(progressMessage, thinkingStep);
+            } else if (packet.event === "result") {
+              const payloadResponse = packet.data?.response as AssistantResponse | undefined;
+              const payloadUsage = packet.data?.usage as AssistantUsageStats | undefined;
+              if (payloadResponse) {
+                finalResponse = payloadResponse;
+              }
+              if (payloadUsage) {
+                finalUsage = payloadUsage;
+              }
+            } else if (packet.event === "error") {
+              const errorMessage =
+                typeof packet.data?.error === "string"
+                  ? packet.data.error
+                  : (isZh ? "请求失败" : "Request failed");
+              throw new Error(errorMessage);
+            }
+          }
         }
-      } else {
+
+        const trailing = buffer.trim();
+        if (trailing) {
+          try {
+            const packet = JSON.parse(trailing) as AssistantStreamPacket;
+            if (packet.event === "result") {
+              const payloadResponse = packet.data?.response as AssistantResponse | undefined;
+              const payloadUsage = packet.data?.usage as AssistantUsageStats | undefined;
+              if (payloadResponse) {
+                finalResponse = payloadResponse;
+              }
+              if (payloadUsage) {
+                finalUsage = payloadUsage;
+              }
+            } else if (packet.event === "error") {
+              const errorMessage =
+                typeof packet.data?.error === "string"
+                  ? packet.data.error
+                  : (isZh ? "请求失败" : "Request failed");
+              throw new Error(errorMessage);
+            }
+          } catch {
+            // ignore malformed trailing chunk
+          }
+        }
+
+        if (!finalResponse) {
+          throw new Error(isZh ? "流式响应不完整" : "Incomplete streaming response");
+        }
+
         const assistantMsg: ChatMessage = {
           id: generateId(),
           role: "assistant",
-          content: data.response?.message || "",
-          structuredResponse: data.response,
+          content: finalResponse.message || "",
+          structuredResponse: finalResponse,
           createdAt: new Date().toISOString(),
         };
         setMessages((prev) => [...prev.slice(0, -1), assistantMsg]);
 
-        if (data.usage) setUsage(data.usage);
+        if (finalUsage) {
+          setUsage(finalUsage);
+        }
+      } else {
+        const data = await res.json();
+
+        if (!data.success) {
+          // 处理限制错误
+          if (res.status === 403) {
+            const errorMsg: ChatMessage = {
+              id: generateId(),
+              role: "assistant",
+              content: "",
+              structuredResponse: {
+                type: "error",
+                message:
+                  data.error === "monthly_limit_reached" || data.error === "free_limit_reached"
+                    ? isZh
+                      ? "本月免费使用次数已达上限，开通 VIP 可获得更多使用次数。"
+                      : "Your free monthly limit has been reached. Subscribe to VIP for more usage."
+                    : data.error === "daily_limit_reached"
+                      ? isZh
+                        ? "今日使用次数已达上限，明天再来吧！"
+                        : "Daily limit reached. Come back tomorrow!"
+                      : (data.error || (isZh ? "请求失败" : "Request failed")),
+              },
+              createdAt: new Date().toISOString(),
+            };
+            setMessages((prev) => [...prev.slice(0, -1), errorMsg]);
+          } else {
+            throw new Error(data.error);
+          }
+        } else {
+          const assistantMsg: ChatMessage = {
+            id: generateId(),
+            role: "assistant",
+            content: data.response?.message || "",
+            structuredResponse: data.response,
+            createdAt: new Date().toISOString(),
+          };
+          setMessages((prev) => [...prev.slice(0, -1), assistantMsg]);
+
+          if (data.usage) setUsage(data.usage);
+        }
       }
     } catch {
       const errMsg: ChatMessage = {

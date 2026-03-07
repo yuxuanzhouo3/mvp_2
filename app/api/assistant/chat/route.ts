@@ -50,6 +50,10 @@ function applyUsageConsumption(
   };
 }
 
+function encodeNdjsonLine(payload: unknown): Uint8Array {
+  return new TextEncoder().encode(`${JSON.stringify(payload)}\n`);
+}
+
 export async function POST(request: NextRequest) {
   const startedAt = Date.now();
   const requestId = `${startedAt.toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -81,7 +85,10 @@ export async function POST(request: NextRequest) {
 
     // 3. 解析请求
     const body = await request.json();
-    const { message, history, location, locale, region } = body as ChatRequest;
+    const { message, history, location, locale, region } = body as ChatRequest & {
+      stream?: boolean;
+    };
+    const streamFlag = body?.stream === true || request.nextUrl.searchParams.get("stream") === "true";
     const deploymentRegion: "CN" | "INTL" =
       process.env.NEXT_PUBLIC_DEPLOYMENT_REGION === "CN" ? "CN" : "INTL";
     const effectiveRegion: "CN" | "INTL" =
@@ -112,64 +119,120 @@ export async function POST(request: NextRequest) {
       hasLocation: Boolean(location),
     });
 
-    // 4. 处理聊天
-    const response = await processChat(
-      {
-        message: message.trim(),
-        history: history || [],
-        location,
-        locale: locale || "zh",
-        region: effectiveRegion,
-        client,
-        isMobile,
-        isAndroid,
-      },
-      userId
-    );
+    const runChat = async (
+      onProgress?: (progress: { stage: string; message: string; thinkingStep?: string }) => void
+    ) => {
+      const response = await processChat(
+        {
+          message: message.trim(),
+          history: history || [],
+          location,
+          locale: locale || "zh",
+          region: effectiveRegion,
+          client,
+          isMobile,
+          isAndroid,
+        },
+        userId,
+        { onProgress }
+      );
 
-    // 5. 记录使用次数（仅在成功生成结果时计数，clarify 不计数）
-    const shouldConsumeUsage = response.type !== "clarify" && response.type !== "error";
-    if (shouldConsumeUsage) {
-      void recordAssistantUsage(userId, {
+      const shouldConsumeUsage = response.type !== "clarify" && response.type !== "error";
+      if (shouldConsumeUsage) {
+        void recordAssistantUsage(userId, {
+          intent: response.intent,
+          type: response.type,
+          candidateCount: response.candidates?.length || 0,
+        }).catch((error) => {
+          console.error("[API /assistant/chat] Failed to record usage:", error);
+        });
+      }
+      const usage = applyUsageConsumption(usageCheck.stats, shouldConsumeUsage);
+
+      const userCreatedAt = new Date().toISOString();
+      const assistantCreatedAt = new Date(Date.now() + 1).toISOString();
+      saveConversationMessage(userId, "user", message.trim(), undefined, undefined, userCreatedAt)
+        .then(() => saveConversationMessage(
+          userId,
+          "assistant",
+          response.message,
+          response,
+          { intent: response.intent, type: response.type },
+          assistantCreatedAt
+        ))
+        .catch(() => {
+          // 对话保存失败不应阻断主流程
+        });
+
+      logApiChatDebug("[API /assistant/chat] Response summary", {
+        requestId,
+        elapsedMs: Date.now() - startedAt,
+        responseType: response.type,
         intent: response.intent,
-        type: response.type,
         candidateCount: response.candidates?.length || 0,
-      }).catch((error) => {
-        console.error("[API /assistant/chat] Failed to record usage:", error);
+        consumedUsage: shouldConsumeUsage,
+      });
+
+      return { response, usage };
+    };
+
+    if (streamFlag) {
+      const stream = new ReadableStream<Uint8Array>({
+        start: async (controller) => {
+          const push = (event: string, data: unknown) => {
+            controller.enqueue(encodeNdjsonLine({ event, data }));
+          };
+
+          try {
+            push("progress", {
+              stage: "intent",
+              message:
+                (locale || "zh") === "zh"
+                  ? "已接收请求，正在分析问题..."
+                  : "Request received. Analyzing your message...",
+              thinkingStep:
+                (locale || "zh") === "zh"
+                  ? "接收请求并开始需求分析"
+                  : "Received request and started intent analysis",
+            });
+
+            const result = await runChat((progress) => {
+              push("progress", progress);
+            });
+
+            push("result", {
+              success: true,
+              response: result.response,
+              usage: result.usage,
+            });
+            push("done", { success: true });
+          } catch (error) {
+            console.error("[API /assistant/chat stream] Error:", {
+              requestId,
+              elapsedMs: Date.now() - startedAt,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            push("error", { success: false, error: "Internal server error" });
+          } finally {
+            controller.close();
+          }
+        },
+      });
+
+      return new Response(stream, {
+        headers: {
+          "Content-Type": "application/x-ndjson; charset=utf-8",
+          "Cache-Control": "no-cache, no-transform",
+          Connection: "keep-alive",
+        },
       });
     }
-    const usage = applyUsageConsumption(usageCheck.stats, shouldConsumeUsage);
 
-    // 6. 持久化对话（异步，不阻断响应）
-    const userCreatedAt = new Date().toISOString();
-    const assistantCreatedAt = new Date(Date.now() + 1).toISOString();
-    saveConversationMessage(userId, "user", message.trim(), undefined, undefined, userCreatedAt)
-      .then(() => saveConversationMessage(
-        userId,
-        "assistant",
-        response.message,
-        response,
-        { intent: response.intent, type: response.type },
-        assistantCreatedAt
-      ))
-      .catch(() => {
-        // 对话保存失败不应阻断主流程
-      });
-
-    // 7. 获取最新使用统计
-    logApiChatDebug("[API /assistant/chat] Response summary", {
-      requestId,
-      elapsedMs: Date.now() - startedAt,
-      responseType: response.type,
-      intent: response.intent,
-      candidateCount: response.candidates?.length || 0,
-      consumedUsage: shouldConsumeUsage,
-    });
-
+    const result = await runChat();
     return NextResponse.json({
       success: true,
-      response,
-      usage,
+      response: result.response,
+      usage: result.usage,
     });
   } catch (error) {
     console.error("[API /assistant/chat] Error:", {

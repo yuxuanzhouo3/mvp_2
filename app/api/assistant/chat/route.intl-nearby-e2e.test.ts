@@ -187,4 +187,59 @@ describe("assistant chat INTL nearby e2e scenario", () => {
 
     expect(recordAssistantUsage).toHaveBeenCalledTimes(1);
   });
+
+  it("streams thinking progress and final result when stream=true", async () => {
+    vi.mocked(searchNearbyStores).mockResolvedValueOnce({
+      source: "overpass",
+      radiusKm: 1,
+      matchedCount: 1,
+      category: "food",
+      candidates: [
+        {
+          id: "osm_node_stream_1",
+          name: "Joe's Pizza",
+          description: "120m away, cuisine: pizza, opening hours available",
+          category: "food",
+          distance: "120m",
+          rating: 4.6,
+          address: "123 Broadway, New York",
+          platform: "Google Maps",
+          searchQuery: "Joe's Pizza, 123 Broadway, New York",
+        },
+      ],
+    });
+
+    const { POST } = (await import(routePath)) as { POST: (request: NextRequest) => Promise<Response> };
+    const request = new NextRequest("http://localhost/api/assistant/chat?stream=true", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+      },
+      body: JSON.stringify({
+        message: "帮我找附近餐厅",
+        history: [],
+        location: { lat: 40.7128, lng: -74.006 },
+        locale: "zh",
+        region: "INTL",
+        client: "web",
+        stream: true,
+      }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("application/x-ndjson");
+
+    const streamText = await response.text();
+    const events = streamText
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .map((line) => JSON.parse(line) as { event: string; data?: Record<string, unknown> });
+
+    expect(events.some((event) => event.event === "progress")).toBe(true);
+    expect(events.some((event) => event.event === "result")).toBe(true);
+    expect(events.some((event) => event.event === "done")).toBe(true);
+  });
 });

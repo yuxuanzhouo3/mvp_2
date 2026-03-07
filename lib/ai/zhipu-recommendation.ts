@@ -707,7 +707,7 @@ export async function generateRecommendations(
     food: {
       platforms: locale === 'zh'
         ? client === "app"
-          ? ['大众点评', '美团', '腾讯地图美食', '百度地图美食', '高德地图美食', '京东秒送', '淘宝闪购', '美团外卖', '小红书']
+          ? ['大众点评', '美团外卖', '腾讯地图美食', '百度地图美食', '高德地图美食', '京东秒送', '淘宝闪购', '美团外卖', '小红书']
           : ['下厨房', '高德地图美食', '大众点评']
         : isIntlMobile ? getMobilePlatforms('food') : getIntlCategoryPlatforms('food'),
       examples: locale === 'zh'
@@ -725,8 +725,8 @@ export async function generateRecommendations(
     fitness: {
       platforms: locale === 'zh'
         ? (isCnWeb
-          ? ['B站健身', '知乎', '什么值得买']
-          : ['B站健身', '优酷健身', 'Keep', '大众点评', '美团', '百度地图健身', '高德地图健身', '腾讯地图健身', '知乎', '什么值得买'])
+          ? ['小红书', '知乎', '什么值得买']
+          : ['小红书', '优酷健身', 'Keep', '大众点评', '美团', '百度地图健身', '高德地图健身', '腾讯地图健身', '知乎', '什么值得买'])
         : isIntlMobile ? getMobilePlatforms('fitness') : getIntlCategoryPlatforms('fitness'),
       examples: locale === 'zh'
         ? (isCnWeb ? '健身视频、健身原理文章、健身器材推荐' : '健身课程、健身房、健身器材、运动装备')

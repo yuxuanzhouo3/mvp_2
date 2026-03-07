@@ -511,4 +511,58 @@ describe("nearby-store-search Overpass INTL", () => {
     expect(result.candidates).toHaveLength(0);
     expect(result.matchedCount).toBe(0);
   });
+
+  it("prioritizes bicycle official stores for CN shopping nearby query", async () => {
+    process.env.AMAP_WEB_SERVICE_KEY = "test-amap-key";
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        status: "1",
+        info: "OK",
+        pois: [
+          {
+            id: "amap_bike_1",
+            name: "城市百货店",
+            type: "购物服务;服装鞋帽",
+            address: "和平路 8 号",
+            location: "110.390100,23.540100",
+            distance: "380",
+          },
+          {
+            id: "amap_bike_2",
+            name: "捷安特官方旗舰店",
+            type: "购物服务;专卖店;自行车专卖店",
+            address: "中山路 66 号",
+            location: "110.391000,23.541000",
+            distance: "520",
+          },
+          {
+            id: "amap_bike_3",
+            name: "迪卡侬运动店",
+            type: "购物服务;运动户外店",
+            address: "人民路 18 号",
+            location: "110.392000,23.542000",
+            distance: "760",
+          },
+        ],
+      }),
+    });
+
+    const result = await searchNearbyStores({
+      lat: 23.54,
+      lng: 110.39,
+      locale: "zh",
+      region: "CN",
+      message: "我想买一辆自行车，帮我搜索附近10km以内的官方自营店",
+      limit: 5,
+    });
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const requestUrl = String(mockFetch.mock.calls[0]?.[0] || "");
+    expect(requestUrl).toContain("keywords=");
+    expect(requestUrl).toContain(encodeURIComponent("自行车"));
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]?.name).toBe("捷安特官方旗舰店");
+  });
 });

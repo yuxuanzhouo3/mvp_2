@@ -61,7 +61,7 @@ describe("CN platform policy (assistant)", () => {
     const providers = names("food", true);
     expect(providers).toContain("小红书");
     expect(providers).toContain("大众点评");
-    expect(providers).toContain("美团");
+    expect(providers).toContain("美团外卖");
     expect(providers).toContain("淘宝闪购");
     expect(providers).toContain("京东秒送");
     expect(providers).toContain("腾讯地图");
