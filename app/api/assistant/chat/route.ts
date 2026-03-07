@@ -138,16 +138,21 @@ export async function POST(request: NextRequest) {
       );
 
       const shouldConsumeUsage = response.type !== "clarify" && response.type !== "error";
+      let consumedUsage = false;
       if (shouldConsumeUsage) {
-        void recordAssistantUsage(userId, {
+        const usageRecord = await recordAssistantUsage(userId, {
           intent: response.intent,
           type: response.type,
           candidateCount: response.candidates?.length || 0,
-        }).catch((error) => {
-          console.error("[API /assistant/chat] Failed to record usage:", error);
         });
+
+        if (usageRecord?.success) {
+          consumedUsage = true;
+        } else if (usageRecord) {
+          console.error("[API /assistant/chat] Failed to record usage:", usageRecord?.error);
+        }
       }
-      const usage = applyUsageConsumption(usageCheck.stats, shouldConsumeUsage);
+      const usage = applyUsageConsumption(usageCheck.stats, consumedUsage);
 
       const userCreatedAt = new Date().toISOString();
       const assistantCreatedAt = new Date(Date.now() + 1).toISOString();
@@ -170,7 +175,7 @@ export async function POST(request: NextRequest) {
         responseType: response.type,
         intent: response.intent,
         candidateCount: response.candidates?.length || 0,
-        consumedUsage: shouldConsumeUsage,
+        consumedUsage,
       });
 
       return { response, usage };

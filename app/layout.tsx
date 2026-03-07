@@ -14,7 +14,7 @@ import AnalyticsBootstrap from "@/components/analytics-bootstrap"
 const isCN = process.env.NEXT_PUBLIC_DEPLOYMENT_REGION === "CN"
 
 export const metadata: Metadata = {
-  title: isCN ? "辰汇个性推荐" : "RandomLife-DailyDiscovory",
+  title: isCN ? "辰汇个性推荐" : "RandomLife",
   description: isCN
     ? "辰汇个性推荐 - AI驱动的个性化推荐服务"
     : "Discover something new every day with AI-powered recommendations",
@@ -41,6 +41,7 @@ export default function RootLayout({
   const isAdminRoute = pathname === "/admin" || pathname.startsWith("/admin/")
   const isAssistantRoute = pathname === "/assistant" || pathname.startsWith("/assistant/")
   const userAgent = headers().get("user-agent") ?? ""
+  const isWechatUA = /micromessenger/i.test(userAgent)
   const initialIsIPhone = /iphone/i.test(userAgent)
   const initialIsMac = !/iphone|ipad|ipod/i.test(userAgent) && /macintosh|mac os x/i.test(userAgent)
   const initialIsAndroid = /android/i.test(userAgent)
@@ -49,7 +50,7 @@ export default function RootLayout({
     <html lang="en">
       <head>
         {/* 微信 JSSDK - 用于小程序 WebView 中调用 wx.miniProgram API */}
-        {isCN && (
+        {isCN && isWechatUA && (
           <Script
             src="https://res.wx.qq.com/open/js/jweixin-1.6.0.js"
             strategy="beforeInteractive"
@@ -71,12 +72,12 @@ export default function RootLayout({
             <LanguageProvider>
               <AuthProvider>
                 {/* 微信小程序外部链接拦截器 - 仅 CN 环境启用 */}
-                {isCN && <MpLinkInterceptor />}
+                {isCN && isWechatUA && <MpLinkInterceptor />}
                 <AnalyticsBootstrap />
                 <div className="min-h-screen bg-[#F7F9FC]">{children}</div>
                 <Toaster />
                 {isCN && !isAssistantRoute && (
-                  <footer className="w-full py-4 px-4 text-center text-xs text-gray-400 bg-gray-50 border-t border-gray-100">
+                  <footer className="w-full px-4 pt-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] text-center text-xs text-gray-400 bg-gray-50 border-t border-gray-100">
                     <p>本页面含AI生成的内容，请仔细辨别</p>
                     <p className="mt-1">
                       <a

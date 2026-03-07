@@ -26,13 +26,13 @@ const cnDefaults: SiteInfo = {
 
 const intlDefaults: SiteInfo = {
   region: "INTL",
-  appName: "RandomLife-DailyDiscovory",
-  ownerName: "RandomLife-DailyDiscovory",
+  appName: "RandomLife",
+  ownerName: "RandomLife",
   contactEmail: "mornscience@gmail.com",
   contactPhone: "",
   contactAddress: "",
   icpBeian: "",
-  copyright: `© ${new Date().getFullYear()} RandomLife-DailyDiscovory`,
+  copyright: `© ${new Date().getFullYear()} RandomLife`,
 }
 
 function normalizeOptional(value: string | undefined): string | undefined {

@@ -724,7 +724,7 @@ export const en = {
 
   // ==================== Pricing Page ====================
   pricing: {
-    title: "Unlock RandomLife-DailyDiscovory",
+    title: "Unlock RandomLife",
     subtitle: "Unlock the full power of RandomLife with premium features",
     back: "Back",
     current: "Current",

@@ -4,7 +4,8 @@ import { isChinaDeployment } from "@/lib/config/deployment.config";
 import { generateFallbackCandidates } from "@/lib/recommendation/fallback-generator";
 import type { RecommendationCategory } from "@/lib/types/recommendation";
 
-type AIProvider = "openai" | "mistral" | "zhipu" | "qwen-flash" | "qwen-max" | "qwen-plus" | "qwen-turbo";
+type CNQwenProvider = "qwen3.5-flash" | "qwen3.5-flash-2026-02-23" | "qwen3.5-35b-a3b";
+type AIProvider = "openai" | "mistral" | "zhipu" | CNQwenProvider;
 
 export type AIMessage = {
   role: "system" | "user" | "assistant";
@@ -40,11 +41,16 @@ const DEFAULT_MODELS = {
   openai: process.env.OPENAI_MODEL || "gpt-4o-mini",
   mistral: process.env.MISTRAL_MODEL || "mistral-small-latest",
   zhipu: process.env.ZHIPU_MODEL || "glm-4.5-flash",
-  "qwen-flash": "qwen-flash",
-  "qwen-max": "qwen-max",
-  "qwen-plus": "qwen-plus",
-  "qwen-turbo": "qwen-turbo",
+  "qwen3.5-flash": "qwen3.5-flash",
+  "qwen3.5-flash-2026-02-23": "qwen3.5-flash-2026-02-23",
+  "qwen3.5-35b-a3b": "qwen3.5-35b-a3b",
 };
+
+const CN_RECOMMENDATION_QWEN_MODELS: readonly CNQwenProvider[] = [
+  "qwen3.5-flash",
+  "qwen3.5-flash-2026-02-23",
+  "qwen3.5-35b-a3b",
+] as const;
 
 // 通义千问 API 端点
 const QWEN_API_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
@@ -55,14 +61,11 @@ function hasValidKey(value?: string | null): value is string {
 
 function getProviderOrder(): AIProvider[] {
   if (isChinaDeployment()) {
-    // CN环境: 优先使用通义千问（qwen-flash首选，速度快成本低），智谱作为备用
+    // CN 环境：仅使用白名单模型，其他模型因额度不足禁用
     const providers: AIProvider[] = [];
 
     if (hasValidKey(process.env.QWEN_API_KEY)) {
-      providers.push("qwen-flash", "qwen-turbo", "qwen-plus", "qwen-max");
-    }
-    if (hasValidKey(process.env.ZHIPU_API_KEY)) {
-      providers.push("zhipu");
+      providers.push(...CN_RECOMMENDATION_QWEN_MODELS);
     }
 
     return providers;
@@ -123,10 +126,9 @@ async function callAIWithFallback(messages: AIMessage[], temperature = 0.8) {
             provider,
             model: DEFAULT_MODELS.zhipu,
           };
-        case "qwen-flash":
-        case "qwen-max":
-        case "qwen-plus":
-        case "qwen-turbo":
+        case "qwen3.5-flash":
+        case "qwen3.5-flash-2026-02-23":
+        case "qwen3.5-35b-a3b":
           return {
             content: await callQwen(messages, temperature, provider),
             provider,
@@ -158,7 +160,7 @@ async function callAIWithFallback(messages: AIMessage[], temperature = 0.8) {
 async function callQwen(
   messages: AIMessage[],
   temperature: number,
-  model: "qwen-flash" | "qwen-max" | "qwen-plus" | "qwen-turbo"
+  model: CNQwenProvider
 ) {
   const apiKey = process.env.QWEN_API_KEY;
   if (!hasValidKey(apiKey)) {

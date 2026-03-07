@@ -15,17 +15,23 @@ interface AIResponse {
   model: string;
 }
 
-const CN_QWEN_MODELS = ["qwen-flash", "qwen-turbo", "qwen-plus", "qwen-max"] as const;
+const CN_QWEN_MODELS = [
+  "qwen3.5-flash",
+  "qwen3.5-flash-2026-02-23",
+  "qwen3.5-35b-a3b",
+] as const;
 type CNQwenModel = (typeof CN_QWEN_MODELS)[number];
 type IntlProvider = "openai" | "mistral";
-const CN_ZHIPU_MODEL = process.env.ZHIPU_MODEL || "glm-4.5-flash";
 
 const INTL_MODELS = {
   mistral: process.env.MISTRAL_MODEL || "mistral-small-latest",
   openai: process.env.OPENAI_MODEL || "gpt-4o-mini",
 };
 
-const FAST_CN_QWEN_ORDER: readonly CNQwenModel[] = ["qwen-flash", "qwen-turbo"];
+const FAST_CN_QWEN_ORDER: readonly CNQwenModel[] = [
+  "qwen3.5-flash",
+  "qwen3.5-flash-2026-02-23",
+];
 const DEFAULT_INTL_PROVIDER_ORDER: readonly IntlProvider[] = ["mistral", "openai"];
 const FAST_INTL_PROVIDER_ORDER: readonly IntlProvider[] = ["openai", "mistral"];
 const DEFAULT_MAX_TOKENS = 1200;
@@ -38,9 +44,9 @@ const DEFAULT_INTL_PARALLEL_RACE = true;
 const DEFAULT_INTL_SECONDARY_DELAY_MS = 300;
 const ASSISTANT_AI_DEBUG =
   String(process.env.ASSISTANT_AI_DEBUG || "").toLowerCase() === "true";
+const ASSISTANT_CN_DISABLE_ZHIPU = true;
 
 const QWEN_API_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
-const ZHIPU_API_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions";
 const MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions";
 
 interface AIExecutionConfig {
@@ -109,10 +115,11 @@ function summarizeConfig(config: AIExecutionConfig): Record<string, unknown> {
     intlSecondaryDelayMs: config.intlSecondaryDelayMs,
     providerAvailability: {
       qwen: isQwenConfigured(),
-      zhipu: isZhipuConfigured(),
+      zhipu: false,
       openai: isOpenAIConfigured(),
       mistral: isMistralConfigured(),
     },
+    cnZhipuDisabled: ASSISTANT_CN_DISABLE_ZHIPU,
   };
 }
 
@@ -317,7 +324,7 @@ export function isQwenConfigured(): boolean {
 }
 
 export function isZhipuConfigured(): boolean {
-  return hasValidKey(process.env.ZHIPU_API_KEY);
+  return false;
 }
 
 export function isMistralConfigured(): boolean {
@@ -388,75 +395,6 @@ async function callQwenAPI(
 
   if (!content || typeof content !== "string") {
     throw new Error(`Qwen API (${model}) returned no valid content`);
-  }
-
-  return content;
-}
-
-async function callZhipuAPI(
-  request: AIRequest,
-  options: ProviderRuntimeOptions,
-  retryCount = 0
-): Promise<string> {
-  const apiKey = process.env.ZHIPU_API_KEY;
-
-  if (!hasValidKey(apiKey)) {
-    throw new Error("ZHIPU_API_KEY is not configured");
-  }
-
-  let response: Response;
-  try {
-    response = await fetch(ZHIPU_API_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: CN_ZHIPU_MODEL,
-        messages: request.messages,
-        temperature: request.temperature ?? 0.7,
-        max_tokens: request.maxTokens ?? DEFAULT_MAX_TOKENS,
-      }),
-      signal: AbortSignal.timeout(options.timeoutMs),
-    });
-  } catch (error) {
-    if (isRetryableNetworkError(error) && retryCount < options.maxRetries) {
-      await delay(350 * (retryCount + 1));
-      return callZhipuAPI(request, options, retryCount + 1);
-    }
-    throw error;
-  }
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    let errorMessage = errorText;
-
-    try {
-      const errorJson = JSON.parse(errorText);
-      errorMessage = errorJson.error?.message || errorJson.msg || errorText;
-    } catch {
-      // noop
-    }
-
-    if (shouldRetryStatus(response.status) && retryCount < options.maxRetries) {
-      await delay(350 * (retryCount + 1));
-      return callZhipuAPI(request, options, retryCount + 1);
-    }
-
-    throw new Error(`Zhipu API error: ${response.status} - ${errorMessage}`);
-  }
-
-  const data = await response.json();
-
-  if (data?.code !== undefined && data.code !== 0) {
-    throw new Error(`Zhipu API returned error code ${data.code}: ${data.msg}`);
-  }
-
-  const content =
-    data?.choices?.[0]?.message?.content || data?.data?.choices?.[0]?.message?.content;
-  if (!content || typeof content !== "string") {
-    throw new Error("Zhipu API returned no valid content");
   }
 
   return content;
@@ -632,34 +570,6 @@ async function callAIInternal(request: AIRequest, config: AIExecutionConfig): Pr
       }
     }
 
-    if (isZhipuConfigured()) {
-      logAIDebug("[AIClient] Trying CN provider", {
-        provider: "zhipu",
-        model: CN_ZHIPU_MODEL,
-        timeoutMs: estimateRemainingTimeout(startedAt, config),
-      });
-      try {
-        const content = await callZhipuAPI(request, {
-          timeoutMs: resolveProviderTimeout(startedAt, config),
-          maxRetries: config.maxRetries,
-        });
-        logAIDebug("[AIClient] CN provider succeeded", {
-          provider: "zhipu",
-          model: CN_ZHIPU_MODEL,
-          elapsedMs: Date.now() - startedAt,
-        });
-        return { content, model: CN_ZHIPU_MODEL };
-      } catch (error) {
-        errors.push(`${CN_ZHIPU_MODEL}: ${getErrorMessage(error)}`);
-        logAIDebug("[AIClient] CN provider failed", {
-          provider: "zhipu",
-          model: CN_ZHIPU_MODEL,
-          error: getErrorMessage(error),
-          elapsedMs: Date.now() - startedAt,
-        });
-      }
-    }
-
     throw new Error(`All CN AI models failed:\n${errors.join("\n")}`);
   }
 
@@ -791,9 +701,6 @@ export function getAvailableModels(): string[] {
   if (isChinaDeployment()) {
     if (isQwenConfigured()) {
       models.push(...config.cnQwenOrder);
-    }
-    if (isZhipuConfigured()) {
-      models.push(CN_ZHIPU_MODEL);
     }
     return models;
   }

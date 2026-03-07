@@ -16,6 +16,7 @@ export default function DownloadPage() {
   const [isChina, setIsChina] = useState(false);
   const [userPlatform, setUserPlatform] = useState<PlatformType | null>(null);
   const [downloads, setDownloads] = useState<DownloadItem[]>([]);
+  const appDisplayName = isChina ? "辰汇个性推荐" : "RandomLife";
 
   useEffect(() => {
     // 检测部署区域
@@ -95,8 +96,8 @@ export default function DownloadPage() {
           </h1>
           <p className="text-base text-gray-600 max-w-2xl mx-auto">
             {isChina
-              ? "下载辰汇个性推荐客户端，享受更流畅的AI推荐体验"
-              : "Download RandomLife client for a better AI recommendation experience"}
+              ? `下载${appDisplayName}客户端，享受更流畅的AI推荐体验`
+              : `Download ${appDisplayName} client for a better AI recommendation experience`}
           </p>
         </motion.div>
 

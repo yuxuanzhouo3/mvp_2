@@ -15,7 +15,7 @@ export default function LegalPage() {
   const isChina = site.region === "CN";
 
   // 获取平台名称
-  const platformName = isChina ? "辰汇个性推荐" : "RandomLife-DailyDiscovory";
+  const platformName = site.appName;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted">
