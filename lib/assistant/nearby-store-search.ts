@@ -242,6 +242,38 @@ function hasOfficialStoreSignal(text: string): boolean {
   return OFFICIAL_STORE_INTENT_ZH.test(text) || OFFICIAL_STORE_INTENT_EN.test(normalized);
 }
 
+function isAmapKeywordNoiseToken(
+  token: string,
+  locale: "zh" | "en"
+): boolean {
+  const normalized = token.trim().toLowerCase();
+  if (!normalized) {
+    return true;
+  }
+
+  if (/^\d+(?:\.\d+)?(?:km|m|公里|千米|米)?$/i.test(normalized)) {
+    return true;
+  }
+
+  const hasCjk = /[\u3400-\u9fff]/u.test(normalized);
+  if (hasCjk && normalized.length > 6) {
+    return true;
+  }
+  if (!hasCjk && normalized.length > 20) {
+    return true;
+  }
+
+  if (locale === "zh") {
+    return /^(附近|周边|搜索|查找|帮我|我想|买|购买|官方|自营|直营|旗舰|专卖|授权|店|门店|商店|以内|范围|公里|千米|米)$/i.test(
+      normalized
+    );
+  }
+
+  return /^(near|nearby|around|find|show|store|shop|official|authorized|flagship|within|me)$/i.test(
+    normalized
+  );
+}
+
 function buildAmapKeywordTerms(
   message: string,
   locale: "zh" | "en",
@@ -250,32 +282,39 @@ function buildAmapKeywordTerms(
   const terms: string[] = [];
 
   if (isBicycleStoreIntent(message)) {
-    terms.push(locale === "zh" ? "自行车" : "bicycle");
-  }
-
-  if (isOfficialStoreIntent(message)) {
     if (locale === "zh") {
-      terms.push("官方", "自营");
+      terms.push("自行车");
+      if (message.includes("山地车")) {
+        terms.push("山地车");
+      }
+      if (message.includes("公路车")) {
+        terms.push("公路车");
+      }
     } else {
-      terms.push("official", "authorized");
+      terms.push("bicycle");
+      if (/\bmountain bike\b/i.test(message)) {
+        terms.push("mountain bike");
+      }
+      if (/\broad bike\b/i.test(message)) {
+        terms.push("road bike");
+      }
     }
   }
 
-  if (category === "shopping") {
-    const shoppingHints = locale === "zh"
-      ? ["店", "专卖店"]
-      : ["store", "shop"];
-    terms.push(...shoppingHints);
-  }
-
-  const rankingTokens = tokenizeForRanking(message).slice(0, 6);
+  const rankingTokens = tokenizeForRanking(message)
+    .filter((token) => !isAmapKeywordNoiseToken(token, locale))
+    .slice(0, 4);
   terms.push(...rankingTokens);
+
+  if (terms.length === 0 && category === "shopping") {
+    terms.push(locale === "zh" ? "购物" : "shopping");
+  }
 
   const normalized = terms
     .map((term) => term.trim())
-    .filter((term) => term.length >= 2);
+    .filter((term) => term.length >= 2 && !isAmapKeywordNoiseToken(term, locale));
 
-  return Array.from(new Set(normalized)).slice(0, 6);
+  return Array.from(new Set(normalized)).slice(0, 4);
 }
 
 function buildCandidateSearchableText(candidate: CandidateResult): string {
@@ -677,7 +716,8 @@ function tokenizeForRanking(message: string): string[] {
   const stopWords = new Set([
     "a", "an", "the", "for", "with", "near", "nearby", "around", "find", "show",
     "please", "me", "to", "in", "on", "of", "my", "within", "公里", "附近", "周边",
-    "找", "一下", "帮我", "我想", "restaurant", "restaurants", "shop", "store",
+    "找", "一下", "帮我", "我想", "搜索", "查询", "内", "以内",
+    "restaurant", "restaurants", "shop", "store",
     "官方", "自营", "直营", "旗舰", "专卖", "授权", "店",
   ]);
 
@@ -686,7 +726,11 @@ function tokenizeForRanking(message: string): string[] {
     .replace(/[^\p{L}\p{N}\s]/gu, " ")
     .split(/\s+/)
     .map((token) => token.trim())
-    .filter((token) => token.length >= 2);
+    .filter((token) => token.length >= 2 && token.length <= 24)
+    .filter((token) => {
+      const hasCjk = /[\u3400-\u9fff]/u.test(token);
+      return !hasCjk || token.length <= 6;
+    });
 
   const cjkTokens = Array.from(
     message.matchAll(
@@ -1225,9 +1269,6 @@ async function fetchNearbyStoresFromAmap(
       candidate.address || "",
       ...(candidate.tags || []),
     ].join(" ");
-    if (profile.requireBicycleStore && !hasBicycleSignal(searchableText)) {
-      continue;
-    }
 
     let rankingScore = scoreOverpassCandidate(candidate, distanceKm, messageTokens);
     if (profile.requireBicycleStore && hasBicycleSignal(searchableText)) {
@@ -1307,6 +1348,15 @@ async function fetchNearbyStoresFromAmap(
       });
 
       finalRanked = routeFiltered;
+    }
+  }
+
+  if (profile.requireBicycleStore && finalRanked.length > 0) {
+    const bicycleRanked = finalRanked.filter((item) =>
+      hasBicycleSignal(buildCandidateSearchableText(item.candidate))
+    );
+    if (bicycleRanked.length > 0) {
+      finalRanked = bicycleRanked;
     }
   }
 

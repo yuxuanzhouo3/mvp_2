@@ -476,8 +476,10 @@ export async function processChat(
     aiContent = aiResponse.content;
   } catch (error) {
     console.error("[ChatEngine] AI call failed:", error);
+    const implicitLocalNearbyIntent =
+      !effectiveNearbyIntent && isImplicitLocalLifeIntent(message);
     const nearbyFallback =
-      effectiveNearbyIntent && normalizedLocation
+      (effectiveNearbyIntent || implicitLocalNearbyIntent) && normalizedLocation
         ? await buildNearbyFallbackOnAiFailure(
           message,
           effectiveLocale,
@@ -843,6 +845,10 @@ async function buildNearbyFallbackOnAiFailure(
   }
 
   let nearbySeed: NearbySearchResult | null = preloadedSeed ?? null;
+  const fallbackSearchMessage = buildNearbyFallbackQuery(
+    seedSearchMessage || message,
+    locale
+  );
   if (!nearbySeed) {
     try {
       nearbySeed = await searchNearbyStores({
@@ -850,7 +856,7 @@ async function buildNearbyFallbackOnAiFailure(
         lng: location.lng,
         locale,
         region,
-        message: seedSearchMessage || message,
+        message: fallbackSearchMessage,
         limit: 8,
       });
     } catch (error) {
@@ -874,21 +880,10 @@ async function buildNearbyFallbackOnAiFailure(
         : locale === "zh"
           ? "已使用你的当前位置，为你准备了可直接打开的附近搜索。"
           : "I used your current location and prepared a nearby search you can open directly.",
-    plan: buildDefaultNearbyPlan(locale),
+    plan: buildDefaultNearbyPlan(locale, message),
     candidates,
-    followUps: buildDefaultNearbyFollowUps(locale),
-    thinking:
-      locale === "zh"
-        ? [
-          "检测到 AI 模型调用失败，启用附近搜索降级流程",
-          "基于当前定位检索附近门店",
-          "返回可直接跳转的候选结果",
-        ]
-        : [
-          "Detected AI provider failure and switched to nearby fallback flow",
-          "Queried nearby places from location-aware data sources",
-          "Returned actionable candidates with direct links",
-        ],
+    followUps: buildDefaultNearbyFollowUps(locale, message),
+    thinking: buildNearbyFallbackThinking(locale, message),
   };
 
   let normalizedFallback = normalizeAssistantResponseForContext(
@@ -919,8 +914,9 @@ function buildFallbackNearbyCandidates(
   locale: "zh" | "en",
   mapProvider: NearbyMapProvider
 ): CandidateResult[] {
-  const query = sanitizeNearbySearchQuery(message);
+  const query = buildNearbyFallbackQuery(message, locale);
   const platform = mapProvider;
+  const foodIntent = isFoodOrDeliveryIntent(message);
 
   return [
     {
@@ -933,7 +929,7 @@ function buildFallbackNearbyCandidates(
         locale === "zh"
           ? "已使用你的当前位置，已为你准备可直接打开的附近地图搜索。"
           : "I used your current location and prepared a direct nearby map search.",
-      category: locale === "zh" ? "本地生活" : "Electronics",
+      category: foodIntent ? "food" : "local_life",
       platform,
       searchQuery: query,
     },
@@ -971,10 +967,10 @@ function preventRedundantLocationClarify(
       plan:
         response.plan && response.plan.length > 0
           ? response.plan
-          : buildDefaultNearbyPlan(locale),
+          : buildDefaultNearbyPlan(locale, message),
       candidates: topCandidates,
       clarifyQuestions: undefined,
-      followUps: followUps.length > 0 ? followUps : buildDefaultNearbyFollowUps(locale),
+      followUps: followUps.length > 0 ? followUps : buildDefaultNearbyFollowUps(locale, message),
     };
   }
 
@@ -989,10 +985,10 @@ function preventRedundantLocationClarify(
     plan:
       response.plan && response.plan.length > 0
         ? response.plan
-        : buildDefaultNearbyPlan(locale),
+        : buildDefaultNearbyPlan(locale, message),
     candidates: buildFallbackNearbyCandidates(message, locale, mapProvider),
     clarifyQuestions: undefined,
-    followUps: followUps.length > 0 ? followUps : buildDefaultNearbyFollowUps(locale),
+    followUps: followUps.length > 0 ? followUps : buildDefaultNearbyFollowUps(locale, message),
   };
 }
 
@@ -1002,6 +998,90 @@ function isNearbyIntent(message: string): boolean {
     /(附近|周边|就近|离我近|最近|更近|近一点|\d+(?:\.\d+)?\s*(?:公里|千米|米)\s*(?:内|以内)?)/;
   const enPattern = /(nearby|near me|around me|close by|nearest|closer|closest|within \d+\s?(km|miles?|meters?|m))/;
   return zhPattern.test(text) || enPattern.test(text);
+}
+
+function isImplicitLocalLifeIntent(message: string): boolean {
+  const normalized = message.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  const zhKnowledgeIntentPattern =
+    /做法|教程|怎么做|如何做|热量|卡路里|营养|历史|翻译|意思|原理/;
+  const enKnowledgeIntentPattern =
+    /\b(recipe|recipes|cook|cooking|homemade|calories?|nutrition|history|definition|meaning|translate)\b/;
+  if (zhKnowledgeIntentPattern.test(message) || enKnowledgeIntentPattern.test(normalized)) {
+    return false;
+  }
+
+  const zhLocalLifeIntentPattern =
+    /我想吃|想吃|饿了|汉堡|披萨|火锅|奶茶|咖啡|餐厅|饭店|外卖|吃点|买点|去买|商店|门店|超市/;
+  const enLocalLifeIntentPattern =
+    /\b(i want to eat|want to eat|hungry|burger|hamburger|pizza|hotpot|restaurant|food|takeout|delivery|coffee|cafe|milk tea|boba|shop|store|buy|shopping)\b/;
+
+  return zhLocalLifeIntentPattern.test(message) || enLocalLifeIntentPattern.test(normalized);
+}
+
+function isFoodOrDeliveryIntent(message: string): boolean {
+  const normalized = message.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  const zhPattern =
+    /汉堡|披萨|炸鸡|外卖|美食|餐厅|饭店|奶茶|咖啡|火锅|烧烤|想吃|吃点/;
+  const enPattern =
+    /\b(burger|hamburger|pizza|fried chicken|takeout|delivery|food|restaurant|eat|coffee|cafe|milk tea|boba|hotpot|bbq)\b/;
+
+  return zhPattern.test(message) || enPattern.test(normalized);
+}
+
+function isBurgerIntent(message: string): boolean {
+  const normalized = message.trim().toLowerCase();
+  return /汉堡/.test(message) || /\b(burger|hamburger)\b/.test(normalized);
+}
+
+function buildNearbyFallbackQuery(message: string, locale: "zh" | "en"): string {
+  if (isBurgerIntent(message)) {
+    return locale === "zh"
+      ? "汉堡 外卖 附近"
+      : "burger delivery nearby";
+  }
+
+  if (isFoodOrDeliveryIntent(message)) {
+    return locale === "zh"
+      ? "餐饮 外卖 附近"
+      : "food delivery nearby";
+  }
+
+  return sanitizeNearbySearchQuery(message);
+}
+
+function buildNearbyFallbackThinking(locale: "zh" | "en", message: string): string[] {
+  const foodIntent = isFoodOrDeliveryIntent(message);
+  const burgerIntent = isBurgerIntent(message);
+
+  if (locale === "zh") {
+    return [
+      "识别到你在寻找附近本地生活服务",
+      foodIntent
+        ? burgerIntent
+          ? "优先按“汉堡/外卖”结合定位执行检索"
+          : "优先按“餐饮/外卖”结合定位执行检索"
+        : "基于当前定位检索附近门店",
+      "返回可直接跳转的候选结果",
+    ];
+  }
+
+  return [
+    "Detected a nearby local-life request",
+    foodIntent
+      ? burgerIntent
+        ? "Prioritized nearby burger and delivery options using your location"
+        : "Prioritized nearby food and delivery options using your location"
+      : "Queried nearby places from your current location",
+    "Returned actionable candidates with direct links",
+  ];
 }
 
 function isCarWashNearbyIntent(message: string): boolean {
@@ -1211,23 +1291,67 @@ function mergeCandidateWithSeed(
   };
 }
 
-function buildDefaultNearbyPlan(locale: "zh" | "en") {
+function buildDefaultNearbyPlan(locale: "zh" | "en", message?: string) {
+  const foodIntent = message ? isFoodOrDeliveryIntent(message) : false;
+  const burgerIntent = message ? isBurgerIntent(message) : false;
+
   if (locale === "zh") {
     return [
       { step: 1, description: "获取您的定位", status: "done" as const },
-      { step: 2, description: "检索周边 POI", status: "done" as const },
+      {
+        step: 2,
+        description: foodIntent
+          ? burgerIntent
+            ? "搜索附近汉堡店和可外卖商家"
+            : "搜索附近餐饮和可外卖商家"
+          : "检索周边 POI",
+        status: "done" as const,
+      },
       { step: 3, description: "按距离和相关性排序", status: "done" as const },
     ];
   }
 
   return [
     { step: 1, description: "Get your location", status: "done" as const },
-    { step: 2, description: "Search nearby POIs", status: "done" as const },
+    {
+      step: 2,
+      description: foodIntent
+        ? burgerIntent
+          ? "Search nearby burger places and delivery options"
+          : "Search nearby food places and delivery options"
+        : "Search nearby POIs",
+      status: "done" as const,
+    },
     { step: 3, description: "Rank by distance and relevance", status: "done" as const },
   ];
 }
 
-function buildDefaultNearbyFollowUps(locale: "zh" | "en") {
+function buildDefaultNearbyFollowUps(locale: "zh" | "en", message?: string) {
+  const foodIntent = message ? isFoodOrDeliveryIntent(message) : false;
+  const burgerIntent = message ? isBurgerIntent(message) : false;
+
+  if (foodIntent) {
+    if (locale === "zh") {
+      return [
+        {
+          text: burgerIntent ? "只看附近汉堡店" : "只看可外卖的店",
+          type: "refine" as const,
+        },
+        { text: "优先 30 分钟内可送达", type: "refine" as const },
+      ];
+    }
+
+    return [
+      {
+        text: burgerIntent
+          ? "Show nearby burger places only"
+          : "Show delivery-friendly places only",
+        type: "refine" as const,
+      },
+      { text: "Prioritize options deliverable within 30 minutes", type: "refine" as const },
+    ];
+  }
+
   if (locale === "zh") {
     return [
       { text: "需要我把范围扩大到 3 公里吗？", type: "refine" as const },

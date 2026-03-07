@@ -224,7 +224,7 @@ function extractCoreLocationName(
   title: string
 ): string {
   const suffixes = [
-    "\u65c5\u884c\u653b\u7565", "\u6e38\u73a9\u6307\u5357", "\u4e00\u65e5\u6e38", "\u4e24\u65e5\u6e38",
+    "旅行攻略", "游玩指南", "一日游", "两日游",
     "Tour", "Travel Guide", "Day Trip", "Experience"
   ];
 

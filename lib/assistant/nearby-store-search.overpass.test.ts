@@ -562,6 +562,54 @@ describe("nearby-store-search Overpass INTL", () => {
     const requestUrl = String(mockFetch.mock.calls[0]?.[0] || "");
     expect(requestUrl).toContain("keywords=");
     expect(requestUrl).toContain(encodeURIComponent("自行车"));
+    expect(requestUrl).not.toContain(encodeURIComponent("官方"));
+    expect(requestUrl).not.toContain(encodeURIComponent("自营"));
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]?.name).toBe("捷安特官方旗舰店");
+  });
+
+  it("keeps mountain-bike official store results when Amap POIs lack explicit bicycle tags", async () => {
+    process.env.AMAP_WEB_SERVICE_KEY = "test-amap-key";
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        status: "1",
+        info: "OK",
+        pois: [
+          {
+            id: "amap_mt_1",
+            name: "捷安特官方旗舰店",
+            type: "购物服务;专卖店",
+            address: "中山路 66 号",
+            location: "110.391000,23.541000",
+            distance: "520",
+          },
+          {
+            id: "amap_mt_2",
+            name: "城市百货店",
+            type: "购物服务;服装鞋帽",
+            address: "和平路 8 号",
+            location: "110.390100,23.540100",
+            distance: "380",
+          },
+        ],
+      }),
+    });
+
+    const result = await searchNearbyStores({
+      lat: 23.54,
+      lng: 110.39,
+      locale: "zh",
+      region: "CN",
+      message: "我想买一辆山地车，帮我搜索附近10km内的官方自营店",
+      limit: 5,
+    });
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const requestUrl = String(mockFetch.mock.calls[0]?.[0] || "");
+    expect(requestUrl).toContain(encodeURIComponent("自行车"));
+    expect(requestUrl).toContain(encodeURIComponent("山地车"));
     expect(result.candidates).toHaveLength(1);
     expect(result.candidates[0]?.name).toBe("捷安特官方旗舰店");
   });

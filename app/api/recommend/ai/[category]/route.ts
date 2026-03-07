@@ -2068,7 +2068,7 @@ export async function GET(request: NextRequest, { params }: { params: { category
             if (shouldUseTitleForTravelQuery(searchQueryForLink, titleText)) {
               searchQueryForLink = titleText;
             }
-            if (platform === "\u7a77\u6e38") {
+            if (platform === "穷游") {
               searchQueryForLink = extractTravelLandmark(searchQueryForLink);
             }
           }
@@ -2989,7 +2989,7 @@ async function generateFallbackRecommendations(params: {
       if (shouldUseTitleForTravelQuery(searchQueryForLink as string, titleText)) {
         searchQueryForLink = titleText;
       }
-      if (platform === "\u7a77\u6e38") {
+      if (platform === "穷游") {
         searchQueryForLink = extractTravelLandmark(searchQueryForLink as string);
       }
     }

@@ -11,7 +11,7 @@ function decodeOpaqueSearchPayload(url: string): Record<string, any> {
 
 describe("resolveCandidateLink CN entertainment mobile deep links", () => {
   it("TapTap Android intent keeps keyword in /search/{keyword}", () => {
-    const query = "\u539f\u795e";
+    const query = "原神";
 
     const result = resolveCandidateLink({
       title: query,
@@ -36,7 +36,7 @@ describe("resolveCandidateLink CN entertainment mobile deep links", () => {
   });
 
   it("Kugou Android intent uses cmd=116 payload and carries keyword", () => {
-    const query = "\u5468\u6770\u4f26 \u7a3b\u9999";
+    const query = "周杰伦 稻香";
 
     const result = resolveCandidateLink({
       title: query,
@@ -70,4 +70,3 @@ describe("resolveCandidateLink CN entertainment mobile deep links", () => {
     expect(intentPayload.jsonStr?.searchKeyWord).toBe(query);
   });
 });
-

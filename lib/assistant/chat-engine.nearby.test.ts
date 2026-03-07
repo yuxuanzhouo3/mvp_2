@@ -893,6 +893,52 @@ describe("processChat INTL nearby flow", () => {
     expect(response.actions?.some((action) => action.type === "open_app")).toBe(true);
   });
 
+  it("falls back to nearby food results for implicit local intent when AI fails", async () => {
+    vi.mocked(searchNearbyStores).mockResolvedValueOnce({
+      source: "database",
+      radiusKm: 5,
+      matchedCount: 1,
+      category: "food",
+      candidates: [
+        {
+          id: "cn_burger_1",
+          name: "Burger Place",
+          description: "0.6km away, takeaway supported",
+          category: "food",
+          distance: "0.6km",
+          rating: 4.6,
+          platform: "Google Maps",
+          searchQuery: "Burger Place, Downtown",
+        },
+      ],
+    });
+
+    vi.mocked(callAI).mockRejectedValueOnce(new Error("provider timeout"));
+
+    const response = await processChat(
+      {
+        message: "我想吃汉堡",
+        locale: "zh",
+        region: "CN",
+        location: { lat: 31.2304, lng: 121.4737 },
+      },
+      "test-user"
+    );
+
+    expect(searchNearbyStores).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(searchNearbyStores).mock.calls[0]?.[0]?.message).toBe(
+      "汉堡 外卖 附近"
+    );
+    expect(response.type).toBe("results");
+    expect(response.intent).toBe("search_nearby");
+    expect(response.candidates?.[0]?.name).toBe("Burger Place");
+    expect(response.plan?.[1]?.description).toMatch(/burger|汉堡|外卖|delivery/i);
+    expect(
+      (response.followUps || []).some((item) => /delivery|外卖|送达|burger|汉堡/i.test(item.text))
+    ).toBe(true);
+    expect((response.thinking || []).join(" ")).not.toMatch(/AI provider failure|model failed|失败|降级/i);
+  });
+
   it("treats Chinese distance phrasing as nearby intent and avoids AI error fallback", async () => {
     vi.mocked(searchNearbyStores).mockResolvedValueOnce({
       source: "database",
