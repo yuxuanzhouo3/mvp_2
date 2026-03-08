@@ -210,6 +210,7 @@ export const OUTBOUND_ALLOWED_SCHEMES = [
   "orpheuswidget",
   // 出行类
   "ctrip",
+  "qunaraphone",
   "qunarphone",
   "mafengwo",
   "qyertravel",

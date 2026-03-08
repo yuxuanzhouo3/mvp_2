@@ -731,7 +731,7 @@ export async function generateRecommendations(
           : ['小红书', '优酷健身', 'Keep', '大众点评', '美团', '百度地图健身', '高德地图健身', '腾讯地图健身', '知乎', '什么值得买'])
         : isIntlMobile ? getMobilePlatforms('fitness') : getIntlCategoryPlatforms('fitness'),
       examples: locale === 'zh'
-        ? (isCnWeb ? '健身视频、健身原理文章、健身器材推荐' : '健身课程、健身房、健身器材、运动装备')
+        ? (isCnWeb ? '健身视频、健身原理文章、健身器材推荐' : '健身课程、健身房、哑铃/壶铃/弹力带/瑜伽垫等具体器材')
         : 'fitness classes, gyms, fitness equipment, workout gear'
     }
   };
@@ -751,7 +751,7 @@ fitnessType 必须为 tutorial/theory_article/equipment 之一。
         : `【强制要求】必须包含3种类型，各至少1个，并且每项必须包含 fitnessType 字段：
 - 附近场所(nearby_place): 真实可去的健身房/运动场地/场馆（不是教程/不是装备评测）
 - 教程(tutorial): 健身动作/课程/跟练视频
-- 器材(equipment): "XX使用教程/入门要点"(不是购买链接/不是纯评测导购)
+- 器材(equipment): 必须是具体器材名的内容，如“哑铃动作要点 / 壶铃入门 / 弹力带怎么用 / 瑜伽垫怎么选”；不要输出“必备健身器材 / 家用器材 / 运动装备”这类大类词
 fitnessType 必须为 nearby_place/tutorial/equipment 之一。
 
 【附近场所硬指标】当你输出 fitnessType=nearby_place 时，description 必须同时提到：
@@ -761,7 +761,7 @@ fitnessType 必须为 nearby_place/tutorial/equipment 之一。
 并且 searchQuery 必须包含“附近/步行/地铁/商圈/街道”至少一项，方便定位周边。
 
 【教程硬指标】fitnessType=tutorial 时：searchQuery 必须包含“教程/跟练/训练/视频课”至少一项。
-【器材硬指标】fitnessType=equipment 时：searchQuery 必须包含“使用教程/怎么用/入门/动作要点”至少一项。`)
+【器材硬指标】fitnessType=equipment 时：title 或 searchQuery 至少一个必须包含具体器材名（如“哑铃/壶铃/弹力带/瑜伽垫/泡沫轴/健腹轮”），并且 searchQuery 必须包含“使用教程/怎么用/入门/动作要点”至少一项。`)
       : "";
 
   const config = categoryConfig[category as keyof typeof categoryConfig] || categoryConfig.entertainment;

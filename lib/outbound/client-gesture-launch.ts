@@ -48,6 +48,12 @@ export function openDeepLinkWithGesture(url: string) {
   }
 
   if (!url.startsWith("http://") && !url.startsWith("https://")) {
+    const os = detectMobileOs();
+    if (os === "android") {
+      window.location.href = url;
+      return;
+    }
+
     try {
       const anchor = document.createElement("a");
       anchor.href = url;

@@ -179,6 +179,15 @@ function ctripWebSearchUrl(keyword: string): string {
   return `https://you.ctrip.com/globalsearch/?keyword=${encodeURIComponent(keyword)}`;
 }
 
+function vipshopSearchUrl(keyword: string): string {
+  return `https://category.vip.com/suggest.php?keyword=${encodeURIComponent(keyword)}`;
+}
+
+function vipshopAndroidSearchIntent(keyword: string): string {
+  const web = vipshopSearchUrl(keyword);
+  return `intent://category.vip.com/suggest.php?keyword=${encodeURIComponent(keyword)}#Intent;scheme=https;package=com.achievo.vipshop;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+}
+
 function encodeBase64Utf8(value: string): string {
   if (typeof Buffer !== "undefined") {
     return Buffer.from(value, "utf8").toString("base64");
@@ -201,12 +210,44 @@ function ctripH5DeepLinkFromWebUrl(webUrl: string): string {
   return `ctrip://wireless/h5?url=${encodeURIComponent(base64Url)}&type=1`;
 }
 
-function ctripSearchDeepLink(keyword: string): string {
-  return `ctrip://wireless/h5?type=search&keyword=${encodeURIComponent(keyword)}&from=deeplink`;
+function ctripAndroidSearchDeepLink(keyword: string): string {
+  const web = ctripWebSearchUrl(keyword);
+  return ctripH5DeepLinkFromWebUrl(web);
 }
 
-function ctripAndroidSearchIntent(keyword: string, webUrl: string): string {
-  return `intent://wireless/h5?type=search&keyword=${encodeURIComponent(keyword)}#Intent;scheme=ctrip;package=ctrip.android.view;S.browser_fallback_url=${encodeURIComponent(webUrl)};end`;
+function ctripAndroidSearchIntent(webUrl: string): string {
+  const base64Url = encodeBase64Utf8(webUrl);
+  return `intent://wireless/h5?url=${encodeURIComponent(base64Url)}&type=1#Intent;scheme=ctrip;package=ctrip.android.view;S.browser_fallback_url=${encodeURIComponent(webUrl)};end`;
+}
+
+function qunarWebSearchUrl(keyword: string): string {
+  return `https://www.qunar.com/search?searchWord=${encodeURIComponent(keyword)}`;
+}
+
+function qunarIosSearchDeepLink(keyword: string): string {
+  return `qunarphone://search?searchWord=${encodeURIComponent(keyword)}&from=deeplink`;
+}
+
+function qunarAndroidSearchDeepLink(keyword: string): string {
+  return `qunaraphone://search?searchWord=${encodeURIComponent(keyword)}&from=deeplink`;
+}
+
+function qunarAndroidSearchIntent(keyword: string): string {
+  const web = qunarWebSearchUrl(keyword);
+  return `intent://search?searchWord=${encodeURIComponent(keyword)}#Intent;scheme=qunaraphone;package=com.qunar.atom;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+}
+
+function mafengwoWebSearchUrl(keyword: string): string {
+  return `https://www.mafengwo.cn/search/q.php?t=sales&q=${encodeURIComponent(keyword)}`;
+}
+
+function mafengwoSearchDeepLink(keyword: string): string {
+  return `mafengwo://search?keyword=${encodeURIComponent(keyword)}&from=deeplink`;
+}
+
+function mafengwoAndroidSearchIntent(keyword: string): string {
+  const web = mafengwoWebSearchUrl(keyword);
+  return `intent://search?keyword=${encodeURIComponent(keyword)}#Intent;scheme=mafengwo;package=com.mfw.roadbook;S.browser_fallback_url=${encodeURIComponent(web)};end`;
 }
 
 function kugouWebSearchUrl(keyword: string): string {
@@ -234,8 +275,39 @@ function kugouAndroidIntentSearchUrl(keyword: string, fallbackWebUrl: string): s
   return `intent://start.music/?${buildKugouSearchPayload(keyword)}#Intent;scheme=kugouurl;package=com.kugou.android;S.browser_fallback_url=${encodeURIComponent(fallbackWebUrl)};end`;
 }
 
+function iqiyiSchemeSearchUrl(keyword: string): string {
+  return `iqiyi://mobile/search?keyword=${encodeURIComponent(keyword)}&from=deeplink`;
+}
+
+function iqiyiAndroidIntentSearchUrl(keyword: string, fallbackWebUrl: string): string {
+  return `intent://mobile/search?keyword=${encodeURIComponent(keyword)}&from=deeplink#Intent;scheme=iqiyi;package=com.qiyi.video;S.browser_fallback_url=${encodeURIComponent(fallbackWebUrl)};end`;
+}
+
+function youkuSchemeSearchUrl(keyword: string): string {
+  return `youku://search?keyword=${encodeURIComponent(keyword)}`;
+}
+
+function youkuAndroidIntentSearchUrl(keyword: string, fallbackWebUrl: string): string {
+  return `intent://search?keyword=${encodeURIComponent(keyword)}#Intent;scheme=youku;package=com.youku.phone;S.browser_fallback_url=${encodeURIComponent(fallbackWebUrl)};end`;
+}
+
+function neteaseCloudMusicSchemeSearchUrl(keyword: string): string {
+  return `orpheus://search?keyword=${encodeURIComponent(keyword)}`;
+}
+
+function neteaseCloudMusicAndroidIntentSearchUrl(
+  keyword: string,
+  fallbackWebUrl: string
+): string {
+  return `intent://search?keyword=${encodeURIComponent(keyword)}#Intent;scheme=orpheus;package=com.netease.cloudmusic;S.browser_fallback_url=${encodeURIComponent(fallbackWebUrl)};end`;
+}
+
 function taptapSearchUrl(keyword: string): string {
   return `https://www.taptap.cn/search/${encodeURIComponent(keyword)}`;
+}
+
+function taptapAndroidIntentSearchUrl(keyword: string, fallbackWebUrl: string): string {
+  return `intent://www.taptap.cn/search/${encodeURIComponent(keyword)}#Intent;scheme=https;package=com.taptap;S.browser_fallback_url=${encodeURIComponent(fallbackWebUrl)};end`;
 }
 
 export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
@@ -296,12 +368,27 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       domains: ["iqiyi.com"],
       hasApp: true,
       androidPackageId: "com.qiyi.video",
-      universalLink: ({ query }) => `https://so.iqiyi.com/so/q_${encodeURIComponent(query)}`,
-      webLink: ({ query }) => `https://so.iqiyi.com/so/q_${encodeURIComponent(query)}`,
-      iosScheme: ({ query }) => `iqiyi://mobile/search?keyword=${encodeURIComponent(query)}&from=deeplink`,
-      // Android: prefer direct app scheme first.
-      // `resolveAppSchemes` will still auto-add an intent fallback via package id.
-      androidScheme: ({ query }) => `iqiyi://mobile/search?keyword=${encodeURIComponent(query)}&from=deeplink`,
+      universalLink: ({ query, title }) => {
+        const keyword = resolveSearchKeyword({ query, title });
+        return `https://so.iqiyi.com/so/q_${encodeURIComponent(keyword)}`;
+      },
+      webLink: ({ query, title }) => {
+        const keyword = resolveSearchKeyword({ query, title });
+        return `https://so.iqiyi.com/so/q_${encodeURIComponent(keyword)}`;
+      },
+      iosScheme: ({ query, title }) => {
+        const keyword = resolveSearchKeyword({ query, title });
+        return iqiyiSchemeSearchUrl(keyword);
+      },
+      androidScheme: ({ query, title }) => {
+        const keyword = resolveSearchKeyword({ query, title });
+        return iqiyiSchemeSearchUrl(keyword);
+      },
+      androidIntentScheme: ({ query, title }) => {
+        const keyword = resolveSearchKeyword({ query, title });
+        const web = `https://so.iqiyi.com/so/q_${encodeURIComponent(keyword)}`;
+        return iqiyiAndroidIntentSearchUrl(keyword, web);
+      },
     },
     "优酷": {
       id: "优酷",
@@ -309,12 +396,27 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       domains: ["youku.com"],
       hasApp: true,
       androidPackageId: "com.youku.phone",
-      universalLink: ({ query }) => `https://so.youku.com/search_video/q_${encodeURIComponent(query)}`,
-      webLink: ({ query }) => `https://so.youku.com/search_video/q_${encodeURIComponent(query)}`,
-      iosScheme: ({ query }) => `youku://search?keyword=${encodeURIComponent(query)}`,
-      // Android: prefer direct app scheme first.
-      // `resolveAppSchemes` will still auto-add an intent fallback via package id.
-      androidScheme: ({ query }) => `youku://search?keyword=${encodeURIComponent(query)}`,
+      universalLink: ({ query, title }) => {
+        const keyword = resolveSearchKeyword({ query, title });
+        return `https://so.youku.com/search_video/q_${encodeURIComponent(keyword)}`;
+      },
+      webLink: ({ query, title }) => {
+        const keyword = resolveSearchKeyword({ query, title });
+        return `https://so.youku.com/search_video/q_${encodeURIComponent(keyword)}`;
+      },
+      iosScheme: ({ query, title }) => {
+        const keyword = resolveSearchKeyword({ query, title });
+        return youkuSchemeSearchUrl(keyword);
+      },
+      androidScheme: ({ query, title }) => {
+        const keyword = resolveSearchKeyword({ query, title });
+        return youkuSchemeSearchUrl(keyword);
+      },
+      androidIntentScheme: ({ query, title }) => {
+        const keyword = resolveSearchKeyword({ query, title });
+        const web = `https://so.youku.com/search_video/q_${encodeURIComponent(keyword)}`;
+        return youkuAndroidIntentSearchUrl(keyword, web);
+      },
     },
     "豆瓣": {
       id: "豆瓣",
@@ -363,11 +465,22 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       domains: ["music.163.com"],
       hasApp: true,
       androidPackageId: "com.netease.cloudmusic",
-      webLink: ({ query }) => `https://music.163.com/#/search/m/?s=${encodeURIComponent(query)}`,
-      iosScheme: ({ query }) => `orpheus://search?keyword=${encodeURIComponent(query)}`,
-      androidScheme: ({ query }) => {
-        const web = `https://music.163.com/#/search/m/?s=${encodeURIComponent(query)}`;
-        return `intent://search?keyword=${encodeURIComponent(query)}#Intent;scheme=orpheus;package=com.netease.cloudmusic;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      webLink: ({ query, title }) => {
+        const keyword = resolveSearchKeyword({ query, title });
+        return `https://music.163.com/#/search/m/?s=${encodeURIComponent(keyword)}`;
+      },
+      iosScheme: ({ query, title }) => {
+        const keyword = resolveSearchKeyword({ query, title });
+        return neteaseCloudMusicSchemeSearchUrl(keyword);
+      },
+      androidScheme: ({ query, title }) => {
+        const keyword = resolveSearchKeyword({ query, title });
+        return neteaseCloudMusicSchemeSearchUrl(keyword);
+      },
+      androidIntentScheme: ({ query, title }) => {
+        const keyword = resolveSearchKeyword({ query, title });
+        const web = `https://music.163.com/#/search/m/?s=${encodeURIComponent(keyword)}`;
+        return neteaseCloudMusicAndroidIntentSearchUrl(keyword, web);
       },
     },
     TapTap: {
@@ -391,6 +504,11 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       iosScheme: ({ query, title }) => {
         const keyword = resolveSearchKeyword({ query, title });
         return `taptap://taptap.cn/search?keyword=${encodeURIComponent(keyword)}`;
+      },
+      androidScheme: ({ query, title }) => {
+        const keyword = resolveSearchKeyword({ query, title });
+        const web = taptapSearchUrl(keyword);
+        return taptapAndroidIntentSearchUrl(keyword, web);
       },
     },
     "小红书": {
@@ -604,19 +722,24 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       hasApp: true,
       androidPackageId: "com.achievo.vipshop",
       // Android: avoid package-only intent fallback (can wake app but lose query context).
-      // Prefer vip.com universal link so installed app can claim App Links with full keyword.
+      // Use an https intent pinned to Vipshop's package so Android can wake the app
+      // while keeping the keyword on the vip.com search route.
       disableAndroidPackageIntentFallback: true,
       universalLink: ({ query, title }) => {
         const keyword = resolveSearchKeyword({ query, title });
-        return `https://category.vip.com/suggest.php?keyword=${encodeURIComponent(keyword)}`;
+        return vipshopSearchUrl(keyword);
       },
       webLink: ({ query, title }) => {
         const keyword = resolveSearchKeyword({ query, title });
-        return `https://category.vip.com/suggest.php?keyword=${encodeURIComponent(keyword)}`;
+        return vipshopSearchUrl(keyword);
       },
       iosScheme: ({ query, title }) => {
         const keyword = resolveSearchKeyword({ query, title });
         return `vipshop://search?keyword=${encodeURIComponent(keyword)}`;
+      },
+      androidScheme: ({ query, title }) => {
+        const keyword = resolveSearchKeyword({ query, title });
+        return vipshopAndroidSearchIntent(keyword);
       },
     },
     "1688": {
@@ -1296,12 +1419,12 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       },
       androidScheme: (ctx) => {
         const keyword = resolveSearchKeyword(ctx);
-        return ctripSearchDeepLink(keyword);
+        return ctripAndroidSearchDeepLink(keyword);
       },
       androidIntentScheme: (ctx) => {
         const keyword = resolveSearchKeyword(ctx);
         const web = ctripWebSearchUrl(keyword);
-        return ctripAndroidSearchIntent(keyword, web);
+        return ctripAndroidSearchIntent(web);
       },
     },
     "去哪儿": {
@@ -1310,13 +1433,10 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       domains: ["qunar.com"],
       hasApp: true,
       androidPackageId: "com.qunar.atom",
-      webLink: ({ query }) => `https://www.qunar.com/search?searchWord=${encodeURIComponent(query)}`,
-      iosScheme: ({ query }) =>
-        `qunarphone://search?searchWord=${encodeURIComponent(query)}&from=deeplink`,
-      androidScheme: ({ query }) => {
-        const web = `https://www.qunar.com/search?searchWord=${encodeURIComponent(query)}`;
-        return `intent://search?searchWord=${encodeURIComponent(query)}#Intent;scheme=qunarphone;package=com.qunar.atom;S.browser_fallback_url=${encodeURIComponent(web)};end`;
-      },
+      webLink: (ctx) => qunarWebSearchUrl(resolveSearchKeyword(ctx)),
+      iosScheme: (ctx) => qunarIosSearchDeepLink(resolveSearchKeyword(ctx)),
+      androidScheme: (ctx) => qunarAndroidSearchDeepLink(resolveSearchKeyword(ctx)),
+      androidIntentScheme: (ctx) => qunarAndroidSearchIntent(resolveSearchKeyword(ctx)),
     },
     "马蜂窝": {
       id: "马蜂窝",
@@ -1324,13 +1444,10 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       domains: ["mafengwo.cn"],
       hasApp: true,
       androidPackageId: "com.mfw.roadbook",
-      webLink: ({ query }) => `https://www.mafengwo.cn/search/q.php?t=sales&q=${encodeURIComponent(query)}`,
-      iosScheme: ({ query }) =>
-        `mafengwo://search?keyword=${encodeURIComponent(query)}&from=deeplink`,
-      androidScheme: ({ query }) => {
-        const web = `https://www.mafengwo.cn/search/q.php?t=sales&q=${encodeURIComponent(query)}`;
-        return `intent://search?keyword=${encodeURIComponent(query)}#Intent;scheme=mafengwo;package=com.mfw.roadbook;S.browser_fallback_url=${encodeURIComponent(web)};end`;
-      },
+      webLink: (ctx) => mafengwoWebSearchUrl(resolveSearchKeyword(ctx)),
+      iosScheme: (ctx) => mafengwoSearchDeepLink(resolveSearchKeyword(ctx)),
+      androidScheme: (ctx) => mafengwoSearchDeepLink(resolveSearchKeyword(ctx)),
+      androidIntentScheme: (ctx) => mafengwoAndroidSearchIntent(resolveSearchKeyword(ctx)),
     },
     "穷游": {
       id: "穷游",

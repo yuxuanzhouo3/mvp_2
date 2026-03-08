@@ -118,11 +118,34 @@ describe("normalizeCnMobileFitnessRecommendation", () => {
     });
 
     expect(result.platform).toBe("京东");
-    expect(result.title).toBe("哑铃健身器材推荐");
-    expect(result.searchQuery).toBe("哑铃 健身器材 推荐 京东");
+    expect(result.title).toBe("哑铃推荐");
+    expect(result.searchQuery).toBe("哑铃 推荐 重量范围 握把防滑 京东");
     expect(result.reason).toContain("京东");
-    expect(result.description).toContain("承重");
-    expect(result.tags).toEqual(["哑铃", "健身器材", "推荐", "京东"]);
+    expect(result.description).toContain("重量范围");
+    expect(result.tags).toEqual(["哑铃", "重量范围", "握把防滑", "京东"]);
+  });
+
+  it("converts generic equipment topics into concrete items", () => {
+    const result = normalizeCnMobileFitnessRecommendation({
+      title: "居家必备健身器材怎么选",
+      description: "适合家庭训练入门，想先买一套基础器材",
+      reason: "根据器材需求生成的入门推荐",
+      searchQuery: "家用 健身器材 必备 入门",
+      tags: ["家用", "必备", "入门器材"],
+      platform: "什么值得买",
+      client: "app",
+      isMobile: true,
+      locale: "zh",
+      index: 1,
+      fitnessType: "equipment",
+    });
+
+    expect(result.platform).toBe("京东");
+    expect(result.title).toBe("可调节哑铃推荐");
+    expect(result.title).not.toContain("必备健身器材");
+    expect(result.searchQuery).toContain("可调节哑铃");
+    expect(result.searchQuery).toContain("京东");
+    expect(result.description).toContain("泛推荐");
   });
 
   it("keeps tutorial query aligned with video intent", () => {

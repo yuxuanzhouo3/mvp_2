@@ -7,6 +7,18 @@ import {
 } from "@/lib/outbound/deep-link-helpers";
 import type { CandidateLink } from "@/lib/types/recommendation";
 
+function decodeBase64Utf8(value: string): string {
+  return Buffer.from(value, "base64").toString("utf8");
+}
+
+function extractCtripEmbeddedUrl(linkUrl: string): string | null {
+  const match = linkUrl.match(/[?&]url=([^&#]+)/i);
+  if (!match?.[1]) return null;
+
+  const base64Payload = decodeURIComponent(match[1]);
+  return decodeBase64Utf8(base64Payload);
+}
+
 function extractQueryParam(linkUrl: string, key: string): string | null {
   const match = linkUrl.match(new RegExp(`[?&]${key}=([^&#]+)`, "i"));
   return match?.[1] ? decodeURIComponent(match[1]) : null;
@@ -134,8 +146,9 @@ describe("recommend travel CN mobile outbound e2e", () => {
     const encodedKeyword = encodeURIComponent(expectedKeyword);
 
     expect(candidate?.primary.type).toBe("app");
-    expect(candidate?.primary.url).toContain("ctrip://wireless/h5?type=search&keyword=");
-    expect(extractQueryParam(candidate?.primary.url || "", "keyword")).toBe(expectedKeyword);
+    expect(candidate?.primary.url).toContain("ctrip://wireless/h5?url=");
+    const primaryEmbeddedUrl = extractCtripEmbeddedUrl(candidate?.primary.url || "");
+    expect(primaryEmbeddedUrl).toContain(`keyword=${encodedKeyword}`);
 
     const webLink = candidate?.fallbacks.find(
       (link) =>
@@ -146,16 +159,18 @@ describe("recommend travel CN mobile outbound e2e", () => {
     const autoTryLinks = getAutoTryLinks(candidate!, "android");
     expect(autoTryLinks.length).toBeGreaterThan(0);
     expect(autoTryLinks[0]?.type).toBe("app");
-    expect(autoTryLinks[0]?.url).toContain("ctrip://wireless/h5?type=search&keyword=");
-    expect(extractQueryParam(autoTryLinks[0]?.url || "", "keyword")).toBe(expectedKeyword);
+    expect(autoTryLinks[0]?.url).toContain("ctrip://wireless/h5?url=");
+    const autoTryEmbeddedUrl = extractCtripEmbeddedUrl(autoTryLinks[0]?.url || "");
+    expect(autoTryEmbeddedUrl).toContain(`keyword=${encodedKeyword}`);
 
     const androidIntent = candidate?.fallbacks.find(
       (link) =>
         link.type === "intent" &&
         link.url.includes("package=ctrip.android.view")
     );
-    expect(androidIntent?.url).toContain("intent://wireless/h5?type=search&keyword=");
-    expect(androidIntent?.url).toContain(`keyword=${encodedKeyword}`);
+    expect(androidIntent?.url).toContain("intent://wireless/h5?url=");
+    const intentEmbeddedUrl = extractCtripEmbeddedUrl(androidIntent?.url || "");
+    expect(intentEmbeddedUrl).toContain(`keyword=${encodedKeyword}`);
 
     const androidStoreLinks = filterStoreLinksByOs(
       getStoreLinks(candidate!),

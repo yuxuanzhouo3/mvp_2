@@ -217,8 +217,9 @@ describe("resolveCandidateLink android intent fallback", () => {
         link.type === "intent" &&
         link.url.includes("package=ctrip.android.view")
     );
-    expect(androidIntent?.url).toContain("intent://wireless/h5?type=search&keyword=");
-    expect(extractQueryParam(androidIntent?.url || "", "keyword")).toBe(title);
+    expect(androidIntent?.url).toContain("intent://wireless/h5?url=");
+    const intentEmbeddedUrl = extractCtripEmbeddedUrl(androidIntent?.url || "");
+    expect(intentEmbeddedUrl).toContain(`keyword=${encodedTitle}`);
   });
 
   it("uses Ctrip Android app deeplink first and keeps keyword intent fallback", () => {
@@ -235,16 +236,81 @@ describe("resolveCandidateLink android intent fallback", () => {
     });
 
     expect(result.primary.type).toBe("app");
-    expect(result.primary.url).toContain("ctrip://wireless/h5?type=search&keyword=");
-    expect(extractQueryParam(result.primary.url, "keyword")).toBe(query);
+    expect(result.primary.url).toContain("ctrip://wireless/h5?url=");
+    const primaryEmbeddedUrl = extractCtripEmbeddedUrl(result.primary.url);
+    expect(primaryEmbeddedUrl).toContain(`keyword=${encodeURIComponent(query)}`);
 
     const androidIntent = result.fallbacks.find(
       (link) =>
         link.type === "intent" &&
         link.url.includes("package=ctrip.android.view")
     );
-    expect(androidIntent?.url).toContain("intent://wireless/h5?type=search&keyword=");
-    expect(extractQueryParam(androidIntent?.url || "", "keyword")).toBe(query);
+    expect(androidIntent?.url).toContain("intent://wireless/h5?url=");
+    const intentEmbeddedUrl = extractCtripEmbeddedUrl(androidIntent?.url || "");
+    expect(intentEmbeddedUrl).toContain(`keyword=${encodeURIComponent(query)}`);
+  });
+
+  it.each([
+    {
+      provider: "去哪儿",
+      expectedScheme: "qunaraphone://search?searchWord=",
+      fallbackScheme: "scheme=qunaraphone",
+      paramKey: "searchWord",
+      packageId: "com.qunar.atom",
+    },
+    {
+      provider: "马蜂窝",
+      expectedScheme: "mafengwo://search?keyword=",
+      fallbackScheme: "scheme=mafengwo",
+      paramKey: "keyword",
+      packageId: "com.mfw.roadbook",
+    },
+  ])(
+    "uses $provider Android app deeplink first and keeps keyword intent fallback",
+    ({ provider, expectedScheme, fallbackScheme, paramKey, packageId }) => {
+      const query = "江苏苏州平江路游玩攻略";
+      const result = resolveCandidateLink({
+        title: "中国·苏州·平江路",
+        query,
+        category: "travel",
+        locale: "zh",
+        region: "CN",
+        provider,
+        isMobile: true,
+        os: "android",
+      });
+
+      expect(result.primary.type).toBe("app");
+      expect(result.primary.url).toContain(expectedScheme);
+      expect(extractQueryParam(result.primary.url, paramKey)).toBe(query);
+
+      const androidIntent = result.fallbacks.find(
+        (link) => link.type === "intent" && link.url.includes(`package=${packageId}`)
+      );
+      expect(androidIntent?.url).toContain("intent://search?");
+      expect(androidIntent?.url).toContain(fallbackScheme);
+      expect(extractQueryParam(androidIntent?.url || "", paramKey)).toBe(query);
+    }
+  );
+
+  it.each([
+    { provider: "去哪儿", paramKey: "searchWord" },
+    { provider: "马蜂窝", paramKey: "keyword" },
+  ])("uses recommendation title as $provider keyword fallback when query is empty", ({ provider, paramKey }) => {
+    const title = "中国 杭州 西湖";
+    const result = resolveCandidateLink({
+      title,
+      query: "   ",
+      category: "travel",
+      locale: "zh",
+      region: "CN",
+      provider,
+      isMobile: true,
+      os: "android",
+    });
+
+    expect(result.primary.type).toBe("app");
+    expect(extractQueryParam(result.primary.url, paramKey)).toBe(title);
   });
 
   it("uses recommendation title as Vipshop keyword fallback when query is empty", () => {
@@ -261,8 +327,11 @@ describe("resolveCandidateLink android intent fallback", () => {
       os: "android",
     });
 
-    expect(result.primary.type).toBe("universal_link");
+    expect(result.primary.type).toBe("intent");
+    expect(result.primary.url).toContain("package=com.achievo.vipshop");
+    expect(result.primary.url).toContain("scheme=https");
     expect(result.primary.url).toContain(`keyword=${encodedTitle}`);
+    expect(extractQueryParam(result.primary.url, "keyword")).toBe(title);
 
     const webLink = result.fallbacks.find(
       (link) =>

@@ -23,11 +23,47 @@ function buildTravelRecommendation(candidateLink?: AIRecommendation["candidateLi
   };
 }
 
+function buildEntertainmentRecommendation(
+  title: string,
+  platform: string,
+  candidateLink?: AIRecommendation["candidateLink"]
+): AIRecommendation {
+  return {
+    title,
+    description: `${platform} 搜索推荐`,
+    category: "entertainment",
+    link: candidateLink?.primary.url || "https://example.com/entertainment",
+    linkType: "search",
+    metadata: {},
+    reason: "命中娱乐搜索场景",
+    platform,
+    candidateLink,
+  };
+}
+
+function buildShoppingRecommendation(
+  title: string,
+  platform: string,
+  candidateLink?: AIRecommendation["candidateLink"]
+): AIRecommendation {
+  return {
+    title,
+    description: `${platform} 搜索推荐`,
+    category: "shopping",
+    link: candidateLink?.primary.url || "https://example.com/shopping",
+    linkType: "search",
+    metadata: {},
+    reason: "命中购物搜索场景",
+    platform,
+    candidateLink,
+  };
+}
+
 describe("buildRecommendationGestureLaunchPlan", () => {
   it.each([
-    { provider: "去哪儿", paramKey: "searchWord" },
-    { provider: "马蜂窝", paramKey: "keyword" },
-  ])("keeps travel keyword for $provider Android deeplink", ({ provider, paramKey }) => {
+    { provider: "去哪儿", paramKey: "searchWord", expectedScheme: "qunaraphone://search?searchWord=" },
+    { provider: "马蜂窝", paramKey: "keyword", expectedScheme: "mafengwo://search?keyword=" },
+  ])("keeps travel keyword for $provider Android deeplink", ({ provider, paramKey, expectedScheme }) => {
     const query = "江苏苏州平江路游玩攻略";
     const candidateLink = resolveCandidateLink({
       title: "中国·苏州·平江路",
@@ -47,7 +83,8 @@ describe("buildRecommendationGestureLaunchPlan", () => {
     );
 
     expect(plan.firstDeepLink).toBeTruthy();
-    expect(plan.firstDeepLink?.type).toMatch(/app|intent/);
+    expect(plan.firstDeepLink?.type).toBe("app");
+    expect(plan.firstDeepLink?.url).toContain(expectedScheme);
     expect(extractQueryParam(plan.firstDeepLink?.url || "", paramKey)).toBe(query);
 
     const data = new URL(`https://example.com${plan.outboundHref}`).searchParams.get("data");
@@ -72,5 +109,81 @@ describe("buildRecommendationGestureLaunchPlan", () => {
     const decoded = decodeCandidateLink(data || "", "zh");
     expect(decoded.candidateLink?.primary.type).toBe("web");
     expect(decoded.candidateLink?.primary.url).toBe(recommendation.link);
+  });
+
+  it("uses TapTap Android intent as first deep link and keeps keyword", () => {
+    const query = "原神";
+    const candidateLink = resolveCandidateLink({
+      title: query,
+      query,
+      category: "entertainment",
+      locale: "zh",
+      region: "CN",
+      provider: "TapTap",
+      isMobile: true,
+      os: "android",
+    });
+
+    const plan = buildRecommendationGestureLaunchPlan(
+      buildEntertainmentRecommendation(query, "TapTap", candidateLink),
+      "/category/entertainment",
+      "android"
+    );
+
+    expect(plan.firstDeepLink).toBeTruthy();
+    expect(plan.firstDeepLink?.type).toBe("intent");
+    expect(plan.firstDeepLink?.url).toContain("package=com.taptap");
+    expect(plan.firstDeepLink?.url).toContain(encodeURIComponent(query));
+  });
+
+  it("uses NetEase app scheme as first Android deep link and keeps keyword", () => {
+    const query = "林俊杰 修炼爱情";
+    const candidateLink = resolveCandidateLink({
+      title: query,
+      query,
+      category: "entertainment",
+      locale: "zh",
+      region: "CN",
+      provider: "网易云音乐",
+      isMobile: true,
+      os: "android",
+    });
+
+    const plan = buildRecommendationGestureLaunchPlan(
+      buildEntertainmentRecommendation(query, "网易云音乐", candidateLink),
+      "/category/entertainment",
+      "android"
+    );
+
+    expect(plan.firstDeepLink).toBeTruthy();
+    expect(plan.firstDeepLink?.type).toBe("app");
+    expect(plan.firstDeepLink?.url).toContain("orpheus://search?keyword=");
+    expect(extractQueryParam(plan.firstDeepLink?.url || "", "keyword")).toBe(query);
+  });
+
+  it("uses Vipshop Android https intent as first deep link and keeps keyword", () => {
+    const query = "春季防晒外套";
+    const candidateLink = resolveCandidateLink({
+      title: query,
+      query: "   ",
+      category: "shopping",
+      locale: "zh",
+      region: "CN",
+      provider: "唯品会",
+      isMobile: true,
+      os: "android",
+    });
+
+    const plan = buildRecommendationGestureLaunchPlan(
+      buildShoppingRecommendation(query, "唯品会", candidateLink),
+      "/category/shopping",
+      "android"
+    );
+
+    expect(plan.firstDeepLink).toBeTruthy();
+    expect(plan.firstDeepLink?.type).toBe("intent");
+    expect(plan.firstDeepLink?.url).toContain("package=com.achievo.vipshop");
+    expect(plan.firstDeepLink?.url).toContain("scheme=https");
+    expect(extractQueryParam(plan.firstDeepLink?.url || "", "keyword")).toBe(query);
   });
 });

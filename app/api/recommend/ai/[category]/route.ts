@@ -1673,7 +1673,11 @@ export async function GET(request: NextRequest, { params }: { params: { category
       }
     }
 
-    const preferenceHash = generatePreferenceHash(userPreference, userHistory || []);
+    const shouldVersionCnMobileFitnessCache =
+      category === "fitness" && locale === "zh" && client === "app" && Boolean(isMobile);
+    const preferenceHash = `${generatePreferenceHash(userPreference, userHistory || [])}${
+      shouldVersionCnMobileFitnessCache ? ":cn-mobile-fitness-v2" : ""
+    }`;
     const isAnonymous = userId === "anonymous";
 
     const shouldBypassCacheForIntlMobileEntertainment =
@@ -2832,7 +2836,11 @@ function sanitizeSearchQueryForLink(params: {
     query = stripCnFoodGenericTerms(query);
     return query || normalizeQueryBase(title) || base;
   }
-  if (category === "travel" && locale === "zh" && platform === "携程") {
+  if (
+    category === "travel" &&
+    locale === "zh" &&
+    ["携程", "去哪儿", "马蜂窝"].includes(platform)
+  ) {
     const query = normalizeCnTravelSearchKeyword(base);
     const titleQuery = normalizeCnTravelSearchKeyword(title);
     return query || titleQuery || normalizeQueryBase(title) || base;

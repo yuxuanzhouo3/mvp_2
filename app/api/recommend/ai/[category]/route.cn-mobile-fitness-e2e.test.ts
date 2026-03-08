@@ -123,7 +123,7 @@ describe("recommend fitness CN mobile outbound e2e", () => {
     expect(equipment?.platform).toBe("京东");
     expect(equipment?.linkType).toBe("product");
     expect(equipment?.candidateLink?.provider).toBe("京东");
-    expect(equipment?.title).toContain("健身器材推荐");
+    expect(equipment?.title).toBe("哑铃推荐");
     expect(equipment?.metadata?.searchQuery).toContain("京东");
     expect(equipment?.reason).toContain("京东");
   });

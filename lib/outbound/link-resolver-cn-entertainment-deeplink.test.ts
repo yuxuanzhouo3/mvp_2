@@ -10,7 +10,7 @@ function decodeOpaqueSearchPayload(url: string): Record<string, any> {
 }
 
 describe("resolveCandidateLink CN entertainment mobile deep links", () => {
-  it("TapTap Android auto-try keeps universal link with search keyword", () => {
+  it("TapTap Android auto-try uses Android intent and keeps search keyword", () => {
     const query = "genshin impact";
 
     const result = resolveCandidateLink({
@@ -21,17 +21,21 @@ describe("resolveCandidateLink CN entertainment mobile deep links", () => {
       region: "CN",
       provider: "TapTap",
       isMobile: true,
+      os: "android",
     });
 
     const autoTry = getAutoTryLinks(result, "android");
     expect(autoTry.length).toBeGreaterThan(0);
-    expect(autoTry[0]?.type).toBe("universal_link");
-    expect(autoTry[0]?.url).toBe(`https://www.taptap.cn/search/${encodeURIComponent(query)}`);
+    expect(result.primary.type).toBe("intent");
+    expect(autoTry[0]?.type).toBe("intent");
+    expect(autoTry[0]?.url).toContain("package=com.taptap");
+    expect(autoTry[0]?.url).toContain(`intent://www.taptap.cn/search/${encodeURIComponent(query)}`);
+    expect(autoTry[0]?.url).toContain("scheme=https");
 
     const hasAndroidDeepLink = autoTry.some(
       (link) => link.type === "app" || link.type === "intent"
     );
-    expect(hasAndroidDeepLink).toBe(false);
+    expect(hasAndroidDeepLink).toBe(true);
 
     const webFallback = result.fallbacks.find((link) => link.type === "web");
     expect(webFallback?.url).toBe(`https://www.taptap.cn/search/${encodeURIComponent(query)}`);
@@ -75,7 +79,7 @@ describe("resolveCandidateLink CN entertainment mobile deep links", () => {
     expect(intentPayload.jsonStr?.searchKeyWord).toBe(query);
   });
 
-  it("NetEase Cloud Music Android prefers Android intent and keeps keyword", () => {
+  it("NetEase Cloud Music Android prefers app scheme and keeps keyword intent fallback", () => {
     const query = "周杰伦 晴天";
 
     const result = resolveCandidateLink({
@@ -89,14 +93,20 @@ describe("resolveCandidateLink CN entertainment mobile deep links", () => {
       os: "android",
     });
 
-    expect(result.primary.type).toBe("intent");
-    expect(result.primary.url).toContain("package=com.netease.cloudmusic");
+    expect(result.primary.type).toBe("app");
+    expect(result.primary.url).toContain("orpheus://search?keyword=");
     expect(result.primary.url).toContain(`keyword=${encodeURIComponent(query)}`);
 
     const autoTry = getAutoTryLinks(result, "android");
     expect(autoTry.length).toBeGreaterThan(0);
-    expect(autoTry[0]?.type).toBe("intent");
+    expect(autoTry[0]?.type).toBe("app");
     expect(autoTry[0]?.url).toContain(`keyword=${encodeURIComponent(query)}`);
+
+    const androidIntent = autoTry.find(
+      (link) => link.type === "intent" && link.url.includes("package=com.netease.cloudmusic")
+    );
+    expect(androidIntent).toBeTruthy();
+    expect(androidIntent?.url).toContain(`keyword=${encodeURIComponent(query)}`);
   });
 
   it("TapTap iOS auto-try prioritizes app scheme before universal link", () => {
@@ -119,7 +129,7 @@ describe("resolveCandidateLink CN entertainment mobile deep links", () => {
     expect(autoTry.some((link) => link.type === "universal_link")).toBe(true);
   });
 
-  it("Youku Android auto-try prioritizes app scheme and keeps package intent fallback", () => {
+  it("Youku Android auto-try prioritizes app scheme and keeps keyword intent fallback", () => {
     const query = "庆余年 第二季";
 
     const result = resolveCandidateLink({
@@ -141,12 +151,14 @@ describe("resolveCandidateLink CN entertainment mobile deep links", () => {
       (link) => link.type === "intent" && link.url.includes("package=com.youku.phone")
     );
     expect(androidIntent).toBeTruthy();
+    expect(androidIntent?.url).toContain(`keyword=${encodeURIComponent(query)}`);
+    expect(androidIntent?.url).toContain("scheme=youku");
 
     const webFallback = result.fallbacks.find((link) => link.type === "web");
     expect(webFallback?.url).toBe(`https://so.youku.com/search_video/q_${encodeURIComponent(query)}`);
   });
 
-  it("iQIYI Android auto-try prioritizes app scheme with keyword and keeps package intent fallback", () => {
+  it("iQIYI Android auto-try prioritizes app scheme with keyword and keeps keyword intent fallback", () => {
     const query = "狂飙";
 
     const result = resolveCandidateLink({
@@ -173,6 +185,8 @@ describe("resolveCandidateLink CN entertainment mobile deep links", () => {
       (link) => link.type === "intent" && link.url.includes("package=com.qiyi.video")
     );
     expect(androidIntent).toBeTruthy();
+    expect(androidIntent?.url).toContain(`keyword=${encodeURIComponent(query)}`);
+    expect(androidIntent?.url).toContain("scheme=iqiyi");
 
     const webFallback = result.fallbacks.find((link) => link.type === "web");
     expect(webFallback?.url).toBe(`https://so.iqiyi.com/so/q_${encodeURIComponent(query)}`);

@@ -20,18 +20,22 @@ import { useAuth } from "@/hooks/use-auth";
 import { useIsAndroid } from "@/hooks/use-device";
 import { useLanguage } from "@/components/language-provider";
 import { isChinaDeployment } from "@/lib/config/deployment.config";
+import { isAppContainer } from "@/lib/app/app-container";
 import ChatInterface from "@/components/assistant/ChatInterface";
 
 export default function AssistantPage() {
   const router = useRouter();
   const { user, isAuthenticated, isLoading } = useAuth();
   const isAndroid = useIsAndroid();
+  const inAppContainer = isAppContainer();
   const { language } = useLanguage();
   const isCN = isChinaDeployment();
   const locale = (isCN ? language : "en") as "zh" | "en";
   const region = isCN ? "CN" : "INTL";
   const assistantTopPadding = isAndroid
-    ? "calc(env(safe-area-inset-top) + 24px)"
+    ? inAppContainer
+      ? "calc(env(safe-area-inset-top) + 56px)"
+      : "calc(env(safe-area-inset-top) + 24px)"
     : "env(safe-area-inset-top)";
 
   // 未登录时引导登录
@@ -111,7 +115,7 @@ export default function AssistantPage() {
 
   return (
     <div
-      className="min-h-screen h-[100svh] overflow-hidden bg-gradient-to-br from-gray-50 via-white to-gray-50"
+      className="box-border min-h-screen h-[100svh] overflow-hidden bg-gradient-to-br from-gray-50 via-white to-gray-50"
       style={{ paddingTop: assistantTopPadding }}
     >
       <div className="max-w-md mx-auto flex h-full min-h-0 flex-col">
