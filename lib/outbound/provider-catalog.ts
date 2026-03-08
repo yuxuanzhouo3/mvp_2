@@ -185,7 +185,7 @@ function vipshopSearchUrl(keyword: string): string {
 
 function vipshopAndroidSearchIntent(keyword: string): string {
   const web = vipshopSearchUrl(keyword);
-  return `intent://category.vip.com/suggest.php?keyword=${encodeURIComponent(keyword)}#Intent;scheme=https;package=com.achievo.vipshop;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+  return `intent://search?keyword=${encodeURIComponent(keyword)}#Intent;scheme=vipshop;package=com.achievo.vipshop;S.browser_fallback_url=${encodeURIComponent(web)};end`;
 }
 
 function encodeBase64Utf8(value: string): string {
@@ -205,14 +205,8 @@ function encodeBase64Utf8(value: string): string {
   return value;
 }
 
-function ctripH5DeepLinkFromWebUrl(webUrl: string): string {
-  const base64Url = encodeBase64Utf8(webUrl);
-  return `ctrip://wireless/h5?url=${encodeURIComponent(base64Url)}&type=1`;
-}
-
 function ctripAndroidSearchDeepLink(keyword: string): string {
-  const web = ctripWebSearchUrl(keyword);
-  return ctripH5DeepLinkFromWebUrl(web);
+  return `ctrip://wireless/search?keyword=${encodeURIComponent(keyword)}`;
 }
 
 function ctripAndroidSearchIntent(webUrl: string): string {
@@ -229,12 +223,12 @@ function qunarIosSearchDeepLink(keyword: string): string {
 }
 
 function qunarAndroidSearchDeepLink(keyword: string): string {
-  return `qunaraphone://search?searchWord=${encodeURIComponent(keyword)}&from=deeplink`;
+  return `qunarphone://search?searchWord=${encodeURIComponent(keyword)}&from=deeplink`;
 }
 
 function qunarAndroidSearchIntent(keyword: string): string {
   const web = qunarWebSearchUrl(keyword);
-  return `intent://search?searchWord=${encodeURIComponent(keyword)}#Intent;scheme=qunaraphone;package=com.qunar.atom;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+  return `intent://search?searchWord=${encodeURIComponent(keyword)}#Intent;scheme=qunarphone;package=com.qunar.atom;S.browser_fallback_url=${encodeURIComponent(web)};end`;
 }
 
 function mafengwoWebSearchUrl(keyword: string): string {
@@ -1414,8 +1408,7 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       },
       iosScheme: (ctx) => {
         const keyword = resolveSearchKeyword(ctx);
-        const web = ctripWebSearchUrl(keyword);
-        return ctripH5DeepLinkFromWebUrl(web);
+        return ctripAndroidSearchDeepLink(keyword);
       },
       androidScheme: (ctx) => {
         const keyword = resolveSearchKeyword(ctx);
@@ -1446,7 +1439,7 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       androidPackageId: "com.mfw.roadbook",
       webLink: (ctx) => mafengwoWebSearchUrl(resolveSearchKeyword(ctx)),
       iosScheme: (ctx) => mafengwoSearchDeepLink(resolveSearchKeyword(ctx)),
-      androidScheme: (ctx) => mafengwoSearchDeepLink(resolveSearchKeyword(ctx)),
+      androidScheme: (ctx) => mafengwoAndroidSearchIntent(resolveSearchKeyword(ctx)),
       androidIntentScheme: (ctx) => mafengwoAndroidSearchIntent(resolveSearchKeyword(ctx)),
     },
     "穷游": {

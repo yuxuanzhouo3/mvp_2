@@ -1733,7 +1733,7 @@ export async function GET(request: NextRequest, { params }: { params: { category
 
     try {
       const computeValidatedRecommendations = async () => {
-        const candidateCount = Math.min(20, Math.max(count * 3, 12));
+        const candidateCount = Math.min(12, Math.max(count * 2, 8));
         const aiRecommendations = await generateRecommendations(userHistory || [], category, locale, candidateCount, userPreference, {
           client,
           geo,
@@ -1756,8 +1756,12 @@ export async function GET(request: NextRequest, { params }: { params: { category
         if (category === "entertainment") {
           const diversity = analyzeEntertainmentDiversity(aiRecommendations);
           if (!diversity.isDiverse && diversity.missingTypes.length > 0) {
-            const supplements = await supplementEntertainmentTypes(aiRecommendations, diversity.missingTypes, userHistory || [], locale);
-            processedRecommendations = [...aiRecommendations, ...supplements];
+            try {
+              const supplements = await supplementEntertainmentTypes(aiRecommendations, diversity.missingTypes, userHistory || [], locale);
+              processedRecommendations = [...aiRecommendations, ...supplements];
+            } catch (supplementError) {
+              console.warn("[Entertainment] Failed to supplement missing types:", supplementError);
+            }
           }
           if (shouldEnsureEntertainmentTypes) {
             processedRecommendations = prioritizeEntertainmentCandidates(processedRecommendations as any);
@@ -1789,7 +1793,7 @@ export async function GET(request: NextRequest, { params }: { params: { category
 
         if (processedRecommendations.length < count) {
           const missing = count - processedRecommendations.length;
-          const topUpCandidateCount = Math.min(20, Math.max(missing * 4, 8));
+          const topUpCandidateCount = Math.min(12, Math.max(missing * 3, 6));
           const avoidTitlesForTopUp = [
             ...excludeTitles,
             ...(processedRecommendations as any[]).map((r) => r?.title),
@@ -1822,15 +1826,20 @@ export async function GET(request: NextRequest, { params }: { params: { category
         if (shouldEnsureEntertainmentTypes) {
           const coverage = analyzeEntertainmentDiversity(processedRecommendations as any);
           if (coverage.missingTypes.length > 0) {
-            const supplements = await supplementEntertainmentTypes(processedRecommendations as any, coverage.missingTypes, userHistory || [], locale);
-            const merged = [...(processedRecommendations as any[]), ...(supplements as any[])];
-            const filled = dedupeRecommendations(merged as any, {
-              count: merged.length,
-              userHistory: userHistory as any,
-              excludeTitles,
-              mode: "fill",
-            });
-            processedRecommendations = prioritizeEntertainmentCandidates(filled as any).slice(0, count) as any;
+            try {
+              const supplements = await supplementEntertainmentTypes(processedRecommendations as any, coverage.missingTypes, userHistory || [], locale);
+              const merged = [...(processedRecommendations as any[]), ...(supplements as any[])];
+              const filled = dedupeRecommendations(merged as any, {
+                count: merged.length,
+                userHistory: userHistory as any,
+                excludeTitles,
+                mode: "fill",
+              });
+              processedRecommendations = prioritizeEntertainmentCandidates(filled as any).slice(0, count) as any;
+            } catch (supplementError) {
+              console.warn("[Entertainment] Failed to supplement in second pass:", supplementError);
+              processedRecommendations = prioritizeEntertainmentCandidates(processedRecommendations as any);
+            }
           } else {
             processedRecommendations = prioritizeEntertainmentCandidates(processedRecommendations as any);
           }

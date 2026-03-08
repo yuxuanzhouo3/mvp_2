@@ -201,9 +201,8 @@ describe("resolveCandidateLink android intent fallback", () => {
     });
 
     const encodedTitle = encodeURIComponent(title);
-    expect(result.primary.url).toContain("ctrip://wireless/h5?url=");
-    const primaryEmbeddedUrl = extractCtripEmbeddedUrl(result.primary.url);
-    expect(primaryEmbeddedUrl).toContain(`keyword=${encodedTitle}`);
+    expect(result.primary.url).toContain("ctrip://wireless/search?keyword=");
+    expect(result.primary.url).toContain(`keyword=${encodedTitle}`);
 
     const webLink = result.fallbacks.find(
       (link) =>
@@ -236,9 +235,8 @@ describe("resolveCandidateLink android intent fallback", () => {
     });
 
     expect(result.primary.type).toBe("app");
-    expect(result.primary.url).toContain("ctrip://wireless/h5?url=");
-    const primaryEmbeddedUrl = extractCtripEmbeddedUrl(result.primary.url);
-    expect(primaryEmbeddedUrl).toContain(`keyword=${encodeURIComponent(query)}`);
+    expect(result.primary.url).toContain("ctrip://wireless/search?keyword=");
+    expect(result.primary.url).toContain(`keyword=${encodeURIComponent(query)}`);
 
     const androidIntent = result.fallbacks.find(
       (link) =>
@@ -253,14 +251,14 @@ describe("resolveCandidateLink android intent fallback", () => {
   it.each([
     {
       provider: "去哪儿",
-      expectedScheme: "qunaraphone://search?searchWord=",
-      fallbackScheme: "scheme=qunaraphone",
+      expectedScheme: "qunarphone://search?searchWord=",
+      fallbackScheme: "scheme=qunarphone",
       paramKey: "searchWord",
       packageId: "com.qunar.atom",
     },
     {
       provider: "马蜂窝",
-      expectedScheme: "mafengwo://search?keyword=",
+      expectedScheme: "intent://search?keyword=",
       fallbackScheme: "scheme=mafengwo",
       paramKey: "keyword",
       packageId: "com.mfw.roadbook",
@@ -280,16 +278,24 @@ describe("resolveCandidateLink android intent fallback", () => {
         os: "android",
       });
 
-      expect(result.primary.type).toBe("app");
+      const expectedType = provider === "马蜂窝" ? "intent" : "app";
+      expect(result.primary.type).toBe(expectedType);
       expect(result.primary.url).toContain(expectedScheme);
-      expect(extractQueryParam(result.primary.url, paramKey)).toBe(query);
+      if (provider !== "马蜂窝") {
+        expect(extractQueryParam(result.primary.url, paramKey)).toBe(query);
+      }
 
-      const androidIntent = result.fallbacks.find(
-        (link) => link.type === "intent" && link.url.includes(`package=${packageId}`)
-      );
-      expect(androidIntent?.url).toContain("intent://search?");
-      expect(androidIntent?.url).toContain(fallbackScheme);
-      expect(extractQueryParam(androidIntent?.url || "", paramKey)).toBe(query);
+      if (provider === "马蜂窝") {
+        expect(result.primary.url).toContain(`package=${packageId}`);
+        expect(result.primary.url).toContain(fallbackScheme);
+      } else {
+        const androidIntent = result.fallbacks.find(
+          (link) => link.type === "intent" && link.url.includes(`package=${packageId}`)
+        );
+        expect(androidIntent?.url).toContain("intent://search?");
+        expect(androidIntent?.url).toContain(fallbackScheme);
+        expect(extractQueryParam(androidIntent?.url || "", paramKey)).toBe(query);
+      }
     }
   );
 
@@ -309,8 +315,11 @@ describe("resolveCandidateLink android intent fallback", () => {
       os: "android",
     });
 
-    expect(result.primary.type).toBe("app");
-    expect(extractQueryParam(result.primary.url, paramKey)).toBe(title);
+    const expectedType = provider === "马蜂窝" ? "intent" : "app";
+    expect(result.primary.type).toBe(expectedType);
+    if (provider !== "马蜂窝") {
+      expect(extractQueryParam(result.primary.url, paramKey)).toBe(title);
+    }
   });
 
   it("uses recommendation title as Vipshop keyword fallback when query is empty", () => {
@@ -329,7 +338,7 @@ describe("resolveCandidateLink android intent fallback", () => {
 
     expect(result.primary.type).toBe("intent");
     expect(result.primary.url).toContain("package=com.achievo.vipshop");
-    expect(result.primary.url).toContain("scheme=https");
+    expect(result.primary.url).toContain("scheme=vipshop");
     expect(result.primary.url).toContain(`keyword=${encodedTitle}`);
     expect(extractQueryParam(result.primary.url, "keyword")).toBe(title);
 

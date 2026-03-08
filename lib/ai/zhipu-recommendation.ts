@@ -179,7 +179,7 @@ async function callQwen(
       model,
       messages,
       temperature,
-      max_tokens: 1200,
+      max_tokens: 800,
     }),
   });
 
@@ -248,7 +248,7 @@ async function callOpenAI(messages: AIMessage[], temperature: number) {
     model: DEFAULT_MODELS.openai,
     messages,
     temperature,
-    max_tokens: 1200,
+    max_tokens: 800,
   });
 
   const content = response.choices?.[0]?.message?.content;
@@ -274,7 +274,7 @@ async function callMistral(messages: AIMessage[], temperature: number) {
       model: DEFAULT_MODELS.mistral,
       messages,
       temperature,
-      max_tokens: 1200,
+      max_tokens: 800,
       top_p: 0.9,
     }),
   });

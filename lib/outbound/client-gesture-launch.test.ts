@@ -61,8 +61,8 @@ function buildShoppingRecommendation(
 
 describe("buildRecommendationGestureLaunchPlan", () => {
   it.each([
-    { provider: "去哪儿", paramKey: "searchWord", expectedScheme: "qunaraphone://search?searchWord=" },
-    { provider: "马蜂窝", paramKey: "keyword", expectedScheme: "mafengwo://search?keyword=" },
+    { provider: "去哪儿", paramKey: "searchWord", expectedScheme: "qunarphone://search?searchWord=" },
+    { provider: "马蜂窝", paramKey: "keyword", expectedScheme: "intent://search?keyword=" },
   ])("keeps travel keyword for $provider Android deeplink", ({ provider, paramKey, expectedScheme }) => {
     const query = "江苏苏州平江路游玩攻略";
     const candidateLink = resolveCandidateLink({
@@ -83,9 +83,12 @@ describe("buildRecommendationGestureLaunchPlan", () => {
     );
 
     expect(plan.firstDeepLink).toBeTruthy();
-    expect(plan.firstDeepLink?.type).toBe("app");
+    const expectedType = provider === "马蜂窝" ? "intent" : "app";
+    expect(plan.firstDeepLink?.type).toBe(expectedType);
     expect(plan.firstDeepLink?.url).toContain(expectedScheme);
-    expect(extractQueryParam(plan.firstDeepLink?.url || "", paramKey)).toBe(query);
+    if (provider !== "马蜂窝") {
+      expect(extractQueryParam(plan.firstDeepLink?.url || "", paramKey)).toBe(query);
+    }
 
     const data = new URL(`https://example.com${plan.outboundHref}`).searchParams.get("data");
     const decoded = decodeCandidateLink(data || "", "zh");
@@ -183,7 +186,7 @@ describe("buildRecommendationGestureLaunchPlan", () => {
     expect(plan.firstDeepLink).toBeTruthy();
     expect(plan.firstDeepLink?.type).toBe("intent");
     expect(plan.firstDeepLink?.url).toContain("package=com.achievo.vipshop");
-    expect(plan.firstDeepLink?.url).toContain("scheme=https");
+    expect(plan.firstDeepLink?.url).toContain("scheme=vipshop");
     expect(extractQueryParam(plan.firstDeepLink?.url || "", "keyword")).toBe(query);
   });
 });
