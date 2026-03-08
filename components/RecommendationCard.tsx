@@ -1,11 +1,11 @@
-﻿"use client";
+"use client";
 
 /**
- * AI 鎺ㄨ崘鍗＄墖缁勪欢
- * 鏄剧ず鎺ㄨ崘鍐呭锛屽寘鍚彲鐐瑰嚮鐨勫閮ㄩ摼鎺?
+ * AI 推荐卡片组件
+ * 显示推荐内容，包含可点击的外部链接
  */
 
-import { useState } from "react";
+import React, { useState } from "react";
 import { motion } from "framer-motion";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -15,12 +15,13 @@ import { TravelRecommendationCard } from "./TravelRecommendationCard";
 import { getIconForLinkType } from "@/lib/utils/icon-mapping";
 import { buildOutboundHref } from "@/lib/outbound/outbound-url";
 import { getClientHint } from "@/lib/app/app-container";
+import { normalizeLegacyEntertainmentRecommendation } from "@/lib/recommendation/legacy-entertainment-normalizer";
 import {
   buildFallbackCandidateLink,
   launchRecommendationViaGestureOrOutbound,
 } from "@/lib/outbound/client-gesture-launch";
 
-// 鍥炬爣缁勪欢
+// 图标组件
 const ExternalLinkIcon = () => (
   <svg
     className="w-4 h-4"
@@ -63,24 +64,57 @@ interface RecommendationCardProps {
 }
 
 /**
- * 閾炬帴绫诲瀷鏍囩
+ * 链接类型标签
  */
 const linkTypeLabels: Record<string, { zh: string; en: string }> = {
-  product: { zh: "鍟嗗搧", en: "Product" },
-  video: { zh: "瑙嗛", en: "Video" },
-  book: { zh: "鍥句功", en: "Book" },
-  location: { zh: "鍦扮偣", en: "Location" },
-  article: { zh: "鏂囩珷", en: "Article" },
-  app: { zh: "搴旂敤", en: "App" },
-  music: { zh: "闊充箰", en: "Music" },
-  movie: { zh: "鐢靛奖", en: "Movie" },
-  game: { zh: "娓告垙", en: "Game" },
-  restaurant: { zh: "椁愬巺", en: "Restaurant" },
-  recipe: { zh: "椋熻氨", en: "Recipe" },
-  hotel: { zh: "閰掑簵", en: "Hotel" },
-  course: { zh: "璇剧▼", en: "Course" },
-  search: { zh: "鎼滅储", en: "Search" },
+  product: { zh: "商品", en: "Product" },
+  video: { zh: "视频", en: "Video" },
+  book: { zh: "图书", en: "Book" },
+  location: { zh: "地点", en: "Location" },
+  article: { zh: "文章", en: "Article" },
+  app: { zh: "应用", en: "App" },
+  music: { zh: "音乐", en: "Music" },
+  movie: { zh: "电影", en: "Movie" },
+  game: { zh: "游戏", en: "Game" },
+  restaurant: { zh: "餐厅", en: "Restaurant" },
+  recipe: { zh: "食谱", en: "Recipe" },
+  hotel: { zh: "酒店", en: "Hotel" },
+  course: { zh: "课程", en: "Course" },
+  search: { zh: "搜索", en: "Search" },
 };
+
+const recommendationCardText = {
+  zh: {
+    recipe: "食谱",
+    delivery: "外卖",
+    review: "点评",
+    nearby: "附近餐厅",
+    restaurant: "餐厅",
+    food: "美食",
+    calories: "卡路里",
+    bestSeason: "最佳季节：",
+    highlights: "✨ 旅行亮点",
+    aiPick: "推荐",
+    save: "收藏",
+    notInterested: "不感兴趣",
+    viewDetails: "查看详情",
+  },
+  en: {
+    recipe: "Recipe",
+    delivery: "Delivery",
+    review: "Review",
+    nearby: "Nearby",
+    restaurant: "Restaurant",
+    food: "Food",
+    calories: "cal",
+    bestSeason: "Best Season: ",
+    highlights: "✨ Highlights",
+    aiPick: "Pick",
+    save: "Save",
+    notInterested: "Not interested",
+    viewDetails: "View Details",
+  },
+} as const;
 
 export function RecommendationCard({
   recommendation,
@@ -93,6 +127,8 @@ export function RecommendationCard({
   locale = "zh",
 }: RecommendationCardProps) {
   const [isSaved, setIsSaved] = useState(false);
+  const normalizedRecommendation = normalizeLegacyEntertainmentRecommendation(recommendation);
+  const text = recommendationCardText[locale];
 
   const {
     title,
@@ -103,7 +139,7 @@ export function RecommendationCard({
     metadata,
     reason,
     tags,
-  } = recommendation;
+  } = normalizedRecommendation;
   const fitnessTypeLabel =
     category === "fitness" ? (metadata as any)?.fitnessTypeLabel : null;
   const badgeLabel = (() => {
@@ -117,32 +153,32 @@ export function RecommendationCard({
 
     const isRecipe =
       linkType === "recipe" ||
-      /涓嬪帹鎴縷Allrecipes/.test(platformText) ||
-      /(椋熻氨|鑿滆氨|鍋氭硶|recipe)/i.test(combined);
-    if (isRecipe) return locale === "zh" ? "椋熻氨" : "Recipe";
+      /下厨房|Allrecipes/.test(platformText) ||
+      /(食谱|菜谱|做法|recipe)/i.test(combined);
+    if (isRecipe) return text.recipe;
 
-    // 澶栧崠骞冲彴锛氭窐瀹濋棯璐€佷含涓滅閫併€佺編鍥㈠鍗?
-    const isDelivery = /娣樺疂闂喘|浜笢绉掗€亅缇庡洟澶栧崠|DoorDash|Uber Eats|Fantuan|HungryPanda/.test(platformText);
-    if (isDelivery) return locale === "zh" ? "澶栧崠" : "Delivery";
+    // 外卖平台：淘宝闪购、京东秒送、美团外卖
+    const isDelivery = /淘宝闪购|京东秒送|美团外卖|DoorDash|Uber Eats|Fantuan|HungryPanda/.test(platformText);
+    if (isDelivery) return text.delivery;
 
-    // 鐐硅瘎骞冲彴锛氬皬绾功銆佸ぇ浼楃偣璇?
+    // 点评平台：小红书、大众点评
     const isReview = /大众点评|小红书/.test(platformText) || /(点评|评价|口碑|评分)/.test(tagText);
-    if (isReview) return locale === "zh" ? "鐐硅瘎" : "Review";
+    if (isReview) return text.review;
 
-    // 闄勮繎椁愬巺锛氶珮寰峰湴鍥?
-    const isNearbyRestaurant = /楂樺痉鍦板浘/.test(platformText);
-    if (isNearbyRestaurant) return locale === "zh" ? "闄勮繎椁愬巺" : "Nearby";
+    // 附近餐厅：高德地图
+    const isNearbyRestaurant = /高德地图/.test(platformText);
+    if (isNearbyRestaurant) return text.nearby;
 
     const isRestaurant =
       linkType === "restaurant" ||
-      /鍦板浘|缇庡洟|Google Maps|OpenTable|TripAdvisor/.test(platformText);
-    if (isRestaurant) return locale === "zh" ? "椁愬巺" : "Restaurant";
+      /地图|美团|Google Maps|OpenTable|TripAdvisor/.test(platformText);
+    if (isRestaurant) return text.restaurant;
 
-    return locale === "zh" ? "缇庨" : "Food";
+    return text.food;
   })();
 
   const handleLinkClick = () => {
-    onLinkClick?.(recommendation);
+    onLinkClick?.(normalizedRecommendation);
     const inAppContainer = getClientHint() === "app";
     const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
     const isMobile =
@@ -155,7 +191,7 @@ export function RecommendationCard({
           ? `${window.location.pathname}${window.location.search}`
           : "/";
       const candidateLink =
-        recommendation.candidateLink ?? buildFallbackCandidateLink(recommendation);
+        normalizedRecommendation.candidateLink ?? buildFallbackCandidateLink(normalizedRecommendation);
       const outboundHref = buildOutboundHref(candidateLink, returnTo);
 
       if (candidateLink.primary.type === "web" && candidateLink.fallbacks.length === 0) {
@@ -163,7 +199,7 @@ export function RecommendationCard({
         return;
       }
 
-      launchRecommendationViaGestureOrOutbound(recommendation, returnTo);
+      launchRecommendationViaGestureOrOutbound(normalizedRecommendation, returnTo);
       return;
     }
 
@@ -174,23 +210,23 @@ export function RecommendationCard({
     e.stopPropagation();
     setIsSaved(!isSaved);
     if (!isSaved) {
-      onSave?.(recommendation);
+      onSave?.(normalizedRecommendation);
     }
   };
 
   const handleDismiss = (e: React.MouseEvent) => {
     e.stopPropagation();
-    onDismiss?.(recommendation);
+    onDismiss?.(normalizedRecommendation);
   };
 
-  // 娓叉煋璇勫垎鏄熸槦
+  // 渲染评分星星
   const renderRating = (rating: number | string | undefined) => {
     if (!rating) return null;
 
-    // 杞崲涓烘暟瀛?
+    // 转换为数字
     const ratingNum = typeof rating === 'string' ? parseFloat(rating) : rating;
 
-    // 濡傛灉杞崲澶辫触鎴栦笉鏄湁鏁堢殑鏁板瓧锛岃繑鍥?null
+    // 如果转换失败或不是有效的数字，返回 null
     if (isNaN(ratingNum) || ratingNum < 0 || ratingNum > 5) {
       return null;
     }
@@ -213,7 +249,7 @@ export function RecommendationCard({
     );
   };
 
-  // 娓叉煋鍏冩暟鎹?
+  // 渲染元数据
   const renderMetadata = () => {
     const items: React.ReactNode[] = [];
 
@@ -234,7 +270,7 @@ export function RecommendationCard({
     if (metadata.duration) {
       items.push(
         <span key="duration" className="text-sm text-gray-500">
-          鈴憋笍 {metadata.duration}
+          ⏱️ {metadata.duration}
         </span>
       );
     }
@@ -242,7 +278,7 @@ export function RecommendationCard({
     if (metadata.calories) {
       items.push(
         <span key="calories" className="text-sm text-[#4ECDC4]">
-          🔥 {metadata.calories} {locale === "zh" ? "卡路里" : "cal"}
+          🔥 {metadata.calories} {text.calories}
         </span>
       );
     }
@@ -250,7 +286,7 @@ export function RecommendationCard({
     if (metadata.author) {
       items.push(
         <span key="author" className="text-sm text-gray-500">
-          鉁嶏笍 {metadata.author}
+          ✍️ {metadata.author}
         </span>
       );
     }
@@ -258,27 +294,27 @@ export function RecommendationCard({
     if (metadata.address) {
       items.push(
         <span key="address" className="text-sm text-gray-500 truncate max-w-[200px]">
-          馃搷 {metadata.address}
+          📍 {metadata.address}
         </span>
       );
     }
 
-    // 鏃呮父鎺ㄨ崘鐗规畩淇℃伅鏄剧ず
+    // 旅行推荐特殊信息显示
     if (category === 'travel' && metadata.destination) {
       const destination = metadata.destination as any;
       if (destination.country) {
         items.push(
           <span key="country" className="text-sm text-gray-500">
-            馃實 {destination.country}
+            🌍 {destination.country}
           </span>
         );
       }
       if (metadata.bestSeason) {
         const bestSeason = metadata.bestSeason as any;
         items.push(
-          <span key="season" className="text-sm text-orange-500">
-            馃棑锔?{locale === "zh" ? "鏈€浣冲鑺傦細" : "Best Season: "}{bestSeason}
-          </span>
+            <span key="season" className="text-sm text-orange-500">
+              🗓️ {text.bestSeason}{bestSeason}
+            </span>
         );
       }
     }
@@ -290,7 +326,7 @@ export function RecommendationCard({
     ) : null;
   };
 
-  // 娓叉煋鏃呮父浜偣
+  // 渲染旅行亮点
   const renderTravelHighlights = () => {
     if (category !== 'travel' || !metadata.highlights || !Array.isArray(metadata.highlights)) {
       return null;
@@ -299,7 +335,7 @@ export function RecommendationCard({
     return (
       <div className="mt-3 p-3 bg-blue-50 rounded-lg">
         <h4 className="text-sm font-medium text-blue-800 mb-2">
-          {locale === "zh" ? "鉁?鏃呰浜偣" : "鉁?Highlights"}
+          {text.highlights}
         </h4>
         <div className="flex flex-wrap gap-2">
           {metadata.highlights.map((highlight: string, index: number) => (
@@ -315,9 +351,9 @@ export function RecommendationCard({
     );
   };
 
-  // 娓叉煋鏍囩
+  // 渲染标签
   const renderTags = () => {
-    // 浣跨敤 tags 灞炴€ф垨 metadata.tags 浣滀负鍚庡
+    // 使用 tags 属性或 metadata.tags 作为后备
     const tagList = tags || (metadata.tags as string[] | undefined);
     if (!tagList || tagList.length === 0) return null;
 
@@ -369,7 +405,7 @@ export function RecommendationCard({
       whileHover={{ scale: 1.02 }}
     >
       <Card className="overflow-hidden">
-        {/* 鍗＄墖澶撮儴 */}
+        {/* 卡片头部 */}
         <div className="p-4 pb-2">
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-2">
@@ -389,7 +425,7 @@ export function RecommendationCard({
               )}
               {showReason && reason && (
                 <Badge variant="outline" className="text-xs">
-                  AI {locale === "zh" ? "鎺ㄨ崘" : "Pick"}
+                  AI {text.aiPick}
                 </Badge>
               )}
             </div>
@@ -400,7 +436,7 @@ export function RecommendationCard({
                   ? "bg-red-100 text-red-500"
                   : "bg-gray-100 text-gray-400 hover:text-red-500"
                   }`}
-                title={locale === "zh" ? "鏀惰棌" : "Save"}
+                title={text.save}
               >
                 <svg
                   className="w-4 h-4"
@@ -419,7 +455,7 @@ export function RecommendationCard({
               <button
                 onClick={handleDismiss}
                 className="p-1.5 rounded-full bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
-                title={locale === "zh" ? "涓嶆劅鍏磋叮" : "Not interested"}
+                title={text.notInterested}
               >
                 <svg
                   className="w-4 h-4"
@@ -439,7 +475,7 @@ export function RecommendationCard({
           </div>
         </div>
 
-        {/* 鍗＄墖鍐呭 */}
+        {/* 卡片内容 */}
         <div className="px-4 pb-2">
           <h3 className="text-lg font-semibold text-gray-800 mb-1">{title}</h3>
           <p className="text-gray-600 text-sm line-clamp-2">{description}</p>
@@ -449,7 +485,7 @@ export function RecommendationCard({
           {renderTravelHighlights()}
         </div>
 
-        {/* 鎺ㄨ崘鐞嗙敱 */}
+        {/* 推荐理由 */}
         {showReason && reason && (
           <div className="px-4 py-2 bg-gradient-to-r from-purple-50 to-pink-50 border-t">
             <p className="text-sm text-purple-700">
@@ -461,9 +497,9 @@ export function RecommendationCard({
           </div>
         )}
 
-        {/* 鎿嶄綔鎸夐挳 */}
+        {/* 操作按钮 */}
         <div className="p-4 pt-2 border-t bg-gray-50">
-          {/* 鏄剧ず骞冲彴淇℃伅锛堜粎瀵规悳绱㈤摼鎺ワ級 */}
+          {/* 显示平台信息（仅对搜索链接） */}
           {linkType === 'search' && platform && (
             <div className="flex items-center gap-2 text-xs text-gray-500 mb-2 bg-gray-100 p-2 rounded">
               <LinkTypeIcon linkType={linkType} metadata={metadata} />
@@ -480,7 +516,7 @@ export function RecommendationCard({
             <span>
               {linkType === 'search' && platform
                 ? (locale === "zh" ? `在 ${platform} 中搜索` : `Search on ${platform}`)
-                : (locale === "zh" ? "鏌ョ湅璇︽儏" : "View Details")
+                : text.viewDetails
               }
             </span>
             <ExternalLinkIcon />
@@ -492,7 +528,7 @@ export function RecommendationCard({
 }
 
 /**
- * 鎺ㄨ崘鍗＄墖鍒楄〃缁勪欢
+ * 推荐卡片列表组件
  */
 interface RecommendationListProps {
   recommendations: AIRecommendation[];
@@ -521,7 +557,7 @@ export function RecommendationList({
         // Staggered animation delay for streaming effect
         const animationDelay = index * 0.1;
 
-        // 濡傛灉鏄梾娓哥被鍒笖涓嶆槸绱у噾妯″紡锛屼娇鐢ㄤ笓闂ㄧ殑鏃呮父鍗＄墖
+        // 如果是旅行类别且不是紧凑模式，使用专门的旅行卡片
         if (category === 'travel' && !compact) {
           return (
             <motion.div
@@ -545,7 +581,7 @@ export function RecommendationList({
           );
         }
 
-        // 鍏朵粬鎯呭喌浣跨敤閫氱敤鍗＄墖锛屽甫鏈夋祦寮忓姩鐢绘晥鏋?
+        // 其他情况使用通用卡片，带有流式动画效果
         return (
           <motion.div
             key={`${rec.title}-${index}`}

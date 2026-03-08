@@ -38,8 +38,10 @@ const DEFAULT_MAX_TOKENS = 1200;
 const DEFAULT_FAST_MODE = true;
 const DEFAULT_PROVIDER_TIMEOUT_FAST_MS = 3800;
 const DEFAULT_PROVIDER_TIMEOUT_SAFE_MS = 9000;
+const DEFAULT_PROVIDER_TIMEOUT_CN_MS = 18000;
 const DEFAULT_TOTAL_TIMEOUT_FAST_MS = 5000;
 const DEFAULT_TOTAL_TIMEOUT_SAFE_MS = 20000;
+const DEFAULT_TOTAL_TIMEOUT_CN_MS = 26000;
 const DEFAULT_INTL_PARALLEL_RACE = true;
 const DEFAULT_INTL_SECONDARY_DELAY_MS = 300;
 const ASSISTANT_AI_DEBUG =
@@ -200,21 +202,28 @@ function parseIntlProviderOrder(
 }
 
 function getExecutionConfig(): AIExecutionConfig {
-  const fastModeDefault = isChinaDeployment() ? false : DEFAULT_FAST_MODE;
+  const isChinaRegion = isChinaDeployment();
+  const fastModeDefault = isChinaRegion ? false : DEFAULT_FAST_MODE;
   const fastMode = parseBooleanEnv(
     process.env.ASSISTANT_AI_FAST_MODE ?? process.env.AI_FAST_MODE,
     fastModeDefault
   );
   const providerTimeoutDefault = fastMode
     ? DEFAULT_PROVIDER_TIMEOUT_FAST_MS
-    : DEFAULT_PROVIDER_TIMEOUT_SAFE_MS;
+    : isChinaRegion
+      ? DEFAULT_PROVIDER_TIMEOUT_CN_MS
+      : DEFAULT_PROVIDER_TIMEOUT_SAFE_MS;
   const providerTimeoutMs = parseBoundedIntEnv(
     process.env.ASSISTANT_AI_PROVIDER_TIMEOUT_MS ?? process.env.AI_PROVIDER_TIMEOUT_MS,
     providerTimeoutDefault,
     1000,
     30000
   );
-  const totalTimeoutDefault = fastMode ? DEFAULT_TOTAL_TIMEOUT_FAST_MS : DEFAULT_TOTAL_TIMEOUT_SAFE_MS;
+  const totalTimeoutDefault = fastMode
+    ? DEFAULT_TOTAL_TIMEOUT_FAST_MS
+    : isChinaRegion
+      ? DEFAULT_TOTAL_TIMEOUT_CN_MS
+      : DEFAULT_TOTAL_TIMEOUT_SAFE_MS;
   const totalTimeoutMs = parseBoundedIntEnv(
     process.env.ASSISTANT_AI_TOTAL_TIMEOUT_MS ?? process.env.AI_TOTAL_TIMEOUT_MS,
     totalTimeoutDefault,
@@ -224,7 +233,7 @@ function getExecutionConfig(): AIExecutionConfig {
 
   const maxRetries = parseBoundedIntEnv(
     process.env.ASSISTANT_AI_MAX_RETRIES,
-    fastMode ? 0 : 1,
+    isChinaRegion ? 0 : fastMode ? 0 : 1,
     0,
     3
   );

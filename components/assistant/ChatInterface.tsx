@@ -254,6 +254,10 @@ export default function ChatInterface({
   }, []);
 
   useEffect(() => {
+    if (messages.length === 0) {
+      return;
+    }
+
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
@@ -757,7 +761,7 @@ export default function ChatInterface({
   // ====== 渲染函数 ======
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
       {/* 使用次数状态栏 */}
       <div className="flex items-center justify-between px-4 py-2 bg-gradient-to-r from-purple-50 to-blue-50 border-b border-purple-100/50 rounded-t-xl">
         <div className="flex items-center gap-2">

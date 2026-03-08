@@ -1,8 +1,8 @@
-﻿"use client";
+"use client";
 
 /**
- * Random Travel 涓撶敤鎺ㄨ崘鍗＄墖
- * 灞曠ず鍏蜂綋鐨勬梾娓哥洰鐨勫湴淇℃伅
+ * Random Travel 专用推荐卡片
+ * 展示具体的旅行目的地信息
  */
 
 import { useState } from "react";
@@ -135,7 +135,7 @@ export function TravelRecommendationCard({
     onDismiss?.(recommendation);
   };
 
-  // 鎻愬彇鍥藉淇℃伅
+  // 提取国家信息
   const extractCountryFromTitle = (title: string): string | null => {
     const countryPatterns = [
       { name: "日本", patterns: ["日本", "Japan", "东京", "Tokyo", "京都", "Kyoto", "大阪", "Osaka"] },
@@ -199,7 +199,7 @@ export function TravelRecommendationCard({
     );
   };
 
-  // 娓叉煋浜偣
+  // 渲染亮点
   const renderHighlights = () => {
     const highlights = metadata.highlights as string[] | undefined;
     if (!highlights || highlights.length === 0) return null;
@@ -207,7 +207,7 @@ export function TravelRecommendationCard({
     return (
       <div className="mt-3">
         <h4 className="text-sm font-medium text-gray-700 mb-2">
-          {locale === "zh" ? "鉁?浜偣" : "鉁?Highlights"}
+          {locale === "zh" ? "✨ 亮点" : "✨ Highlights"}
         </h4>
         <div className="flex flex-wrap gap-2">
           {highlights.slice(0, 4).map((highlight, index) => (
@@ -231,7 +231,7 @@ export function TravelRecommendationCard({
       transition={{ duration: 0.2 }}
     >
       <Card className="overflow-hidden shadow-lg hover:shadow-xl transition-shadow duration-300">
-        {/* 椤堕儴鍥剧墖鍖哄煙锛堟笎鍙樿儗鏅級 */}
+        {/* 顶部图片区块（渐变背景） */}
         <div className="h-32 bg-gradient-to-br from-blue-400 via-cyan-400 to-teal-400 relative">
           <div className="absolute inset-0 bg-black bg-opacity-20" />
           <div className="absolute bottom-4 left-4 right-4">
@@ -254,9 +254,9 @@ export function TravelRecommendationCard({
           </div>
         </div>
 
-        {/* 鍐呭鍖哄煙 */}
+        {/* 内容区域 */}
         <div className="p-4">
-          {/* 鏍囬鍜屾搷浣滄寜閽?*/}
+          {/* 标题和操作按钮 */}
           <div className="flex items-start justify-between mb-2">
             <h3 className="text-xl font-bold text-gray-800 line-clamp-1 flex-1 mr-2">
               {title}
@@ -268,7 +268,7 @@ export function TravelRecommendationCard({
                     ? "bg-red-100 text-red-500"
                     : "bg-gray-100 text-gray-400 hover:text-red-500"
                   }`}
-                title={locale === "zh" ? "鏀惰棌" : "Save"}
+                title={locale === "zh" ? "收藏" : "Save"}
               >
                 <svg
                   className="w-4 h-4"
@@ -287,7 +287,7 @@ export function TravelRecommendationCard({
               <button
                 onClick={handleDismiss}
                 className="p-2 rounded-full bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
-                title={locale === "zh" ? "涓嶆劅鍏磋叮" : "Not interested"}
+                title={locale === "zh" ? "不感兴趣" : "Not interested"}
               >
                 <svg
                   className="w-4 h-4"
@@ -306,10 +306,10 @@ export function TravelRecommendationCard({
             </div>
           </div>
 
-          {/* 鎻忚堪 */}
+          {/* 描述 */}
           <p className="text-gray-600 text-sm mb-3 line-clamp-2">{description}</p>
 
-          {/* 鍏冩暟鎹?*/}
+          {/* 元数据 */}
           <div className="flex flex-wrap items-center gap-2 mb-3">
             {metadata.rating && renderRating(metadata.rating)}
             {metadata.price && (
@@ -324,10 +324,10 @@ export function TravelRecommendationCard({
             )}
           </div>
 
-          {/* 浜偣 */}
+          {/* 亮点 */}
           {renderHighlights()}
 
-          {/* 鎺ㄨ崘鐞嗙敱 */}
+          {/* 推荐理由 */}
           {reason && (
             <div className="mt-3 p-3 bg-purple-50 rounded-lg">
               <p className="text-sm text-purple-700">
@@ -339,30 +339,30 @@ export function TravelRecommendationCard({
             </div>
           )}
 
-          {/* 骞冲彴淇℃伅 */}
+          {/* 平台信息 */}
           {platform && (
             <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
               <span>
-                {locale === "zh" ? "閫氳繃" : "Via"} {platform}
+                {locale === "zh" ? "通过" : "Via"} {platform}
                 {linkType === 'search' && (
-                  <span> {locale === "zh" ? "鎼滅储" : "Search"}</span>
+                  <span> {locale === "zh" ? "搜索" : "Search"}</span>
                 )}
               </span>
               <span>
-                {locale === "zh" ? "AI 鎺ㄨ崘" : "AI Recommended"}
+                {locale === "zh" ? "AI 推荐" : "AI Recommended"}
               </span>
             </div>
           )}
         </div>
 
-        {/* 搴曢儴鎿嶄綔鎸夐挳 */}
+        {/* 底部操作按钮 */}
         <div className="px-4 pb-4">
           <Button
             onClick={handleLinkClick}
             className="w-full bg-gradient-to-r from-blue-500 to-teal-500 hover:from-blue-600 hover:to-teal-600 text-white font-medium"
             size="sm"
           >
-            {locale === "zh" ? "鏌ョ湅璇︽儏" : "View Details"}
+            {locale === "zh" ? "查看详情" : "View Details"}
             <ExternalLinkIcon />
           </Button>
         </div>

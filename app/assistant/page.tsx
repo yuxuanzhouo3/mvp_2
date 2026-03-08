@@ -111,7 +111,7 @@ export default function AssistantPage() {
 
   return (
     <div
-      className="min-h-screen h-[100dvh] overflow-hidden bg-gradient-to-br from-gray-50 via-white to-gray-50"
+      className="min-h-screen h-[100svh] overflow-hidden bg-gradient-to-br from-gray-50 via-white to-gray-50"
       style={{ paddingTop: assistantTopPadding }}
     >
       <div className="max-w-md mx-auto flex h-full min-h-0 flex-col">
@@ -140,7 +140,7 @@ export default function AssistantPage() {
 
         {/* 聊天界面 */}
         <div className="flex-1 min-h-0 px-2 pb-2">
-          <div className="bg-white rounded-2xl shadow-sm h-full min-h-0">
+          <div className="bg-white rounded-2xl shadow-sm h-full min-h-0 overflow-hidden">
             <ChatInterface
               locale={locale}
               region={region}
