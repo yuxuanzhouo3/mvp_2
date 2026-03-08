@@ -19,11 +19,6 @@ function extractCtripEmbeddedUrl(linkUrl: string): string | null {
   return decodeBase64Utf8(base64Payload);
 }
 
-function extractQueryParam(linkUrl: string, key: string): string | null {
-  const match = linkUrl.match(new RegExp(`[?&]${key}=([^&#]+)`, "i"));
-  return match?.[1] ? decodeURIComponent(match[1]) : null;
-}
-
 vi.mock("@/lib/ai/zhipu-recommendation", () => ({
   isAIProviderConfigured: vi.fn(() => false),
   generateRecommendations: vi.fn(),
