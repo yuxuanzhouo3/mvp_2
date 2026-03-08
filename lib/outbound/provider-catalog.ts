@@ -185,7 +185,8 @@ function vipshopSearchUrl(keyword: string): string {
 
 function vipshopAndroidSearchIntent(keyword: string): string {
   const web = vipshopSearchUrl(keyword);
-  return `intent://search?keyword=${encodeURIComponent(keyword)}#Intent;scheme=vipshop;package=com.achievo.vipshop;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+  // 修复：使用HTTPS universal link作为intent，确保唯品会APP能正确接收搜索词
+  return `intent://${encodeURIComponent(web)}#Intent;scheme=https;package=com.achievo.vipshop;S.browser_fallback_url=${encodeURIComponent(web)};end`;
 }
 
 function encodeBase64Utf8(value: string): string {
@@ -228,7 +229,8 @@ function qunarAndroidSearchDeepLink(keyword: string): string {
 
 function qunarAndroidSearchIntent(keyword: string): string {
   const web = qunarWebSearchUrl(keyword);
-  return `intent://search?searchWord=${encodeURIComponent(keyword)}#Intent;scheme=qunarphone;package=com.qunar.atom;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+  // 修复：使用HTTPS universal link作为intent，确保去哪儿APP能正确处理搜索词
+  return `intent://www.qunar.com/search?searchWord=${encodeURIComponent(keyword)}#Intent;scheme=https;package=com.qunar.atom;S.browser_fallback_url=${encodeURIComponent(web)};end`;
 }
 
 function mafengwoWebSearchUrl(keyword: string): string {
@@ -241,7 +243,8 @@ function mafengwoSearchDeepLink(keyword: string): string {
 
 function mafengwoAndroidSearchIntent(keyword: string): string {
   const web = mafengwoWebSearchUrl(keyword);
-  return `intent://search?keyword=${encodeURIComponent(keyword)}#Intent;scheme=mafengwo;package=com.mfw.roadbook;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+  // 修复：使用HTTPS universal link作为intent，确保马蜂窝APP能正确唤醒
+  return `intent://www.mafengwo.cn/search/q.php?t=sales&q=${encodeURIComponent(keyword)}#Intent;scheme=https;package=com.mfw.roadbook;S.browser_fallback_url=${encodeURIComponent(web)};end`;
 }
 
 function kugouWebSearchUrl(keyword: string): string {
@@ -691,7 +694,8 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
         `pinduoduo://com.xunmeng.pinduoduo/search_result.html?search_key=${encodeURIComponent(query)}`,
       androidScheme: ({ query }) => {
         const web = `https://mobile.yangkeduo.com/search_result.html?search_key=${encodeURIComponent(query)}`;
-        return `intent://com.xunmeng.pinduoduo/search_result.html?search_key=${encodeURIComponent(query)}#Intent;scheme=pinduoduo;package=com.xunmeng.pinduoduo;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+        // 修复：使用正确的拼多多Intent格式，避免闪退
+        return `intent://mobile.yangkeduo.com/search_result.html?search_key=${encodeURIComponent(query)}#Intent;scheme=https;package=com.xunmeng.pinduoduo;S.browser_fallback_url=${encodeURIComponent(web)};end`;
       },
     },
     "什么值得买": {

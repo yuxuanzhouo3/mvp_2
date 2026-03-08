@@ -285,11 +285,31 @@ Return JSON format (strictly, no extra text):
       throw new Error('AI 返回空内容');
     }
 
-    const result = JSON.parse(cleanContent);
+    // 增强JSON解析，处理可能的格式问题
+    let result;
+    try {
+      // 清理可能的markdown标记
+      const cleaned = cleanContent.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      result = JSON.parse(cleaned);
+    } catch (parseError) {
+      console.error('JSON解析失败，使用fallback:', parseError);
+      throw new Error('JSON解析失败');
+    }
 
     // 确保返回的是单个推荐对象
     if (Array.isArray(result)) {
-      return result[0] || null;
+      result = result[0] || null;
+    }
+
+    // 验证必需字段并设置默认值
+    if (result && typeof result === 'object') {
+      result.entertainmentType = type; // 强制设置正确的类型
+      result.title = result.title || `${getTypeLabel(type, locale as 'zh' | 'en')}推荐`;
+      result.description = result.description || '';
+      result.reason = result.reason || '';
+      result.tags = Array.isArray(result.tags) ? result.tags : [];
+      result.searchQuery = result.searchQuery || result.title;
+      result.platform = result.platform || (locale === 'zh' ? '百度' : 'Google');
     }
 
     return result;

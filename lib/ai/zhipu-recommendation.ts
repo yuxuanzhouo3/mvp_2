@@ -46,10 +46,9 @@ const DEFAULT_MODELS = {
   "qwen3.5-35b-a3b": "qwen3.5-35b-a3b",
 };
 
+// CN环境优先使用最快的模型，避免多模型fallback导致的延迟
 const CN_RECOMMENDATION_QWEN_MODELS: readonly CNQwenProvider[] = [
-  "qwen3.5-flash",
-  "qwen3.5-flash-2026-02-23",
-  "qwen3.5-35b-a3b",
+  "qwen3.5-flash",  // 最快的模型，优先使用
 ] as const;
 
 // 通义千问 API 端点
@@ -169,72 +168,91 @@ async function callQwen(
 
   console.log(`[AI] Calling Qwen API with model: ${model}...`);
 
-  const response = await fetch(QWEN_API_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey!.trim()}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      messages,
-      temperature,
-      max_tokens: 800,
-    }),
-  });
+  // 添加30秒超时控制，避免长时间等待
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    const status = response.status;
-    let code = "";
-    let message = "";
-    try {
-      const parsed = JSON.parse(errorText);
-      code = String(parsed?.error?.code || parsed?.error?.type || "");
-      message = String(parsed?.error?.message || "");
-    } catch {
-      message = errorText;
-    }
+  try {
+    const response = await fetch(QWEN_API_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey!.trim()}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        temperature,
+        max_tokens: 600,
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
 
-    const normalizedMessage = (message || "").trim();
-    const normalizedCode = (code || "").trim();
-    const looksLikeFreeTierOnly =
-      status === 403 &&
-      (normalizedCode.includes("FreeTierOnly") ||
-        normalizedMessage.includes("FreeTierOnly") ||
-        /free tier/i.test(normalizedMessage));
+    if (!response.ok) {
+      const errorText = await response.text();
+      const status = response.status;
+      let code = "";
+      let message = "";
+      try {
+        const parsed = JSON.parse(errorText);
+        code = String(parsed?.error?.code || parsed?.error?.type || "");
+        message = String(parsed?.error?.message || "");
+      } catch {
+        message = errorText;
+      }
 
-    if (looksLikeFreeTierOnly) {
+      const normalizedMessage = (message || "").trim();
+      const normalizedCode = (code || "").trim();
+      const looksLikeFreeTierOnly =
+        status === 403 &&
+        (normalizedCode.includes("FreeTierOnly") ||
+          normalizedMessage.includes("FreeTierOnly") ||
+          /free tier/i.test(normalizedMessage));
+
+      if (looksLikeFreeTierOnly) {
+        throw new AIRequestError({
+          message: `Qwen quota mode prevents using ${model}`,
+          kind: "qwen_free_tier_only",
+          provider: model,
+          status,
+          code: normalizedCode || "AllocationQuota.FreeTierOnly",
+        });
+      }
+
       throw new AIRequestError({
-        message: `Qwen quota mode prevents using ${model}`,
-        kind: "qwen_free_tier_only",
+        message: `Qwen API (${model}) error ${status}`,
+        kind: "http_error",
         provider: model,
         status,
-        code: normalizedCode || "AllocationQuota.FreeTierOnly",
+        code: normalizedCode || undefined,
       });
     }
 
-    throw new AIRequestError({
-      message: `Qwen API (${model}) error ${status}`,
-      kind: "http_error",
-      provider: model,
-      status,
-      code: normalizedCode || undefined,
-    });
-  }
+    const data = await response.json();
+    const content = data?.choices?.[0]?.message?.content;
+    if (!content) {
+      throw new AIRequestError({
+        message: `Qwen (${model}) returned empty content`,
+        kind: "empty_content",
+        provider: model,
+      });
+    }
 
-  const data = await response.json();
-  const content = data?.choices?.[0]?.message?.content;
-  if (!content) {
-    throw new AIRequestError({
-      message: `Qwen (${model}) returned empty content`,
-      kind: "empty_content",
-      provider: model,
-    });
+    console.log(`[AI] ✅ Successfully called Qwen API (${model})`);
+    return content;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if ((error as any).name === 'AbortError') {
+      throw new AIRequestError({
+        message: `Qwen API (${model}) request timeout after 30s`,
+        kind: "http_error",
+        provider: model,
+        status: 408,
+      });
+    }
+    throw error;
   }
-
-  console.log(`[AI] ✅ Successfully called Qwen API (${model})`);
-  return content;
 }
 
 async function callOpenAI(messages: AIMessage[], temperature: number) {
@@ -845,17 +863,6 @@ fitnessType 必须为 nearby_place/tutorial/equipment 之一。
     requestNonce,
   });
 
-  const entertainmentSearchRules =
-    locale === "zh"
-      ? `
-【搜索词规范】
-- 视频（腾讯视频）：searchQuery 仅写片名/人物/剧情关键词，不要包含“豆瓣/评分/影评/解析/在线观看”等词
-- 游戏（TapTap/Steam）：searchQuery 只写游戏名，不要带“Steam/TapTap/中文版/下载/攻略”等后缀
-- 音乐（酷狗音乐/QQ音乐/网易云音乐）：searchQuery 只写歌名/歌手/专辑名，不要带平台名
-- 小说（笔趣阁）：searchQuery 只写小说名（可带作者），不要带“笔趣阁/TXT/下载/全文”等词
-`
-      : "";
-
   // 随机选择推荐风格倾向，增加多样性
   const diversityAngles = [
     "偏向近期热门与新上线内容",
@@ -880,69 +887,77 @@ fitnessType 必须为 nearby_place/tutorial/equipment 之一。
     : "";
 
   const prompt = locale === 'zh' ? `
-生成 ${desiredCount} 个多样化推荐，严格遵守类型分布要求。
+生成 ${desiredCount} 个推荐。
 
-用户历史：${JSON.stringify(userHistory.slice(0, 15), null, 2)}
+用户历史：${JSON.stringify(userHistory.slice(0, 10), null, 2)}
 ${userProfilePrompt}
 ${behaviorPrompt}
 分类：${category}
-客户端：${client}${geo ? `\n位置：${geo.lat},${geo.lng}` : ''}
 
-【去重要求 - 最高优先级】
-1. 严禁推荐与以下"需要避开的标题"列表中任何条目相同或高度相似的内容（同义词、换序、缩写、续集均算重复）。
-2. 严禁推荐与用户历史中已有的 title 重复或高度相似的内容。
-3. 每次推荐必须是全新的、未曾推荐过的内容，强调新鲜感。
-4. ${desiredCount} 条推荐之间也不能互相重复或过于相似。
+【去重】严禁与以下标题重复：${avoidTitlesForPrompt.slice(0, 30).join('、')}
 
-【本次推荐风格倾向】${currentAngle}（请在此风格方向上寻找推荐，但不要固定模式）
+【推荐风格】${currentAngle}
 
-输出JSON数组，每项必须包含：title, description, reason(50字以内), tags(3-5个), searchQuery, platform${category === 'entertainment' ? ', entertainmentType' : ''}
+输出JSON数组，每项包含：title, description(30字内), reason(30字内), tags(3个), searchQuery, platform${category === 'entertainment' ? ', entertainmentType' : ''}
 
-【reason 要求 - 多样化推荐理由】每条推荐的 reason 必须具体且富有个性，从以下5种类型中轮换选择：
-1. 偏好匹配：「你喜欢XX类型，这个评分很高」「结合你对XX的偏好」
-2. 时机场景：「适合周末放松」「下班后的好选择」「约会必备」
-3. 社交热点：「最近很火，口碑爆棚」「朋友都在推荐」「本周热门」
-4. 个性发现：「小众但质量很高」「冷门佳作值得一试」「意外惊喜」
-5. 实用价值：「性价比超高」「好评如潮」「距离近方便到达」
-每个推荐的 reason 必须不同，禁止重复使用相同句式！
+【reason要求】从5种类型轮换：偏好匹配/时机场景/社交热点/个性发现/实用价值，每条不同。
 
-${category === 'entertainment' ? `【强制要求】每条推荐必须是具体个体（具体的电影/游戏/歌曲名称），严禁推荐榜单、合集、分类：
-- 视频类(腾讯视频/优酷/爱奇艺): 推荐具体影视作品名(如《流浪地球2》《繁花》《庆余年》)，严禁"科幻电影推荐""热门电视剧"等
-- 游戏类(${(config as any).gamePlatforms?.slice(0, 4).join('/') || 'TapTap/Steam'}): 推荐具体游戏名(如《原神》《王者荣耀》《蛋仔派对》)，严禁"手游推荐榜单""独立游戏合集"等
-- 音乐类(${(config as any).musicPlatforms?.slice(0, 3).join('/') || '网易云音乐/QQ音乐'}): 推荐具体歌曲/专辑名(如《晴天》《范特西》《起风了》)，严禁"热门歌单""流行音乐推荐"等
-- 小说/文章类(笔趣阁/百度): 推荐具体小说名或文章(如《诡秘之主》《斗破苍穹》)
-每种类型至少1个，entertainmentType字段必填(video/game/music/review)` : ''}${category === 'food' ? `【强制要求】必须包含3种类型：
-- 食谱类: 纯菜名(如"宫保鸡丁")，platform 优先：下厨房
-- 菜系类: 纯菜系名(如"川菜")，platform 优先：高德地图美食
-- 场合类: 纯场合词(如"商务午餐")，platform 优先：高德地图美食
-
-【搜索词规范】searchQuery 只写核心词，不要包含“美食/餐厅/推荐”等后缀；不要包含 URL 或平台名。
-【平台数量】大众点评最多 1 条，其余优先下厨房/高德地图美食。` : ''}${category === 'travel' ? `【强制要求】必须覆盖三类内容，并且名称要具体、可搜索：
-1) 附近风景名胜：如果提供了位置(geo)，至少输出2个“附近可去”的景点/公园/地标（必须是真实名称）。
-2) 国内旅游胜地：至少输出2个中国境内的具体目的地（建议包含具体景点/区域名，不要只写城市）。
-3) 国外旅游胜地：至少输出1个海外的具体目的地（同样要具体到景点/区域/街区）。
-
-【标题格式】优先使用“国家·城市·景点/区域”(如"中国·西安·大雁塔")；若确实无法精确到景点，也至少写到“国家·城市”。` : ''}${fitnessRequirementsZh}
-${category === 'entertainment' ? entertainmentSearchRules : ''}
-平台选择：${config.platforms.slice(0, 6).join('、')}
+${category === 'entertainment' ? `【娱乐类型】必须包含具体作品名，每种类型至少1个：
+- 视频(腾讯视频/优酷/爱奇艺): 具体影视名(如《流浪地球2》)
+- 游戏(${(config as any).gamePlatforms?.slice(0, 2).join('/')}): 具体游戏名(如《原神》)
+- 音乐(${(config as any).musicPlatforms?.slice(0, 2).join('/')}): 具体歌曲/专辑(如《晴天》)
+- 小说/文章(笔趣阁/百度): 具体小说名
+entertainmentType必填(video/game/music/review)` : ''}${category === 'food' ? `【美食类型】包含3种：
+- 食谱: 纯菜名(如”宫保鸡丁”)，platform: 下厨房
+- 菜系: 纯菜系(如”川菜”)，platform: 高德地图美食
+- 场合: 纯场合(如”商务午餐”)，platform: 高德地图美食
+searchQuery只写核心词，不含”美食/餐厅/推荐”。` : ''}${category === 'travel' ? `【旅行类型】覆盖3类：
+1) 附近景点：2个真实名称${geo ? `(位置${geo.lat},${geo.lng})` : ''}
+2) 国内目的地：2个具体景点/区域
+3) 国外目的地：1个具体景点/区域
+标题格式：”国家·城市·景点”(如”中国·西安·大雁塔”)` : ''}${fitnessRequirementsZh}
+${category === 'entertainment' ? `
+【搜索词】
+- 视频：仅片名/人物，不含”豆瓣/评分/在线观看”
+- 游戏：仅游戏名，不含”Steam/攻略/下载”
+- 音乐：仅歌名/歌手，不含平台名
+- 小说：仅小说名，不含”TXT/下载”
+` : ''}
+平台：${config.platforms.slice(0, 4).join('、')}
 勿生成URL` : `
-Generate ${desiredCount} personalized recommendations.
+Generate ${desiredCount} recommendations.
 
-User history: ${JSON.stringify(userHistory.slice(0, 15), null, 2)}
+User history: ${JSON.stringify(userHistory.slice(0, 10), null, 2)}
 ${userProfilePrompt}
 ${behaviorPrompt}
 Category: ${category}
-Client: ${client}${geo ? `\nGeo: ${geo.lat},${geo.lng}` : ''}
-De-dup rule: avoid titles that repeat or closely paraphrase the user history titles.
 
-Output JSON array with: title, description, reason, tags(3-5), searchQuery, platform${category === 'entertainment' ? ', entertainmentType' : ''}
+De-dup: avoid ${avoidTitlesForPrompt.slice(0, 30).join(', ')}
 
-${category === 'entertainment' ? `Must include 4 types: video(IMDb/YouTube), game(${(config as any).gamePlatforms?.slice(0, 4).join('/') || 'Steam/Epic Games'}), music(Spotify), review
-Game searchQuery: game name only` : ''}${category === 'food' ? `3 types: recipe, cuisine, occasion` : ''}${category === 'travel' ? `Format: "Country·City"` : ''}${category === 'fitness' ? `Must include 3 types, at least 1 each, and include fitnessType:
-- nearby_place: real nearby gym/sports place
-- tutorial: workout tutorial video
-- equipment: equipment how-to (not pure shopping)
-fitnessType must be nearby_place/tutorial/equipment` : ''}
+Style: ${currentAngle}
+
+Output JSON array with: title, description(30 chars), reason(30 chars), tags(3), searchQuery, platform${category === 'entertainment' ? ', entertainmentType' : ''}
+
+Reason types (rotate): preference match/timing/social buzz/discovery/practical value
+
+${category === 'entertainment' ? `Entertainment types (at least 1 each):
+- Video(YouTube/IMDb): specific movie/show title
+- Game(${(config as any).gamePlatforms?.slice(0, 2).join('/')}): specific game name
+- Music(Spotify): specific song/album
+- Review: specific article/review
+entertainmentType required(video/game/music/review)` : ''}${category === 'food' ? `Food types (3):
+- Recipe: dish name, platform: Love and Lemons
+- Cuisine: cuisine type, platform: Google Maps
+- Occasion: occasion type, platform: Yelp
+searchQuery: core keyword only` : ''}${category === 'travel' ? `Travel types (3):
+1) Nearby: 2 real places${geo ? ` (${geo.lat},${geo.lng})` : ''}
+2) Domestic: 2 specific destinations
+3) International: 1 specific destination
+Format: "Country·City·Attraction"` : ''}${category === 'fitness' ? `Fitness types (3, at least 1 each):
+- nearby_place: real gym/sports venue
+- tutorial: workout video
+- equipment: equipment guide
+fitnessType required(nearby_place/tutorial/equipment)` : ''}
 
 [Platform-Content Alignment Rules]
 - Game recommendations: use Metacritic or Steam as platform, searchQuery = game title only
@@ -1007,19 +1022,8 @@ Fitness:
 - Yoga: use Down Dog, searchQuery = yoga style
 - Diet tracking: use MyFitnessPal, searchQuery = food or meal name
 ` : ''}
-[Reason Diversity Rules]
-Each recommendation's reason must be unique and specific. Rotate among these angles:
-1. Preference match: "Matches your interest in X, highly rated"
-2. Timing/occasion: "Perfect for weekend relaxation" / "Great date night pick"
-3. Social buzz: "Trending this week" / "Highly recommended by community"
-4. Discovery: "Hidden gem worth trying" / "Under-the-radar quality pick"
-5. Practical value: "Great value for money" / "Conveniently located nearby"
-Do NOT repeat the same reason pattern across recommendations.
 
-[De-duplication Rules]
-- Do NOT output items that repeat or closely paraphrase titles from the avoid list
-- Each recommendation must be fresh and novel
-- No duplicates within the output set
+De-dup: avoid ${avoidTitlesForPrompt.slice(0, 30).join(', ')}
 
 Platform choices: ${config.platforms.slice(0, 6).join(', ')}
 No URLs`;
@@ -1030,8 +1034,8 @@ No URLs`;
         {
           role: 'system',
           content: locale === 'zh'
-            ? '你是一位创意推荐分析师，每次推荐都要追求新颖和多样性。返回JSON数组，无链接，无markdown。【核心原则】：1) 每次推荐都必须是全新内容，绝不重复已推荐过的；2) 每条推荐的理由必须独特、具体、有吸引力，50字以内；3) 从偏好匹配/时机场景/社交热点/个性发现/实用价值等角度轮换切入，禁止使用"根据你的偏好""为你推荐"等通用开头。'
-            : 'You are a creative recommendation analyst. Return JSON array with specified types, no links, no markdown. Core: 1) every recommendation must be fresh and novel; 2) each reason must be unique, specific, engaging within 50 chars.'
+            ? '你是推荐分析师。返回JSON数组，无链接，无markdown。每条推荐必须全新，理由独特简洁(30字内)。'
+            : 'You are a recommendation analyst. Return JSON array, no links, no markdown. Each recommendation must be fresh, reason unique and concise (30 chars).'
         },
         {
           role: 'user',
