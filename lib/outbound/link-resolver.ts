@@ -19,6 +19,7 @@ export type ResolveCandidateLinkInput = {
   region: DeploymentRegion;
   provider?: string;
   isMobile?: boolean;
+  os?: "ios" | "android";
 };
 
 function buildStoreLinks(
@@ -234,15 +235,46 @@ function getFallbackProviders(
   }
 }
 
-function resolvePrimary(provider: ProviderDefinition, ctx: LinkContext): OutboundLink {
+function resolvePrimary(provider: ProviderDefinition, ctx: LinkContext, os?: "ios" | "android"): OutboundLink {
+  const toSchemeLink = (url: string): OutboundLink => ({
+    type: url.toLowerCase().startsWith("intent://") ? "intent" : "app",
+    url,
+  });
+
+  if (os === "android") {
+    if (provider.androidScheme) {
+      return toSchemeLink(provider.androidScheme(ctx));
+    }
+    if (provider.universalLink) {
+      return { type: "universal_link", url: provider.universalLink(ctx) };
+    }
+    if (provider.iosScheme) {
+      return toSchemeLink(provider.iosScheme(ctx));
+    }
+    return { type: "web", url: provider.webLink(ctx) };
+  }
+
+  if (os === "ios") {
+    if (provider.iosScheme) {
+      return toSchemeLink(provider.iosScheme(ctx));
+    }
+    if (provider.universalLink) {
+      return { type: "universal_link", url: provider.universalLink(ctx) };
+    }
+    if (provider.androidScheme) {
+      return toSchemeLink(provider.androidScheme(ctx));
+    }
+    return { type: "web", url: provider.webLink(ctx) };
+  }
+
   if (provider.universalLink) {
     return { type: "universal_link", url: provider.universalLink(ctx) };
   }
   if (provider.iosScheme) {
-    return { type: "app", url: provider.iosScheme(ctx) };
+    return toSchemeLink(provider.iosScheme(ctx));
   }
   if (provider.androidScheme) {
-    return { type: "app", url: provider.androidScheme(ctx) };
+    return toSchemeLink(provider.androidScheme(ctx));
   }
   return { type: "web", url: provider.webLink(ctx) };
 }
@@ -251,6 +283,9 @@ function resolveAppSchemes(provider: ProviderDefinition, ctx: LinkContext): Outb
   const links: OutboundLink[] = [];
   const iosUrl = provider.iosScheme ? provider.iosScheme(ctx) : null;
   const androidUrl = provider.androidScheme ? provider.androidScheme(ctx) : null;
+  const androidIntentUrl = provider.androidIntentScheme
+    ? provider.androidIntentScheme(ctx)
+    : null;
   const hasSharedScheme = Boolean(iosUrl && androidUrl && iosUrl === androidUrl);
 
   if (iosUrl) {
@@ -267,10 +302,19 @@ function resolveAppSchemes(provider: ProviderDefinition, ctx: LinkContext): Outb
       label: "Android",
     });
   }
+  if (androidIntentUrl) {
+    links.push({
+      type: androidIntentUrl.toLowerCase().startsWith("intent://") ? "intent" : "app",
+      url: androidIntentUrl,
+      label: "Android",
+    });
+  }
 
   // Android 兜底：若平台没有 intent 深链（缺失或仅有 app scheme），补一个 package intent。
   if (
     provider.androidPackageId &&
+    !provider.disableAndroidPackageIntentFallback &&
+    !androidIntentUrl &&
     (!androidUrl || !androidUrl.toLowerCase().startsWith("intent://"))
   ) {
     const web = provider.webLink(ctx);
@@ -297,7 +341,7 @@ export function resolveCandidateLink(input: ResolveCandidateLinkInput): Candidat
   };
 
   const provider = catalog[providerId];
-  const primary = resolvePrimary(provider, ctx);
+  const primary = resolvePrimary(provider, ctx, input.os);
   const appSchemes = resolveAppSchemes(provider, ctx);
   const webLink: OutboundLink = { type: "web", url: provider.webLink(ctx), label: "Web" };
   const storeLinks = provider.hasApp ? buildStoreLinks(provider, input.locale, input.region) : [];
@@ -309,7 +353,7 @@ export function resolveCandidateLink(input: ResolveCandidateLinkInput): Candidat
     const fallbackProvider = catalog[fallbackId];
     if (!fallbackProvider) continue;
 
-    const fallbackPrimary = resolvePrimary(fallbackProvider, ctx);
+    const fallbackPrimary = resolvePrimary(fallbackProvider, ctx, input.os);
     const label = fallbackProvider.displayName[input.locale];
     if (fallbackPrimary.type === "universal_link") {
       if (fallbackId === "Google Maps" || fallbackId === "高德地图" || fallbackId === "百度地图") {

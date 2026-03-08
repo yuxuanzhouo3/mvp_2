@@ -13,6 +13,11 @@ function extractCtripEmbeddedUrl(linkUrl: string): string | null {
   return decodeBase64Utf8(base64Payload);
 }
 
+function extractQueryParam(linkUrl: string, key: string): string | null {
+  const match = linkUrl.match(new RegExp(`[?&]${key}=([^&#]+)`, "i"));
+  return match?.[1] ? decodeURIComponent(match[1]) : null;
+}
+
 describe("resolveCandidateLink android intent fallback", () => {
   it("adds android intent deep link when provider has package but no android scheme", () => {
     const result = resolveCandidateLink({
@@ -212,9 +217,34 @@ describe("resolveCandidateLink android intent fallback", () => {
         link.type === "intent" &&
         link.url.includes("package=ctrip.android.view")
     );
-    expect(androidIntent?.url).toContain("intent://wireless/h5?url=");
-    const androidEmbeddedUrl = extractCtripEmbeddedUrl(androidIntent?.url || "");
-    expect(androidEmbeddedUrl).toContain(`keyword=${encodedTitle}`);
+    expect(androidIntent?.url).toContain("intent://wireless/h5?type=search&keyword=");
+    expect(extractQueryParam(androidIntent?.url || "", "keyword")).toBe(title);
+  });
+
+  it("uses Ctrip Android app deeplink first and keeps keyword intent fallback", () => {
+    const query = "江苏苏州平江路";
+    const result = resolveCandidateLink({
+      title: "中国·苏州·平江路",
+      query,
+      category: "travel",
+      locale: "zh",
+      region: "CN",
+      provider: "携程",
+      isMobile: true,
+      os: "android",
+    });
+
+    expect(result.primary.type).toBe("app");
+    expect(result.primary.url).toContain("ctrip://wireless/h5?type=search&keyword=");
+    expect(extractQueryParam(result.primary.url, "keyword")).toBe(query);
+
+    const androidIntent = result.fallbacks.find(
+      (link) =>
+        link.type === "intent" &&
+        link.url.includes("package=ctrip.android.view")
+    );
+    expect(androidIntent?.url).toContain("intent://wireless/h5?type=search&keyword=");
+    expect(extractQueryParam(androidIntent?.url || "", "keyword")).toBe(query);
   });
 
   it("uses recommendation title as Vipshop keyword fallback when query is empty", () => {
@@ -228,8 +258,10 @@ describe("resolveCandidateLink android intent fallback", () => {
       region: "CN",
       provider: "唯品会",
       isMobile: true,
+      os: "android",
     });
 
+    expect(result.primary.type).toBe("universal_link");
     expect(result.primary.url).toContain(`keyword=${encodedTitle}`);
 
     const webLink = result.fallbacks.find(
@@ -244,7 +276,7 @@ describe("resolveCandidateLink android intent fallback", () => {
         link.type === "intent" &&
         link.url.includes("package=com.achievo.vipshop")
     );
-    expect(androidIntent?.url).toContain(`keyword=${encodedTitle}`);
+    expect(androidIntent).toBeUndefined();
   });
 
   it("supports fitness apps android deep links with search query", () => {

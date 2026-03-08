@@ -154,13 +154,19 @@ export function extractTokenFromRequest(request: NextRequest): {
     return headerResult;
   }
 
-  // 2) Supabase access token cookie set by our callback
+  // 2) CN auth cookie
+  const cnCookieToken = request.cookies.get("auth-token")?.value;
+  if (cnCookieToken) {
+    return { token: cnCookieToken, error: null };
+  }
+
+  // 3) Supabase access token cookie set by our callback
   const cookieToken = request.cookies.get("sb-access-token")?.value;
   if (cookieToken) {
     return { token: cookieToken, error: null };
   }
 
-  // 3) Supabase default auth cookie (JSON string) if present
+  // 4) Supabase default auth cookie (JSON string) if present
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   if (supabaseUrl) {
     try {

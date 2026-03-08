@@ -113,10 +113,12 @@ export type ProviderDefinition = {
   domains: string[];
   hasApp: boolean;
   androidPackageId?: string;
+  disableAndroidPackageIntentFallback?: boolean;
   universalLink?: ProviderLinkBuilder;
   webLink: ProviderLinkBuilder;
   iosScheme?: ProviderLinkBuilder;
   androidScheme?: ProviderLinkBuilder;
+  androidIntentScheme?: ProviderLinkBuilder;
 };
 
 export type WeightedProvider = {
@@ -199,9 +201,12 @@ function ctripH5DeepLinkFromWebUrl(webUrl: string): string {
   return `ctrip://wireless/h5?url=${encodeURIComponent(base64Url)}&type=1`;
 }
 
-function ctripAndroidIntentFromWebUrl(webUrl: string): string {
-  const base64Url = encodeBase64Utf8(webUrl);
-  return `intent://wireless/h5?url=${encodeURIComponent(base64Url)}&type=1#Intent;scheme=ctrip;package=ctrip.android.view;S.browser_fallback_url=${encodeURIComponent(webUrl)};end`;
+function ctripSearchDeepLink(keyword: string): string {
+  return `ctrip://wireless/h5?type=search&keyword=${encodeURIComponent(keyword)}&from=deeplink`;
+}
+
+function ctripAndroidSearchIntent(keyword: string, webUrl: string): string {
+  return `intent://wireless/h5?type=search&keyword=${encodeURIComponent(keyword)}#Intent;scheme=ctrip;package=ctrip.android.view;S.browser_fallback_url=${encodeURIComponent(webUrl)};end`;
 }
 
 function kugouWebSearchUrl(keyword: string): string {
@@ -294,10 +299,9 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       universalLink: ({ query }) => `https://so.iqiyi.com/so/q_${encodeURIComponent(query)}`,
       webLink: ({ query }) => `https://so.iqiyi.com/so/q_${encodeURIComponent(query)}`,
       iosScheme: ({ query }) => `iqiyi://mobile/search?keyword=${encodeURIComponent(query)}&from=deeplink`,
-      androidScheme: ({ query }) => {
-        const web = `https://so.iqiyi.com/so/q_${encodeURIComponent(query)}`;
-        return `intent://mobile/search?keyword=${encodeURIComponent(query)}#Intent;scheme=iqiyi;package=com.qiyi.video;S.browser_fallback_url=${encodeURIComponent(web)};end`;
-      },
+      // Android: prefer direct app scheme first.
+      // `resolveAppSchemes` will still auto-add an intent fallback via package id.
+      androidScheme: ({ query }) => `iqiyi://mobile/search?keyword=${encodeURIComponent(query)}&from=deeplink`,
     },
     "优酷": {
       id: "优酷",
@@ -308,10 +312,9 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       universalLink: ({ query }) => `https://so.youku.com/search_video/q_${encodeURIComponent(query)}`,
       webLink: ({ query }) => `https://so.youku.com/search_video/q_${encodeURIComponent(query)}`,
       iosScheme: ({ query }) => `youku://search?keyword=${encodeURIComponent(query)}`,
-      androidScheme: ({ query }) => {
-        const web = `https://so.youku.com/search_video/q_${encodeURIComponent(query)}`;
-        return `intent://search?keyword=${encodeURIComponent(query)}#Intent;scheme=youku;package=com.youku.phone;S.browser_fallback_url=${encodeURIComponent(web)};end`;
-      },
+      // Android: prefer direct app scheme first.
+      // `resolveAppSchemes` will still auto-add an intent fallback via package id.
+      androidScheme: ({ query }) => `youku://search?keyword=${encodeURIComponent(query)}`,
     },
     "豆瓣": {
       id: "豆瓣",
@@ -373,6 +376,9 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       domains: ["taptap.cn", "taptap.com"],
       hasApp: true,
       androidPackageId: "com.taptap",
+      // TapTap search keeps keyword reliably via universal link / app links.
+      // Avoid package-only Android intent fallback here because it can wake app without query context.
+      disableAndroidPackageIntentFallback: true,
       // Keep /search/{keyword}: this path preserves keyword in TapTap search SSR and app-link flow.
       universalLink: ({ query, title }) => {
         const keyword = resolveSearchKeyword({ query, title });
@@ -383,10 +389,6 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
         return taptapSearchUrl(keyword);
       },
       iosScheme: ({ query, title }) => {
-        const keyword = resolveSearchKeyword({ query, title });
-        return `taptap://taptap.cn/search?keyword=${encodeURIComponent(keyword)}`;
-      },
-      androidScheme: ({ query, title }) => {
         const keyword = resolveSearchKeyword({ query, title });
         return `taptap://taptap.cn/search?keyword=${encodeURIComponent(keyword)}`;
       },
@@ -601,19 +603,20 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       domains: ["vip.com"],
       hasApp: true,
       androidPackageId: "com.achievo.vipshop",
+      // Android: avoid package-only intent fallback (can wake app but lose query context).
+      // Prefer vip.com universal link so installed app can claim App Links with full keyword.
+      disableAndroidPackageIntentFallback: true,
+      universalLink: ({ query, title }) => {
+        const keyword = resolveSearchKeyword({ query, title });
+        return `https://category.vip.com/suggest.php?keyword=${encodeURIComponent(keyword)}`;
+      },
       webLink: ({ query, title }) => {
         const keyword = resolveSearchKeyword({ query, title });
         return `https://category.vip.com/suggest.php?keyword=${encodeURIComponent(keyword)}`;
       },
-      // 唯品会深链：使用 search 路径进行搜索而非 goHome
       iosScheme: ({ query, title }) => {
         const keyword = resolveSearchKeyword({ query, title });
         return `vipshop://search?keyword=${encodeURIComponent(keyword)}`;
-      },
-      androidScheme: ({ query, title }) => {
-        const keyword = resolveSearchKeyword({ query, title });
-        const web = `https://category.vip.com/suggest.php?keyword=${encodeURIComponent(keyword)}`;
-        return `intent://search?keyword=${encodeURIComponent(keyword)}#Intent;scheme=vipshop;package=com.achievo.vipshop;S.browser_fallback_url=${encodeURIComponent(web)};end`;
       },
     },
     "1688": {
@@ -1293,8 +1296,12 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       },
       androidScheme: (ctx) => {
         const keyword = resolveSearchKeyword(ctx);
+        return ctripSearchDeepLink(keyword);
+      },
+      androidIntentScheme: (ctx) => {
+        const keyword = resolveSearchKeyword(ctx);
         const web = ctripWebSearchUrl(keyword);
-        return ctripAndroidIntentFromWebUrl(web);
+        return ctripAndroidSearchIntent(keyword, web);
       },
     },
     "去哪儿": {

@@ -10,6 +10,7 @@ const refreshSchema = z.object({
 });
 
 let cachedApp: any = null;
+const isProduction = process.env.NODE_ENV === "production";
 
 function getCloudBaseApp() {
   if (cachedApp) {
@@ -96,7 +97,7 @@ export async function POST(request: NextRequest) {
         { expiresIn: "7d" }
       );
 
-      return NextResponse.json({
+      const response = NextResponse.json({
         accessToken: newAccessToken,
         refreshToken: newRefreshToken,
         user: {
@@ -112,6 +113,16 @@ export async function POST(request: NextRequest) {
           refreshTokenExpiresIn: 604800,
         },
       });
+
+      response.cookies.set("auth-token", newAccessToken, {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: "lax",
+        maxAge: 60 * 60 * 24 * 7,
+        path: "/",
+      });
+
+      return response;
     } else {
       return NextResponse.json(
         {

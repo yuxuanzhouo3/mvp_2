@@ -1,8 +1,8 @@
-"use client";
+﻿"use client";
 
 /**
- * Random Travel 专用推荐卡片
- * 展示具体的旅游目的地信息
+ * Random Travel 涓撶敤鎺ㄨ崘鍗＄墖
+ * 灞曠ず鍏蜂綋鐨勬梾娓哥洰鐨勫湴淇℃伅
  */
 
 import { useState } from "react";
@@ -10,11 +10,15 @@ import { motion } from "framer-motion";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { AIRecommendation, CandidateLink } from "@/lib/types/recommendation";
+import type { AIRecommendation } from "@/lib/types/recommendation";
 import { buildOutboundHref } from "@/lib/outbound/outbound-url";
 import { getClientHint } from "@/lib/app/app-container";
+import {
+  buildFallbackCandidateLink,
+  launchRecommendationViaGestureOrOutbound,
+} from "@/lib/outbound/client-gesture-launch";
 
-// 图标组件
+// 鍥炬爣缁勪欢
 const ExternalLinkIcon = () => (
   <svg
     className="w-4 h-4"
@@ -89,20 +93,6 @@ export function TravelRecommendationCard({
     reason,
   } = recommendation;
 
-  const buildFallbackCandidateLink = (rec: AIRecommendation): CandidateLink => {
-    return {
-      provider: rec.platform || "Web",
-      title: rec.title,
-      primary: { type: "web", url: rec.link, label: "Web" },
-      fallbacks: [],
-      metadata: {
-        source: "client_fallback",
-        category: rec.category,
-        platform: rec.platform,
-      },
-    };
-  };
-
   const handleLinkClick = () => {
     onLinkClick?.(recommendation);
     const inAppContainer = getClientHint() === "app";
@@ -111,14 +101,24 @@ export function TravelRecommendationCard({
       /iphone|ipad|ipod|android/i.test(ua) ||
       (typeof window !== "undefined" && window.innerWidth < 768);
 
-    // 移动端和 App 容器内：始终走 outbound 跳转页面（确保 App 唤醒流程）
     if (inAppContainer || isMobile) {
-      const returnTo = typeof window !== "undefined" ? `${window.location.pathname}${window.location.search}` : "/";
-      const candidateLink = recommendation.candidateLink ?? buildFallbackCandidateLink(recommendation);
-      window.location.href = buildOutboundHref(candidateLink, returnTo);
+      const returnTo =
+        typeof window !== "undefined"
+          ? `${window.location.pathname}${window.location.search}`
+          : "/";
+      const candidateLink =
+        recommendation.candidateLink ?? buildFallbackCandidateLink(recommendation);
+      const outboundHref = buildOutboundHref(candidateLink, returnTo);
+
+      if (candidateLink.primary.type === "web" && candidateLink.fallbacks.length === 0) {
+        window.location.href = outboundHref;
+        return;
+      }
+
+      launchRecommendationViaGestureOrOutbound(recommendation, returnTo);
       return;
     }
-    // 桌面端：直接打开新标签
+
     window.open(link, "_blank", "noopener,noreferrer");
   };
 
@@ -135,7 +135,7 @@ export function TravelRecommendationCard({
     onDismiss?.(recommendation);
   };
 
-  // 提取国家信息
+  // 鎻愬彇鍥藉淇℃伅
   const extractCountryFromTitle = (title: string): string | null => {
     const countryPatterns = [
       { name: "日本", patterns: ["日本", "Japan", "东京", "Tokyo", "京都", "Kyoto", "大阪", "Osaka"] },
@@ -151,7 +151,7 @@ export function TravelRecommendationCard({
     ];
 
     for (const country of countryPatterns) {
-      if (country.patterns.some(pattern => title.includes(pattern))) {
+      if (country.patterns.some((pattern) => title.includes(pattern))) {
         return country.name;
       }
     }
@@ -160,7 +160,6 @@ export function TravelRecommendationCard({
 
   const country = (metadata.destination as any)?.country || extractCountryFromTitle(title);
 
-  // 获取国家对应的国旗 emoji
   const getCountryFlag = (countryName: string | null): string => {
     const flags: Record<string, string> = {
       "日本": "🇯🇵",
@@ -177,7 +176,6 @@ export function TravelRecommendationCard({
     return countryName ? flags[countryName] || "🌍" : "🌍";
   };
 
-  // 渲染评分
   const renderRating = (rating: number | string | undefined) => {
     if (!rating) return null;
     const ratingNum = typeof rating === 'string' ? parseFloat(rating) : rating;
@@ -201,7 +199,7 @@ export function TravelRecommendationCard({
     );
   };
 
-  // 渲染亮点
+  // 娓叉煋浜偣
   const renderHighlights = () => {
     const highlights = metadata.highlights as string[] | undefined;
     if (!highlights || highlights.length === 0) return null;
@@ -209,7 +207,7 @@ export function TravelRecommendationCard({
     return (
       <div className="mt-3">
         <h4 className="text-sm font-medium text-gray-700 mb-2">
-          {locale === "zh" ? "✨ 亮点" : "✨ Highlights"}
+          {locale === "zh" ? "鉁?浜偣" : "鉁?Highlights"}
         </h4>
         <div className="flex flex-wrap gap-2">
           {highlights.slice(0, 4).map((highlight, index) => (
@@ -233,7 +231,7 @@ export function TravelRecommendationCard({
       transition={{ duration: 0.2 }}
     >
       <Card className="overflow-hidden shadow-lg hover:shadow-xl transition-shadow duration-300">
-        {/* 顶部图片区域（渐变背景） */}
+        {/* 椤堕儴鍥剧墖鍖哄煙锛堟笎鍙樿儗鏅級 */}
         <div className="h-32 bg-gradient-to-br from-blue-400 via-cyan-400 to-teal-400 relative">
           <div className="absolute inset-0 bg-black bg-opacity-20" />
           <div className="absolute bottom-4 left-4 right-4">
@@ -241,7 +239,7 @@ export function TravelRecommendationCard({
               <Badge className="bg-white text-gray-800 text-xs font-medium">
                 <LocationIcon />
                 <span className="ml-1">
-                  {locale === "zh" ? "旅游目的地" : "Travel Destination"}
+                  {locale === "zh" ? "旅行目的地" : "Travel Destination"}
                 </span>
               </Badge>
               {country && (
@@ -256,9 +254,9 @@ export function TravelRecommendationCard({
           </div>
         </div>
 
-        {/* 内容区域 */}
+        {/* 鍐呭鍖哄煙 */}
         <div className="p-4">
-          {/* 标题和操作按钮 */}
+          {/* 鏍囬鍜屾搷浣滄寜閽?*/}
           <div className="flex items-start justify-between mb-2">
             <h3 className="text-xl font-bold text-gray-800 line-clamp-1 flex-1 mr-2">
               {title}
@@ -270,7 +268,7 @@ export function TravelRecommendationCard({
                     ? "bg-red-100 text-red-500"
                     : "bg-gray-100 text-gray-400 hover:text-red-500"
                   }`}
-                title={locale === "zh" ? "收藏" : "Save"}
+                title={locale === "zh" ? "鏀惰棌" : "Save"}
               >
                 <svg
                   className="w-4 h-4"
@@ -289,7 +287,7 @@ export function TravelRecommendationCard({
               <button
                 onClick={handleDismiss}
                 className="p-2 rounded-full bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
-                title={locale === "zh" ? "不感兴趣" : "Not interested"}
+                title={locale === "zh" ? "涓嶆劅鍏磋叮" : "Not interested"}
               >
                 <svg
                   className="w-4 h-4"
@@ -308,10 +306,10 @@ export function TravelRecommendationCard({
             </div>
           </div>
 
-          {/* 描述 */}
+          {/* 鎻忚堪 */}
           <p className="text-gray-600 text-sm mb-3 line-clamp-2">{description}</p>
 
-          {/* 元数据 */}
+          {/* 鍏冩暟鎹?*/}
           <div className="flex flex-wrap items-center gap-2 mb-3">
             {metadata.rating && renderRating(metadata.rating)}
             {metadata.price && (
@@ -326,10 +324,10 @@ export function TravelRecommendationCard({
             )}
           </div>
 
-          {/* 亮点 */}
+          {/* 浜偣 */}
           {renderHighlights()}
 
-          {/* 推荐理由 */}
+          {/* 鎺ㄨ崘鐞嗙敱 */}
           {reason && (
             <div className="mt-3 p-3 bg-purple-50 rounded-lg">
               <p className="text-sm text-purple-700">
@@ -341,30 +339,30 @@ export function TravelRecommendationCard({
             </div>
           )}
 
-          {/* 平台信息 */}
+          {/* 骞冲彴淇℃伅 */}
           {platform && (
             <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
               <span>
-                {locale === "zh" ? "通过" : "Via"} {platform}
+                {locale === "zh" ? "閫氳繃" : "Via"} {platform}
                 {linkType === 'search' && (
-                  <span> {locale === "zh" ? "搜索" : "Search"}</span>
+                  <span> {locale === "zh" ? "鎼滅储" : "Search"}</span>
                 )}
               </span>
               <span>
-                {locale === "zh" ? "AI 推荐" : "AI Recommended"}
+                {locale === "zh" ? "AI 鎺ㄨ崘" : "AI Recommended"}
               </span>
             </div>
           )}
         </div>
 
-        {/* 底部操作按钮 */}
+        {/* 搴曢儴鎿嶄綔鎸夐挳 */}
         <div className="px-4 pb-4">
           <Button
             onClick={handleLinkClick}
             className="w-full bg-gradient-to-r from-blue-500 to-teal-500 hover:from-blue-600 hover:to-teal-600 text-white font-medium"
             size="sm"
           >
-            {locale === "zh" ? "查看详情" : "View Details"}
+            {locale === "zh" ? "鏌ョ湅璇︽儏" : "View Details"}
             <ExternalLinkIcon />
           </Button>
         </div>
@@ -374,3 +372,5 @@ export function TravelRecommendationCard({
 }
 
 export default TravelRecommendationCard;
+
+

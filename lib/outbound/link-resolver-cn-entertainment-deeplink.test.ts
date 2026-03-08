@@ -10,7 +10,7 @@ function decodeOpaqueSearchPayload(url: string): Record<string, any> {
 }
 
 describe("resolveCandidateLink CN entertainment mobile deep links", () => {
-  it("TapTap Android auto-try prefers app scheme and keeps intent fallback", () => {
+  it("TapTap Android auto-try keeps universal link with search keyword", () => {
     const query = "genshin impact";
 
     const result = resolveCandidateLink({
@@ -25,14 +25,13 @@ describe("resolveCandidateLink CN entertainment mobile deep links", () => {
 
     const autoTry = getAutoTryLinks(result, "android");
     expect(autoTry.length).toBeGreaterThan(0);
-    expect(autoTry[0]?.type).toBe("app");
-    expect(autoTry[0]?.url).toContain("taptap://");
-    expect(autoTry[0]?.url).toContain(`keyword=${encodeURIComponent(query)}`);
+    expect(autoTry[0]?.type).toBe("universal_link");
+    expect(autoTry[0]?.url).toBe(`https://www.taptap.cn/search/${encodeURIComponent(query)}`);
 
-    const androidIntent = autoTry.find(
-      (link) => link.type === "intent" && link.url.includes("package=com.taptap")
+    const hasAndroidDeepLink = autoTry.some(
+      (link) => link.type === "app" || link.type === "intent"
     );
-    expect(androidIntent).toBeTruthy();
+    expect(hasAndroidDeepLink).toBe(false);
 
     const webFallback = result.fallbacks.find((link) => link.type === "web");
     expect(webFallback?.url).toBe(`https://www.taptap.cn/search/${encodeURIComponent(query)}`);
@@ -76,6 +75,30 @@ describe("resolveCandidateLink CN entertainment mobile deep links", () => {
     expect(intentPayload.jsonStr?.searchKeyWord).toBe(query);
   });
 
+  it("NetEase Cloud Music Android prefers Android intent and keeps keyword", () => {
+    const query = "周杰伦 晴天";
+
+    const result = resolveCandidateLink({
+      title: query,
+      query,
+      category: "entertainment",
+      locale: "zh",
+      region: "CN",
+      provider: "网易云音乐",
+      isMobile: true,
+      os: "android",
+    });
+
+    expect(result.primary.type).toBe("intent");
+    expect(result.primary.url).toContain("package=com.netease.cloudmusic");
+    expect(result.primary.url).toContain(`keyword=${encodeURIComponent(query)}`);
+
+    const autoTry = getAutoTryLinks(result, "android");
+    expect(autoTry.length).toBeGreaterThan(0);
+    expect(autoTry[0]?.type).toBe("intent");
+    expect(autoTry[0]?.url).toContain(`keyword=${encodeURIComponent(query)}`);
+  });
+
   it("TapTap iOS auto-try prioritizes app scheme before universal link", () => {
     const query = "honkai star rail";
 
@@ -94,5 +117,64 @@ describe("resolveCandidateLink CN entertainment mobile deep links", () => {
     expect(autoTry[0]?.type).toBe("app");
     expect(autoTry[0]?.url).toContain("taptap://");
     expect(autoTry.some((link) => link.type === "universal_link")).toBe(true);
+  });
+
+  it("Youku Android auto-try prioritizes app scheme and keeps package intent fallback", () => {
+    const query = "庆余年 第二季";
+
+    const result = resolveCandidateLink({
+      title: query,
+      query,
+      category: "entertainment",
+      locale: "zh",
+      region: "CN",
+      provider: "优酷",
+      isMobile: true,
+    });
+
+    const autoTry = getAutoTryLinks(result, "android");
+    expect(autoTry.length).toBeGreaterThan(0);
+    expect(autoTry[0]?.type).toBe("app");
+    expect(autoTry[0]?.url).toContain("youku://search?keyword=");
+
+    const androidIntent = autoTry.find(
+      (link) => link.type === "intent" && link.url.includes("package=com.youku.phone")
+    );
+    expect(androidIntent).toBeTruthy();
+
+    const webFallback = result.fallbacks.find((link) => link.type === "web");
+    expect(webFallback?.url).toBe(`https://so.youku.com/search_video/q_${encodeURIComponent(query)}`);
+  });
+
+  it("iQIYI Android auto-try prioritizes app scheme with keyword and keeps package intent fallback", () => {
+    const query = "狂飙";
+
+    const result = resolveCandidateLink({
+      title: query,
+      query,
+      category: "entertainment",
+      locale: "zh",
+      region: "CN",
+      provider: "爱奇艺",
+      isMobile: true,
+      os: "android",
+    });
+
+    expect(result.primary.type).toBe("app");
+    expect(result.primary.url).toContain("iqiyi://mobile/search?keyword=");
+    expect(result.primary.url).toContain(`keyword=${encodeURIComponent(query)}`);
+
+    const autoTry = getAutoTryLinks(result, "android");
+    expect(autoTry.length).toBeGreaterThan(0);
+    expect(autoTry[0]?.type).toBe("app");
+    expect(autoTry[0]?.url).toContain(`keyword=${encodeURIComponent(query)}`);
+
+    const androidIntent = autoTry.find(
+      (link) => link.type === "intent" && link.url.includes("package=com.qiyi.video")
+    );
+    expect(androidIntent).toBeTruthy();
+
+    const webFallback = result.fallbacks.find((link) => link.type === "web");
+    expect(webFallback?.url).toBe(`https://so.iqiyi.com/so/q_${encodeURIComponent(query)}`);
   });
 });

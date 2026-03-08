@@ -7,16 +7,9 @@ import {
 } from "@/lib/outbound/deep-link-helpers";
 import type { CandidateLink } from "@/lib/types/recommendation";
 
-function decodeBase64Utf8(value: string): string {
-  return Buffer.from(value, "base64").toString("utf8");
-}
-
-function extractCtripEmbeddedUrl(linkUrl: string): string | null {
-  const match = linkUrl.match(/[?&]url=([^&#]+)/i);
-  if (!match?.[1]) return null;
-
-  const base64Payload = decodeURIComponent(match[1]);
-  return decodeBase64Utf8(base64Payload);
+function extractQueryParam(linkUrl: string, key: string): string | null {
+  const match = linkUrl.match(new RegExp(`[?&]${key}=([^&#]+)`, "i"));
+  return match?.[1] ? decodeURIComponent(match[1]) : null;
 }
 
 vi.mock("@/lib/ai/zhipu-recommendation", () => ({
@@ -47,11 +40,11 @@ vi.mock("@/lib/ai/travel-enhancer", () => ({
 vi.mock("@/lib/recommendation/fallback-generator", () => ({
   generateFallbackCandidates: vi.fn(() => [
     {
-      title: "中国 杭州 西湖",
-      description: "经典城市地标与步行路线",
+      title: "中国·苏州·平江路",
+      description: "经典古城街区，适合散步与轻旅行",
       reason: "适合周末轻旅行",
-      tags: ["旅行", "杭州", "西湖"],
-      searchQuery: "",
+      tags: ["旅行", "苏州", "平江路"],
+      searchQuery: "江苏 苏州 平江路 游玩 攻略",
       platform: "携程",
     },
   ]),
@@ -73,6 +66,14 @@ vi.mock("@/lib/recommendation/cn-mobile-normalizer", () => ({
     }
     return params.platform;
   }),
+  normalizeCnMobileFitnessRecommendation: vi.fn((params: any) => ({
+    title: params.title,
+    description: params.description,
+    reason: params.reason,
+    searchQuery: params.searchQuery,
+    tags: params.tags,
+    platform: params.platform,
+  })),
   stripCnFoodGenericTerms: vi.fn((value: string) => value),
 }));
 
@@ -121,7 +122,7 @@ describe("recommend travel CN mobile outbound e2e", () => {
     expect(body.recommendations?.length).toBeGreaterThan(0);
 
     const first = body.recommendations?.[0];
-    expect(first?.title).toBe("中国 杭州 西湖");
+    expect(first?.title).toBe("中国·苏州·平江路");
 
     const candidate = first?.candidateLink;
     expect(candidate).toBeTruthy();
@@ -129,24 +130,32 @@ describe("recommend travel CN mobile outbound e2e", () => {
     expect(candidate?.metadata?.region).toBe("CN");
     expect(candidate?.metadata?.category).toBe("travel");
 
-    const encodedTitle = encodeURIComponent("中国 杭州 西湖");
+    const expectedKeyword = "江苏苏州平江路";
+    const encodedKeyword = encodeURIComponent(expectedKeyword);
 
-    expect(candidate?.primary.url).toContain("ctrip://wireless/h5?url=");
-    const primaryEmbeddedUrl = extractCtripEmbeddedUrl(candidate?.primary.url || "");
-    expect(primaryEmbeddedUrl).toContain(`keyword=${encodedTitle}`);
+    expect(candidate?.primary.type).toBe("app");
+    expect(candidate?.primary.url).toContain("ctrip://wireless/h5?type=search&keyword=");
+    expect(extractQueryParam(candidate?.primary.url || "", "keyword")).toBe(expectedKeyword);
 
     const webLink = candidate?.fallbacks.find(
       (link) =>
         link.type === "web" && link.url.includes("you.ctrip.com/globalsearch")
     );
-    expect(webLink?.url).toContain(`keyword=${encodedTitle}`);
+    expect(webLink?.url).toContain(`keyword=${encodedKeyword}`);
 
     const autoTryLinks = getAutoTryLinks(candidate!, "android");
     expect(autoTryLinks.length).toBeGreaterThan(0);
-    expect(autoTryLinks[0]?.type).toBe("intent");
-    expect(autoTryLinks[0]?.url).toContain("package=ctrip.android.view");
-    const androidEmbeddedUrl = extractCtripEmbeddedUrl(autoTryLinks[0]?.url || "");
-    expect(androidEmbeddedUrl).toContain(`keyword=${encodedTitle}`);
+    expect(autoTryLinks[0]?.type).toBe("app");
+    expect(autoTryLinks[0]?.url).toContain("ctrip://wireless/h5?type=search&keyword=");
+    expect(extractQueryParam(autoTryLinks[0]?.url || "", "keyword")).toBe(expectedKeyword);
+
+    const androidIntent = candidate?.fallbacks.find(
+      (link) =>
+        link.type === "intent" &&
+        link.url.includes("package=ctrip.android.view")
+    );
+    expect(androidIntent?.url).toContain("intent://wireless/h5?type=search&keyword=");
+    expect(androidIntent?.url).toContain(`keyword=${encodedKeyword}`);
 
     const androidStoreLinks = filterStoreLinksByOs(
       getStoreLinks(candidate!),

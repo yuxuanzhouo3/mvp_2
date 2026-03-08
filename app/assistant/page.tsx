@@ -17,6 +17,7 @@ import { motion } from "framer-motion";
 import { ArrowLeft, Sparkles, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
+import { useIsAndroid } from "@/hooks/use-device";
 import { useLanguage } from "@/components/language-provider";
 import { isChinaDeployment } from "@/lib/config/deployment.config";
 import ChatInterface from "@/components/assistant/ChatInterface";
@@ -24,10 +25,14 @@ import ChatInterface from "@/components/assistant/ChatInterface";
 export default function AssistantPage() {
   const router = useRouter();
   const { user, isAuthenticated, isLoading } = useAuth();
+  const isAndroid = useIsAndroid();
   const { language } = useLanguage();
   const isCN = isChinaDeployment();
   const locale = (isCN ? language : "en") as "zh" | "en";
   const region = isCN ? "CN" : "INTL";
+  const assistantTopPadding = isAndroid
+    ? "calc(env(safe-area-inset-top) + 24px)"
+    : "env(safe-area-inset-top)";
 
   // 未登录时引导登录
   useEffect(() => {
@@ -105,7 +110,10 @@ export default function AssistantPage() {
   }
 
   return (
-    <div className="min-h-screen h-[100dvh] overflow-hidden bg-gradient-to-br from-gray-50 via-white to-gray-50 pt-[env(safe-area-inset-top)]">
+    <div
+      className="min-h-screen h-[100dvh] overflow-hidden bg-gradient-to-br from-gray-50 via-white to-gray-50"
+      style={{ paddingTop: assistantTopPadding }}
+    >
       <div className="max-w-md mx-auto flex h-full min-h-0 flex-col">
         {/* 顶部导航栏 */}
         <div className="flex items-center gap-3 px-4 pt-3 pb-2">

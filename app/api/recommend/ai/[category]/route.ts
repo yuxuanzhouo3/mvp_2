@@ -52,6 +52,7 @@ import { searchNearbyStores } from "@/lib/assistant/nearby-store-search";
 import { mapSearchPlatformToProvider } from "@/lib/outbound/provider-mapping";
 import {
   normalizeCnMobileCategoryPlatform,
+  normalizeCnMobileFitnessRecommendation,
   stripCnFoodGenericTerms,
 } from "@/lib/recommendation/cn-mobile-normalizer";
 
@@ -2040,6 +2041,31 @@ export async function GET(request: NextRequest, { params }: { params: { category
             fitnessType: (enhancedRec as any).fitnessType,
           });
 
+          if (category === "fitness") {
+            const normalizedFitness = normalizeCnMobileFitnessRecommendation({
+              title: enhancedRec.title,
+              description: enhancedRec.description,
+              reason: enhancedRec.reason,
+              searchQuery: enhancedRec.searchQuery,
+              tags: Array.isArray((enhancedRec as any).tags) ? ((enhancedRec as any).tags as string[]) : null,
+              platform,
+              client,
+              isMobile,
+              locale,
+              index,
+              fitnessType: (enhancedRec as any).fitnessType,
+            });
+            enhancedRec = {
+              ...enhancedRec,
+              title: normalizedFitness.title ?? enhancedRec.title,
+              description: normalizedFitness.description ?? enhancedRec.description,
+              reason: normalizedFitness.reason ?? enhancedRec.reason,
+              searchQuery: normalizedFitness.searchQuery ?? enhancedRec.searchQuery,
+              tags: normalizedFitness.tags ?? enhancedRec.tags,
+            };
+            platform = normalizedFitness.platform;
+          }
+
           if (category === "food" && locale === "zh" && client === "web") {
             const tagsText = Array.isArray((enhancedRec as any).tags) ? (enhancedRec as any).tags.join(" ") : "";
             const text = `${enhancedRec.title || ""} ${enhancedRec.searchQuery || ""} ${tagsText}`.trim();
@@ -2147,7 +2173,10 @@ export async function GET(request: NextRequest, { params }: { params: { category
             const mapQuery =
               platform === "百度地图美食" || platform === "高德地图美食" || platform === "腾讯地图美食"
                 ? baseQuery
-                : platform === "百度地图健身" || platform === "高德地图健身" || platform === "腾讯地图健身"
+                : platform === "百度地图健身" ||
+                    platform === "高德地图健身" ||
+                    platform === "腾讯地图健身" ||
+                    (category === "fitness" && (platform === "百度地图" || platform === "高德地图" || platform === "腾讯地图"))
                   ? `${baseQuery} 健身房`
                   : baseQuery;
 
@@ -2188,10 +2217,12 @@ export async function GET(request: NextRequest, { params }: { params: { category
                 linkType = "location";
                 break;
               case "equipment":
-                if (platform === "什么值得买") {
+                if (platform === "什么值得买" || platform === "京东") {
                   linkType = "product";
                 } else if (
                   platform === "B站健身" ||
+                  platform === "B站" ||
+                  platform === "哔哩哔哩" ||
                   platform === "优酷健身" ||
                   platform === "YouTube" ||
                   platform === "YouTube Fitness"
@@ -2205,7 +2236,13 @@ export async function GET(request: NextRequest, { params }: { params: { category
                 linkType = "article";
                 break;
               default:
-                if (platform === "YouTube" || platform === "YouTube Fitness") {
+                if (
+                  platform === "YouTube" ||
+                  platform === "YouTube Fitness" ||
+                  platform === "B站" ||
+                  platform === "哔哩哔哩" ||
+                  platform === "B站健身"
+                ) {
                   linkType = "video";
                 } else if (platform === "Keep" || platform === "Peloton") {
                   linkType = "app";
@@ -2215,10 +2252,15 @@ export async function GET(request: NextRequest, { params }: { params: { category
                   platform === "百度地图健身" ||
                   platform === "高德地图健身" ||
                   platform === "腾讯地图健身" ||
+                  platform === "百度地图" ||
+                  platform === "高德地图" ||
+                  platform === "腾讯地图" ||
                   platform === "大众点评" ||
                   platform === "美团"
                 ) {
                   linkType = "location";
+                } else if (platform === "京东") {
+                  linkType = "product";
                 } else {
                   linkType = "search";
                 }
@@ -2302,6 +2344,7 @@ export async function GET(request: NextRequest, { params }: { params: { category
             region,
             provider: providerForCandidateLink,
             isMobile,
+            os: isAndroid ? "android" : isMobile ? "ios" : undefined,
           });
 
           const reasonOverride =
@@ -2658,6 +2701,78 @@ function stripQueryTokens(value: string, tokens: string[], wordBoundary = false)
   return normalizeQueryBase(result);
 }
 
+function dedupeSpaceSeparatedTokens(value: string): string {
+  const tokens = String(value || "")
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
+
+  const seen = new Set<string>();
+  const deduped: string[] = [];
+  for (const token of tokens) {
+    if (seen.has(token)) continue;
+    seen.add(token);
+    deduped.push(token);
+  }
+
+  return deduped.join(" ");
+}
+
+function collapseCnLocationSpacing(value: string): string {
+  const normalized = normalizeQueryBase(value);
+  if (!normalized || /[A-Za-z]/.test(normalized)) return normalized;
+
+  const tokens = normalized.split(/\s+/).filter(Boolean);
+  if (
+    tokens.length >= 2 &&
+    tokens.every((token) => /^[\u3400-\u9FFF\uF900-\uFAFF0-9]+$/u.test(token))
+  ) {
+    return tokens.join("");
+  }
+
+  return normalized;
+}
+
+function normalizeCnTravelSearchKeyword(value: string): string {
+  let query = normalizeQueryBase(value);
+  if (!query) return query;
+
+  query = stripQueryTokens(query, ["中国", "国内", "国外", "热门"]);
+  query = stripQueryTokens(query, [
+    "旅游",
+    "旅行",
+    "游玩",
+    "景点",
+    "景区",
+    "攻略",
+    "指南",
+    "路线",
+    "路书",
+    "玩法",
+    "打卡",
+    "避坑",
+    "行程",
+    "一日游",
+    "半日游",
+    "半天",
+    "周末",
+    "周边",
+    "附近",
+    "推荐",
+    "citywalk",
+    "city walk",
+    "walk",
+    "漫游",
+    "徒步",
+    "骑行",
+    "拍照",
+    "夜景",
+  ]);
+
+  query = dedupeSpaceSeparatedTokens(query);
+  return collapseCnLocationSpacing(query);
+}
+
 function shouldUseTitleForTravelQuery(searchQuery: string, title: string): boolean {
   const query = normalizeQueryBase(searchQuery);
   const titleText = normalizeQueryBase(title);
@@ -2716,6 +2831,11 @@ function sanitizeSearchQueryForLink(params: {
     query = stripQueryTokens(query, ["美食", "餐厅", "推荐", "附近"]);
     query = stripCnFoodGenericTerms(query);
     return query || normalizeQueryBase(title) || base;
+  }
+  if (category === "travel" && locale === "zh" && platform === "携程") {
+    const query = normalizeCnTravelSearchKeyword(base);
+    const titleQuery = normalizeCnTravelSearchKeyword(title);
+    return query || titleQuery || normalizeQueryBase(title) || base;
   }
   if (category !== "entertainment" || !entertainmentType) return base;
 
@@ -2959,6 +3079,31 @@ async function generateFallbackRecommendations(params: {
       fitnessType: fallbackRec.fitnessType,
     });
 
+    if (category === "fitness") {
+      const normalizedFitness = normalizeCnMobileFitnessRecommendation({
+        title: enhancedRec.title,
+        description: enhancedRec.description,
+        reason: enhancedRec.reason,
+        searchQuery: enhancedRec.searchQuery,
+        tags: Array.isArray((enhancedRec as any).tags) ? ((enhancedRec as any).tags as string[]) : null,
+        platform,
+        client,
+        isMobile,
+        locale,
+        index,
+        fitnessType: fallbackRec.fitnessType,
+      });
+      enhancedRec = {
+        ...enhancedRec,
+        title: normalizedFitness.title ?? enhancedRec.title,
+        description: normalizedFitness.description ?? enhancedRec.description,
+        reason: normalizedFitness.reason ?? enhancedRec.reason,
+        searchQuery: normalizedFitness.searchQuery ?? enhancedRec.searchQuery,
+        tags: normalizedFitness.tags ?? enhancedRec.tags,
+      };
+      platform = normalizedFitness.platform;
+    }
+
     if (category === "food" && locale === "zh" && client === "web") {
       const tagsText = Array.isArray((enhancedRec as any).tags) ? (enhancedRec as any).tags.join(" ") : "";
       const text = `${enhancedRec.title || ""} ${enhancedRec.searchQuery || ""} ${tagsText}`.trim();
@@ -3037,7 +3182,10 @@ async function generateFallbackRecommendations(params: {
       const mapQuery =
         platform === "百度地图美食" || platform === "高德地图美食" || platform === "腾讯地图美食"
           ? baseQuery
-          : platform === "百度地图健身" || platform === "高德地图健身" || platform === "腾讯地图健身"
+          : platform === "百度地图健身" ||
+              platform === "高德地图健身" ||
+              platform === "腾讯地图健身" ||
+              (category === "fitness" && (platform === "百度地图" || platform === "高德地图" || platform === "腾讯地图"))
             ? `${baseQuery} 健身房`
             : baseQuery;
 
@@ -3073,6 +3221,7 @@ async function generateFallbackRecommendations(params: {
       region,
       provider: providerForCandidateLink,
       isMobile,
+      os: isAndroid ? "android" : isMobile ? "ios" : undefined,
     });
 
     const reasonOverride =
@@ -3090,9 +3239,16 @@ async function generateFallbackRecommendations(params: {
           linkType = "location";
           break;
         case "equipment":
-          if (platform === "什么值得买") {
+          if (platform === "什么值得买" || platform === "京东") {
             linkType = "product";
-          } else if (platform === "YouTube" || platform === "YouTube Fitness" || platform === "B站健身" || platform === "优酷健身") {
+          } else if (
+            platform === "YouTube" ||
+            platform === "YouTube Fitness" ||
+            platform === "B站健身" ||
+            platform === "B站" ||
+            platform === "哔哩哔哩" ||
+            platform === "优酷健身"
+          ) {
             linkType = "video";
           } else {
             linkType = "search";
@@ -3102,7 +3258,13 @@ async function generateFallbackRecommendations(params: {
           linkType = "article";
           break;
         default:
-          if (platform === "YouTube" || platform === "YouTube Fitness") {
+          if (
+            platform === "YouTube" ||
+            platform === "YouTube Fitness" ||
+            platform === "B站" ||
+            platform === "哔哩哔哩" ||
+            platform === "B站健身"
+          ) {
             linkType = "video";
           } else if (platform === "Keep" || platform === "MyFitnessPal") {
             linkType = "app";
@@ -3110,10 +3272,15 @@ async function generateFallbackRecommendations(params: {
             platform === "百度地图健身" ||
             platform === "高德地图健身" ||
             platform === "腾讯地图健身" ||
+            platform === "百度地图" ||
+            platform === "高德地图" ||
+            platform === "腾讯地图" ||
             platform === "大众点评" ||
             platform === "美团"
           ) {
             linkType = "location";
+          } else if (platform === "京东") {
+            linkType = "product";
           } else {
             linkType = "search";
           }

@@ -13,6 +13,7 @@ import { OnboardingPrompt } from "@/components/OnboardingPrompt"
 import { LocationPermissionDialog } from "@/components/LocationPermissionDialog"
 import { useOnboarding, useFeedbackTrigger, usePageVisibility } from "@/hooks/use-onboarding"
 import { useIsIPhone } from "@/hooks/use-device"
+import { useAuth } from "@/hooks/use-auth"
 import type {
   AIRecommendation,
   RecommendationCategory,
@@ -86,7 +87,8 @@ function mapHistoryRecordToRecommendation(
   record: RecommendationHistory,
   locale: "zh" | "en",
   region: "CN" | "INTL",
-  isMobile?: boolean
+  isMobile?: boolean,
+  os?: "ios" | "android"
 ): HistoryItem {
   const storedCandidateLink = (record.metadata as any)?.candidateLink as AIRecommendation["candidateLink"] | undefined
   const searchQuery = (record.metadata as any)?.searchQuery as string | undefined
@@ -102,6 +104,7 @@ function mapHistoryRecordToRecommendation(
       region,
       provider: originalPlatform ? mapSearchPlatformToProvider(originalPlatform, locale) : undefined,
       isMobile,
+      os,
     })
 
   return {
@@ -264,6 +267,7 @@ function getUserId(): string {
 export default function CategoryPage({ params }: { params: { id: string } }) {
   const router = useRouter()
   const isIPhone = useIsIPhone()
+  const { user: authUser } = useAuth()
   const [currentRecommendations, setCurrentRecommendations] = useState<AIRecommendation[]>([])
   const [history, setHistory] = useState<HistoryItem[]>([])
   const [historySource, setHistorySource] = useState<"local" | "supabase" | "cloudbase">("local")
@@ -345,11 +349,19 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
   const historyProvider = RegionConfig.database.provider
 
   useEffect(() => {
+    if (authUser?.id) {
+      setUserId(authUser.id)
+      return
+    }
+
     const resolvedId = getUserId()
     if (resolvedId !== "anonymous") {
       setUserId(resolvedId)
+      return
     }
-  }, [])
+
+    setUserId(null)
+  }, [authUser?.id])
 
   useEffect(() => {
     try {
@@ -483,10 +495,11 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
         }
 
         const ua = typeof navigator !== "undefined" ? navigator.userAgent : ""
-        const isMobile = isIPhone || /android/i.test(ua)
+        const isAndroid = /android/i.test(ua)
+        const isMobile = isIPhone || isAndroid
         const mappedHistory: HistoryItem[] = dedupeHistory(
           (result.data || []).map((record: RecommendationHistory) =>
-            mapHistoryRecordToRecommendation(record, locale, region, isMobile)
+            mapHistoryRecordToRecommendation(record, locale, region, isMobile, isAndroid ? "android" : isIPhone ? "ios" : undefined)
           )
         )
         setHistory(mappedHistory)

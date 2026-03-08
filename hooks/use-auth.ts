@@ -4,9 +4,6 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { isChinaRegion } from "@/lib/config/region";
 
-/**
- * 统一的用户类型
- */
 export interface AuthUser {
   id: string;
   email?: string;
@@ -18,19 +15,40 @@ export interface AuthUser {
   isPro?: boolean;
 }
 
-/**
- * Auth session 类型
- */
 export interface AuthSessionData {
   user: AuthUser | null;
   isLoading: boolean;
   isAuthenticated: boolean;
 }
 
-/**
- * 统一的认证 Hook
- * 根据部署区域自动选择 Supabase (国际版) 或 CloudBase (中国版) 认证
- */
+function toAuthUser(input: any): AuthUser | null {
+  if (!input) return null;
+
+  const id = input.id || input._id;
+  if (!id) return null;
+
+  const subscriptionPlan =
+    input.subscription_plan ||
+    input.plan ||
+    input.user_metadata?.subscription_plan ||
+    input.metadata?.plan ||
+    "free";
+
+  const subscriptionStatus =
+    input.subscription_status || input.user_metadata?.subscription_status;
+
+  return {
+    id,
+    email: input.email,
+    name: input.name || input.user_metadata?.full_name,
+    avatar: input.avatar || input.user_metadata?.avatar_url,
+    subscriptionTier: subscriptionPlan as AuthUser["subscriptionTier"],
+    subscriptionPlan,
+    subscriptionStatus,
+    isPro: subscriptionPlan === "pro" || subscriptionPlan === "enterprise",
+  };
+}
+
 export function useAuth(): AuthSessionData & {
   signOut: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -42,76 +60,44 @@ export function useAuth(): AuthSessionData & {
   const loadUser = useCallback(async () => {
     try {
       if (isChinaRegion()) {
-        // 中国版：从 localStorage 读取
-        const { getStoredAuthState } = await import(
-          "@/lib/auth/auth-state-manager"
-        );
+        const { getStoredAuthState } = await import("@/lib/auth/auth-state-manager");
         const authState = getStoredAuthState();
 
-        if (authState?.user) {
-          setUser({
-            id: authState.user.id,
-            email: authState.user.email,
-            name: authState.user.name,
-            avatar: authState.user.avatar,
-            subscriptionTier:
-              (authState.user.subscription_plan as AuthUser["subscriptionTier"]) ||
-              "free",
-            subscriptionPlan: authState.user.subscription_plan,
-            subscriptionStatus: authState.user.subscription_status,
-            isPro: authState.user.subscription_plan === "pro" ||
-              authState.user.subscription_plan === "enterprise",
-          });
-        } else {
+        const localUser = toAuthUser(authState?.user);
+        if (localUser) {
+          setUser(localUser);
+          return;
+        }
+
+        // local state may be gone after WebView/process recycle; recover from cookie session.
+        const response = await fetch("/api/auth/me", {
+          method: "GET",
+          credentials: "include",
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
           setUser(null);
+          return;
         }
-      } else {
-        // 国际版：优先从缓存读取，然后检查 Supabase session
-        const { getSupabaseUserCache } = await import(
-          "@/lib/auth/auth-state-manager-intl"
-        );
-        const cachedUser = getSupabaseUserCache();
 
-        if (cachedUser) {
-          setUser({
-            id: cachedUser.id,
-            email: cachedUser.email,
-            name: cachedUser.name,
-            avatar: cachedUser.avatar,
-            subscriptionTier:
-              (cachedUser.subscription_plan as AuthUser["subscriptionTier"]) ||
-              "free",
-            subscriptionPlan: cachedUser.subscription_plan,
-            subscriptionStatus: cachedUser.subscription_status,
-            isPro:
-              cachedUser.subscription_plan === "pro" ||
-              cachedUser.subscription_plan === "enterprise",
-          });
-        } else {
-          // 尝试从 Supabase 获取
-          const { auth } = await import("@/lib/auth/client");
-          const { data } = await auth.getUser();
-
-          if (data?.user) {
-            setUser({
-              id: data.user.id,
-              email: data.user.email,
-              name: data.user.user_metadata?.full_name,
-              avatar: data.user.user_metadata?.avatar_url,
-              subscriptionTier:
-                (data.user.user_metadata?.subscription_plan as AuthUser["subscriptionTier"]) ||
-                "free",
-              subscriptionPlan: data.user.user_metadata?.subscription_plan,
-              subscriptionStatus: data.user.user_metadata?.subscription_status,
-              isPro:
-                data.user.user_metadata?.subscription_plan === "pro" ||
-                data.user.user_metadata?.subscription_plan === "enterprise",
-            });
-          } else {
-            setUser(null);
-          }
-        }
+        const payload = await response.json().catch(() => null);
+        setUser(toAuthUser(payload?.user));
+        return;
       }
+
+      // INTL: prefer cache, then fallback to provider session.
+      const { getSupabaseUserCache } = await import("@/lib/auth/auth-state-manager-intl");
+      const cachedUser = getSupabaseUserCache();
+
+      if (cachedUser) {
+        setUser(toAuthUser(cachedUser));
+        return;
+      }
+
+      const { auth } = await import("@/lib/auth/client");
+      const { data } = await auth.getUser();
+      setUser(toAuthUser(data?.user));
     } catch (error) {
       console.error("[useAuth] Error loading user:", error);
       setUser(null);
@@ -140,26 +126,24 @@ export function useAuth(): AuthSessionData & {
   useEffect(() => {
     loadUser();
 
-    // 监听用户状态变化（跨标签页同步）
     const handleStorageChange = (e: StorageEvent) => {
       if (
         e.key === "supabase-user-cache" ||
         e.key === "auth-state" ||
         e.key === "auth-token" ||
-        e.key === "app-auth-state"  // CN 环境的认证状态 key
+        e.key === "app-auth-state"
       ) {
         loadUser();
       }
     };
 
-    // 监听自定义事件（同标签页同步）
     const handleUserChanged = () => {
       loadUser();
     };
 
     window.addEventListener("storage", handleStorageChange);
     window.addEventListener("supabase-user-changed", handleUserChanged);
-    window.addEventListener("auth-state-changed", handleUserChanged);  // CN 环境的认证状态变化事件
+    window.addEventListener("auth-state-changed", handleUserChanged);
 
     return () => {
       window.removeEventListener("storage", handleStorageChange);
@@ -177,9 +161,6 @@ export function useAuth(): AuthSessionData & {
   };
 }
 
-/**
- * 简化的 session 格式，兼容 next-auth 的 useSession
- */
 export function useSession(): {
   data: { user: AuthUser | null } | null;
   status: "loading" | "authenticated" | "unauthenticated";
