@@ -168,11 +168,11 @@ function getFallbackProviders(
             "百度",
           ];
         case "shopping":
-          return ["京东", "淘宝", "拼多多", "唯品会", "百度"];
+          return ["京东", "拼多多", "百度"];
         case "entertainment":
           return ["腾讯视频", "优酷", "爱奇艺", "TapTap", "网易云音乐", "酷狗音乐", "QQ音乐", "百度"];
         case "travel":
-          return ["携程", "去哪儿", "马蜂窝", "百度"];
+          return ["携程", "百度"];
         case "fitness":
           return ["美团", "高德地图", "B站", "百度"];
         default:
@@ -242,8 +242,14 @@ function resolvePrimary(provider: ProviderDefinition, ctx: LinkContext, os?: "io
   });
 
   if (os === "android") {
+    if (provider.androidLaunchPriority === "intent_first" && provider.androidIntentScheme) {
+      return toSchemeLink(provider.androidIntentScheme(ctx));
+    }
     if (provider.androidScheme) {
       return toSchemeLink(provider.androidScheme(ctx));
+    }
+    if (provider.androidIntentScheme) {
+      return toSchemeLink(provider.androidIntentScheme(ctx));
     }
     if (provider.universalLink) {
       return { type: "universal_link", url: provider.universalLink(ctx) };
@@ -393,6 +399,7 @@ export function resolveCandidateLink(input: ResolveCandidateLinkInput): Candidat
       locale: input.locale,
       category: input.category,
       providerDisplayName: provider.displayName[input.locale],
+      androidLaunchPriority: provider.androidLaunchPriority || "app_first",
     },
   };
 }

@@ -15,7 +15,7 @@ function decodeKugouSearchPayload(url: string): Record<string, any> {
 }
 
 describe("resolveCandidateLink CN entertainment mobile deep links", () => {
-  it("TapTap Android auto-try uses https intent first and keeps search keyword", () => {
+  it("TapTap Android auto-try uses TapTap intent first and keeps search keyword", () => {
     const query = "genshin impact";
 
     const result = resolveCandidateLink({
@@ -33,11 +33,19 @@ describe("resolveCandidateLink CN entertainment mobile deep links", () => {
     expect(autoTry.length).toBeGreaterThan(0);
     expect(result.primary.type).toBe("intent");
     expect(autoTry[0]?.type).toBe("intent");
-    expect(autoTry[0]?.url).toContain(`intent://www.taptap.cn/search/${encodeURIComponent(query)}`);
-    expect(autoTry[0]?.url).toContain("scheme=https");
+    expect(autoTry[0]?.url).toContain("intent://taptap.cn/search?keyword=");
+    expect(autoTry[0]?.url).toContain(`keyword=${encodeURIComponent(query)}`);
+    expect(autoTry[0]?.url).toContain("scheme=taptap");
     expect(autoTry[0]?.url).toContain("package=com.taptap");
 
     expect(autoTry.some((link) => link.type === "intent")).toBe(true);
+    expect(
+      result.fallbacks.some(
+        (link) =>
+          link.type === "app" &&
+          link.url === `taptap://taptap.cn/search?keyword=${encodeURIComponent(query)}`
+      )
+    ).toBe(true);
 
     const webFallback = result.fallbacks.find((link) => link.type === "web");
     expect(webFallback?.url).toBe(`https://www.taptap.cn/search/${encodeURIComponent(query)}`);
@@ -137,7 +145,7 @@ describe("resolveCandidateLink CN entertainment mobile deep links", () => {
     expect(intentPayload.jsonStr?.searchKeyWord).toBe(query);
   });
 
-  it("NetEase Cloud Music Android prefers app scheme and keeps keyword intent fallback", () => {
+  it("NetEase Cloud Music Android prioritizes intent and keeps keyword app fallback", () => {
     const query = "周杰伦 晴天";
 
     const result = resolveCandidateLink({
@@ -151,20 +159,21 @@ describe("resolveCandidateLink CN entertainment mobile deep links", () => {
       os: "android",
     });
 
-    expect(result.primary.type).toBe("app");
-    expect(result.primary.url).toContain("orpheus://search?keyword=");
+    expect(result.primary.type).toBe("intent");
+    expect(result.primary.url).toContain("intent://search?keyword=");
     expect(result.primary.url).toContain(`keyword=${encodeURIComponent(query)}`);
+    expect(result.primary.url).toContain("scheme=orpheus");
 
     const autoTry = getAutoTryLinks(result, "android");
     expect(autoTry.length).toBeGreaterThan(0);
-    expect(autoTry[0]?.type).toBe("app");
+    expect(autoTry[0]?.type).toBe("intent");
     expect(autoTry[0]?.url).toContain(`keyword=${encodeURIComponent(query)}`);
 
-    const androidIntent = autoTry.find(
-      (link) => link.type === "intent" && link.url.includes("package=com.netease.cloudmusic")
+    const appFallback = result.fallbacks.find(
+      (link) => link.type === "app" && link.url.includes("orpheus://search?keyword=")
     );
-    expect(androidIntent).toBeTruthy();
-    expect(androidIntent?.url).toContain(`keyword=${encodeURIComponent(query)}`);
+    expect(appFallback).toBeTruthy();
+    expect(appFallback?.url).toContain(`keyword=${encodeURIComponent(query)}`);
   });
 
   it("TapTap iOS auto-try prioritizes app scheme before universal link", () => {
@@ -187,7 +196,7 @@ describe("resolveCandidateLink CN entertainment mobile deep links", () => {
     expect(autoTry.some((link) => link.type === "universal_link")).toBe(true);
   });
 
-  it("Youku Android auto-try prioritizes app scheme and keeps keyword intent fallback", () => {
+  it("Youku Android auto-try prioritizes intent and keeps keyword app fallback", () => {
     const query = "庆余年 第二季";
 
     const result = resolveCandidateLink({
@@ -198,19 +207,24 @@ describe("resolveCandidateLink CN entertainment mobile deep links", () => {
       region: "CN",
       provider: "优酷",
       isMobile: true,
+      os: "android",
     });
+
+    expect(result.primary.type).toBe("intent");
+    expect(result.primary.url).toContain("intent://search?keyword=");
+    expect(result.primary.url).toContain(`keyword=${encodeURIComponent(query)}`);
+    expect(result.primary.url).toContain("scheme=youku");
 
     const autoTry = getAutoTryLinks(result, "android");
     expect(autoTry.length).toBeGreaterThan(0);
-    expect(autoTry[0]?.type).toBe("app");
-    expect(autoTry[0]?.url).toContain("youku://search?keyword=");
+    expect(autoTry[0]?.type).toBe("intent");
+    expect(autoTry[0]?.url).toContain(`keyword=${encodeURIComponent(query)}`);
 
-    const androidIntent = autoTry.find(
-      (link) => link.type === "intent" && link.url.includes("package=com.youku.phone")
+    const appFallback = result.fallbacks.find(
+      (link) => link.type === "app" && link.url.includes("youku://search?keyword=")
     );
-    expect(androidIntent).toBeTruthy();
-    expect(androidIntent?.url).toContain(`keyword=${encodeURIComponent(query)}`);
-    expect(androidIntent?.url).toContain("scheme=youku");
+    expect(appFallback).toBeTruthy();
+    expect(appFallback?.url).toContain(`keyword=${encodeURIComponent(query)}`);
 
     const webFallback = result.fallbacks.find((link) => link.type === "web");
     expect(webFallback?.url).toBe(`https://so.youku.com/search_video/q_${encodeURIComponent(query)}`);

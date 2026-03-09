@@ -129,7 +129,7 @@ describe("buildRecommendationGestureLaunchPlan", () => {
     expect(decoded.candidateLink?.primary.url).toBe(recommendation.link);
   });
 
-  it("uses TapTap Android https intent as first deep link and keeps keyword", () => {
+  it("uses TapTap Android intent as first deep link and keeps keyword", () => {
     const query = "原神";
     const candidateLink = resolveCandidateLink({
       title: query,
@@ -150,11 +150,12 @@ describe("buildRecommendationGestureLaunchPlan", () => {
 
     expect(plan.firstDeepLink).toBeTruthy();
     expect(plan.firstDeepLink?.type).toBe("intent");
-    expect(plan.firstDeepLink?.url).toContain("intent://www.taptap.cn/search/");
-    expect(plan.firstDeepLink?.url).toContain(encodeURIComponent(query));
+    expect(plan.firstDeepLink?.url).toContain("intent://taptap.cn/search?keyword=");
+    expect(extractQueryParam(plan.firstDeepLink?.url || "", "keyword")).toBe(query);
+    expect(plan.firstDeepLink?.url).toContain("scheme=taptap");
   });
 
-  it("uses NetEase app scheme as first Android deep link and keeps keyword", () => {
+  it("uses NetEase intent as first Android deep link and keeps keyword", () => {
     const query = "林俊杰 修炼爱情";
     const candidateLink = resolveCandidateLink({
       title: query,
@@ -174,8 +175,9 @@ describe("buildRecommendationGestureLaunchPlan", () => {
     );
 
     expect(plan.firstDeepLink).toBeTruthy();
-    expect(plan.firstDeepLink?.type).toBe("app");
-    expect(plan.firstDeepLink?.url).toContain("orpheus://search?keyword=");
+    expect(plan.firstDeepLink?.type).toBe("intent");
+    expect(plan.firstDeepLink?.url).toContain("intent://search?keyword=");
+    expect(plan.firstDeepLink?.url).toContain("scheme=orpheus");
     expect(extractQueryParam(plan.firstDeepLink?.url || "", "keyword")).toBe(query);
   });
 

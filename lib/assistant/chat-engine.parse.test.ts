@@ -145,6 +145,63 @@ describe("processChat JSON tolerant parsing", () => {
     expect(openActions[1]?.candidateId).toBe("c2");
   });
 
+  it("passes android os and remaps Dianping to Amap in CN mobile assistant", async () => {
+    const resolveMock = vi.mocked(resolveCandidateLink);
+    resolveMock.mockClear();
+    vi.mocked(callAI).mockClear();
+    resolveMock.mockReturnValue({
+      provider: "高德地图",
+      title: "门店A",
+      primary: { type: "intent", url: "intent://example" },
+      fallbacks: [],
+      metadata: {
+        region: "CN",
+        locale: "zh",
+        category: "food",
+        providerDisplayName: "高德地图",
+      },
+    } as any);
+
+    vi.mocked(callAI).mockResolvedValueOnce({
+      model: "qwen-flash",
+      content: JSON.stringify({
+        type: "results",
+        message: "找到 1 个候选",
+        intent: "search_nearby",
+        candidates: [
+          {
+            id: "food-1",
+            name: "门店A",
+            description: "A",
+            category: "food",
+            platform: "大众点评",
+            searchQuery: "酸菜鱼",
+          },
+        ],
+      }),
+    });
+
+    await processChat(
+      {
+        message: "test",
+        locale: "zh",
+        region: "CN",
+        isMobile: true,
+        isAndroid: true,
+      },
+      "test-user"
+    );
+
+    expect(
+      resolveMock.mock.calls.some(
+        ([args]) =>
+          args?.provider === "高德地图" &&
+          args?.os === "android" &&
+          args?.isMobile === true
+      )
+    ).toBe(true);
+  });
+
   it("repairs malformed candidate array JSON and keeps structured cards", async () => {
     const response = await processChat(
       {

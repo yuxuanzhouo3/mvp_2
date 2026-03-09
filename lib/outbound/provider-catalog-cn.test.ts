@@ -54,7 +54,7 @@ describe("CN platform policy (assistant)", () => {
 
   it("CN Android shopping should include JD/Taobao/PDD/VIP", () => {
     const providers = names("shopping", true);
-    expect(providers).toEqual(["京东", "淘宝", "拼多多", "唯品会"]);
+    expect(providers).toEqual(["京东", "拼多多"]);
   });
 
   it("CN Android food should include review/takeout/map apps", () => {
@@ -71,7 +71,7 @@ describe("CN platform policy (assistant)", () => {
 
   it("CN Android travel should include Ctrip/Qunar/Mafengwo", () => {
     const providers = names("travel", true);
-    expect(providers).toEqual(["携程", "去哪儿", "马蜂窝"]);
+    expect(providers).toEqual(["携程"]);
   });
 
   it("CN Android fitness should include Meituan/Amap/Bilibili", () => {

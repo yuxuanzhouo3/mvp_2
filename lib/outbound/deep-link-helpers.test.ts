@@ -594,7 +594,7 @@ describe("getAutoTryLinks", () => {
       expect(links[1].type).toBe("app");
     });
 
-    it("prefers app before intent in CN Android context", () => {
+    it("prefers app before intent in default CN Android context", () => {
       const candidateLink: CandidateLink = {
         provider: "TapTap",
         title: "TapTap Test",
@@ -617,6 +617,32 @@ describe("getAutoTryLinks", () => {
       const links = getAutoTryLinks(candidateLink, "android");
       expect(links[0].type).toBe("app");
       expect(links[1].type).toBe("intent");
+    });
+
+    it("prefers intent before app when CN Android provider requests intent-first", () => {
+      const candidateLink: CandidateLink = {
+        provider: "TapTap",
+        title: "TapTap Test",
+        primary: {
+          type: "intent",
+          url: "intent://taptap.cn/search?keyword=test#Intent;scheme=taptap;package=com.taptap;end",
+        },
+        fallbacks: [
+          {
+            type: "app",
+            url: "taptap://taptap.cn/search?keyword=test",
+            label: "Android",
+          },
+        ],
+        metadata: {
+          region: "CN",
+          androidLaunchPriority: "intent_first",
+        } as any,
+      };
+
+      const links = getAutoTryLinks(candidateLink, "android");
+      expect(links[0].type).toBe("intent");
+      expect(links[1].type).toBe("app");
     });
 
     it("places multiple intents before apps on Android", () => {

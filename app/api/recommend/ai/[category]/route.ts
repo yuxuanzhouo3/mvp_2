@@ -519,6 +519,8 @@ function pickWeightedPlatform(candidates: WeightedCandidate[], seed: string): st
 }
 
 const REQUIRED_SHOPPING_PLATFORMS_CN_WEB = ["京东", "什么值得买", "慢慢买"] as const;
+const REQUIRED_SHOPPING_PLATFORMS_CN_MOBILE = ["京东", "拼多多"] as const;
+const REQUIRED_TRAVEL_PLATFORMS_CN_MOBILE = ["携程"] as const;
 const REQUIRED_ENTERTAINMENT_PLATFORMS_INTL_MOBILE = [
   "YouTube",
   "TikTok",
@@ -1100,6 +1102,11 @@ function getShoppingPlatformOverride(params: {
   count: number;
 }): string | null {
   const { category, locale, client, isMobile, isAndroid, index, count } = params;
+  if (category === "shopping" && locale === "zh" && client === "app" && Boolean(isMobile)) {
+    if (count <= 0) return null;
+    const max = Math.min(count, REQUIRED_SHOPPING_PLATFORMS_CN_MOBILE.length);
+    return index < count ? REQUIRED_SHOPPING_PLATFORMS_CN_MOBILE[index % max] : null;
+  }
   if (isIntlAndroidShoppingContext({ category, locale, isMobile, isAndroid })) {
     if (count <= 0) return null;
     const max = Math.min(count, REQUIRED_SHOPPING_PLATFORMS_INTL_ANDROID.length);
@@ -1137,6 +1144,11 @@ function getTravelPlatformOverride(params: {
   count: number;
 }): string | null {
   const { category, locale, isMobile, isAndroid, index, count } = params;
+  if (category === "travel" && locale === "zh" && Boolean(isMobile)) {
+    if (count <= 0) return null;
+    const max = Math.min(count, REQUIRED_TRAVEL_PLATFORMS_CN_MOBILE.length);
+    return index < count ? REQUIRED_TRAVEL_PLATFORMS_CN_MOBILE[index % max] : null;
+  }
   if (!isIntlAndroidTravelContext({ category, locale, isMobile, isAndroid })) {
     return null;
   }
@@ -1265,10 +1277,8 @@ function selectWeightedPlatformForCategory(
           return [
             ...(client === "app"
               ? ([
-                  { platform: "京东", weight: 0.3 },
-                  { platform: "淘宝", weight: 0.3 },
-                  { platform: "拼多多", weight: 0.2 },
-                  { platform: "唯品会", weight: 0.2 },
+                  { platform: "京东", weight: 0.55 },
+                  { platform: "拼多多", weight: 0.45 },
                 ] satisfies WeightedCandidate[])
               : ([
                   { platform: "京东", weight: 0.45 },
@@ -1321,11 +1331,7 @@ function selectWeightedPlatformForCategory(
         case "travel":
           return [
             ...(client === "app"
-              ? ([
-                  { platform: "携程", weight: 0.4 },
-                  { platform: "去哪儿", weight: 0.3 },
-                  { platform: "马蜂窝", weight: 0.3 },
-                ] satisfies WeightedCandidate[])
+              ? ([{ platform: "携程", weight: 1 }] satisfies WeightedCandidate[])
               : ([
                   { platform: "携程", weight: 0.4 },
                   { platform: "马蜂窝", weight: 0.35 },

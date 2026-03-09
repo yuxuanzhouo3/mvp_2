@@ -1,6 +1,8 @@
 ﻿import type { RecommendationCategory } from "@/lib/types/recommendation";
 
 const REQUIRED_SHOPPING_PLATFORMS_CN_WEB = ["京东", "什么值得买", "慢慢买"] as const;
+const REQUIRED_SHOPPING_PLATFORMS_CN_MOBILE = ["京东", "拼多多"] as const;
+const REQUIRED_TRAVEL_PLATFORMS_CN_MOBILE = ["携程"] as const;
 const REQUIRED_ENTERTAINMENT_PLATFORMS_INTL_MOBILE = [
   "YouTube",
   "TikTok",
@@ -571,6 +573,11 @@ export function getShoppingPlatformOverride(params: {
   count: number;
 }): string | null {
   const { category, locale, client, isMobile, isAndroid, index, count } = params;
+  if (category === "shopping" && locale === "zh" && client === "app" && Boolean(isMobile)) {
+    if (count <= 0) return null;
+    const max = Math.min(count, REQUIRED_SHOPPING_PLATFORMS_CN_MOBILE.length);
+    return index < count ? REQUIRED_SHOPPING_PLATFORMS_CN_MOBILE[index % max] : null;
+  }
   if (isIntlAndroidShoppingContext({ category, locale, isMobile, isAndroid })) {
     if (count <= 0) return null;
     const max = Math.min(count, REQUIRED_SHOPPING_PLATFORMS_INTL_ANDROID.length);
@@ -608,6 +615,11 @@ export function getTravelPlatformOverride(params: {
   count: number;
 }): string | null {
   const { category, locale, isMobile, isAndroid, index, count } = params;
+  if (category === "travel" && locale === "zh" && Boolean(isMobile)) {
+    if (count <= 0) return null;
+    const max = Math.min(count, REQUIRED_TRAVEL_PLATFORMS_CN_MOBILE.length);
+    return index < count ? REQUIRED_TRAVEL_PLATFORMS_CN_MOBILE[index % max] : null;
+  }
   if (!isIntlAndroidTravelContext({ category, locale, isMobile, isAndroid })) {
     return null;
   }

@@ -114,6 +114,7 @@ export type ProviderDefinition = {
   hasApp: boolean;
   androidPackageId?: string;
   disableAndroidPackageIntentFallback?: boolean;
+  androidLaunchPriority?: "app_first" | "intent_first";
   universalLink?: ProviderLinkBuilder;
   webLink: ProviderLinkBuilder;
   iosScheme?: ProviderLinkBuilder;
@@ -309,7 +310,7 @@ function taptapSchemeSearchUrl(keyword: string): string {
 }
 
 function taptapAndroidIntentSearchUrl(keyword: string, fallbackWebUrl: string): string {
-  return buildAndroidHttpsIntentUrl(fallbackWebUrl, "com.taptap");
+  return `intent://taptap.cn/search?keyword=${encodeURIComponent(keyword)}#Intent;scheme=taptap;package=com.taptap;S.browser_fallback_url=${encodeURIComponent(fallbackWebUrl)};end`;
 }
 
 function dianpingSchemeSearchUrl(keyword: string): string {
@@ -438,6 +439,7 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       domains: ["youku.com"],
       hasApp: true,
       androidPackageId: "com.youku.phone",
+      androidLaunchPriority: "intent_first",
       universalLink: ({ query, title }) => {
         const keyword = resolveSearchKeyword({ query, title });
         return `https://so.youku.com/search_video/q_${encodeURIComponent(keyword)}`;
@@ -513,6 +515,7 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       domains: ["music.163.com"],
       hasApp: true,
       androidPackageId: "com.netease.cloudmusic",
+      androidLaunchPriority: "intent_first",
       webLink: ({ query, title }) => {
         const keyword = resolveSearchKeyword({ query, title });
         return `https://music.163.com/#/search/m/?s=${encodeURIComponent(keyword)}`;
@@ -537,6 +540,7 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       domains: ["taptap.cn", "taptap.com"],
       hasApp: true,
       androidPackageId: "com.taptap",
+      androidLaunchPriority: "intent_first",
       // TapTap search keeps keyword reliably via universal link / app links.
       // Avoid package-only Android intent fallback here because it can wake app without query context.
       disableAndroidPackageIntentFallback: true,
@@ -554,6 +558,10 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
         return taptapSchemeSearchUrl(keyword);
       },
       androidScheme: ({ query, title }) => {
+        const keyword = resolveSearchKeyword({ query, title });
+        return taptapSchemeSearchUrl(keyword);
+      },
+      androidIntentScheme: ({ query, title }) => {
         const keyword = resolveSearchKeyword({ query, title });
         const web = taptapSearchUrl(keyword);
         return taptapAndroidIntentSearchUrl(keyword, web);
@@ -1526,10 +1534,8 @@ export function getWeightedProvidersForCategory(
           ];
         case "shopping":
           return [
-            { provider: "京东", weight: 0.30, tier: "mainstream" },
-            { provider: "淘宝", weight: 0.28, tier: "mainstream" },
-            { provider: "拼多多", weight: 0.22, tier: "mainstream" },
-            { provider: "唯品会", weight: 0.20, tier: "mainstream" },
+            { provider: "京东", weight: 0.55, tier: "mainstream" },
+            { provider: "拼多多", weight: 0.45, tier: "mainstream" },
           ];
         case "entertainment":
           return [
@@ -1544,9 +1550,7 @@ export function getWeightedProvidersForCategory(
           ];
         case "travel":
           return [
-            { provider: "携程", weight: 0.40, tier: "mainstream" },
-            { provider: "去哪儿", weight: 0.34, tier: "mainstream" },
-            { provider: "马蜂窝", weight: 0.26, tier: "mainstream" },
+            { provider: "携程", weight: 1, tier: "mainstream" },
           ];
         case "fitness":
           return [

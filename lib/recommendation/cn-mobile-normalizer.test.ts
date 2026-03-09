@@ -80,6 +80,41 @@ describe("normalizeCnMobileCategoryPlatform", () => {
     expect(baiduMapFood).toBe("小红书");
   });
 
+  it("forces CN mobile shopping apps to JD and Pinduoduo only", () => {
+    const first = normalizeCnMobileCategoryPlatform({
+      category: "shopping",
+      platform: "淘宝",
+      client: "app",
+      isMobile: true,
+      locale: "zh",
+      index: 0,
+    });
+    const second = normalizeCnMobileCategoryPlatform({
+      category: "shopping",
+      platform: "唯品会",
+      client: "app",
+      isMobile: true,
+      locale: "zh",
+      index: 1,
+    });
+
+    expect(first).toBe("京东");
+    expect(second).toBe("拼多多");
+  });
+
+  it("forces CN mobile travel app to Ctrip", () => {
+    const platform = normalizeCnMobileCategoryPlatform({
+      category: "travel",
+      platform: "马蜂窝",
+      client: "app",
+      isMobile: true,
+      locale: "zh",
+      index: 0,
+    });
+
+    expect(platform).toBe("携程");
+  });
+
   it("does not change platform for CN web", () => {
     const platform = normalizeCnMobileCategoryPlatform({
       category: "food",

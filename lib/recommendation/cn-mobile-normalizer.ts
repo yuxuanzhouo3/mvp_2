@@ -53,6 +53,14 @@ export function normalizeCnMobileCategoryPlatform(params: {
     }
   }
 
+  if (category === "shopping") {
+    return index % 2 === 0 ? "京东" : "拼多多";
+  }
+
+  if (category === "travel") {
+    return "携程";
+  }
+
   return platform;
 }
 

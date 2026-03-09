@@ -133,9 +133,12 @@ export function getAutoTryLinks(
   // - INTL：intent > app > universal_link
   if (os === "android") {
     const isCnRegion = String(candidateLink.metadata?.region || "").toUpperCase() === "CN";
+    const prefersIntentFirst = String(candidateLink.metadata?.androidLaunchPriority || "") === "intent_first";
     unique.sort((a, b) => {
       const priority = isCnRegion
-        ? ({ app: 0, intent: 1, universal_link: 2 } as Record<string, number>)
+        ? (prefersIntentFirst
+            ? ({ intent: 0, app: 1, universal_link: 2 } as Record<string, number>)
+            : ({ app: 0, intent: 1, universal_link: 2 } as Record<string, number>))
         : ({ intent: 0, app: 1, universal_link: 2 } as Record<string, number>);
       return (priority[a.type] ?? 3) - (priority[b.type] ?? 3);
     });

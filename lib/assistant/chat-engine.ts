@@ -487,6 +487,7 @@ export async function processChat(
           normalizedLocation,
           closerRefinementIntent,
           isMobile,
+          isAndroid,
           nearbySeed,
           nearbySeedSearchMessage,
           targetMapProvider
@@ -627,6 +628,7 @@ export async function processChat(
       effectiveLocale,
       region,
       isMobile,
+      isAndroid,
       forceMapProviderForNearby
         ? { forceProvider: forceMapProviderForNearby }
         : undefined
@@ -836,6 +838,7 @@ async function buildNearbyFallbackOnAiFailure(
   location: { lat: number; lng: number } | null,
   preferCloser: boolean,
   isMobile?: boolean,
+  isAndroid?: boolean,
   preloadedSeed?: NearbySearchResult | null,
   seedSearchMessage?: string,
   mapProvider: NearbyMapProvider = MAP_PROVIDER_GOOGLE
@@ -901,6 +904,7 @@ async function buildNearbyFallbackOnAiFailure(
         locale,
         region,
         isMobile,
+        isAndroid,
         { forceProvider: mapProvider }
       ),
     };
@@ -1663,6 +1667,7 @@ function enrichActionsWithDeepLinks(
   locale: "zh" | "en",
   region: "CN" | "INTL",
   isMobile?: boolean,
+  isAndroid?: boolean,
   options?: {
     forceProvider?: string;
   }
@@ -1671,6 +1676,7 @@ function enrichActionsWithDeepLinks(
   const deployRegion = region as DeploymentRegion;
 
   for (const candidate of candidates) {
+    const normalizedCategory = mapCategoryToRecommendation(candidate.category);
     const resolvedQuery =
       candidate.searchQuery?.trim() ||
       candidate.name?.trim() ||
@@ -1678,6 +1684,18 @@ function enrichActionsWithDeepLinks(
     const providerCandidates = [candidate.platform, options?.forceProvider]
       .map((provider) => String(provider || "").trim())
       .filter(Boolean)
+      .map((provider) => {
+        if (
+          deployRegion === "CN" &&
+          locale === "zh" &&
+          isMobile &&
+          normalizedCategory === "food" &&
+          provider === "大众点评"
+        ) {
+          return "高德地图";
+        }
+        return provider;
+      })
       .filter((provider, index, list) => list.findIndex((item) => item.toLowerCase() === provider.toLowerCase()) === index);
 
     try {
@@ -1687,10 +1705,11 @@ function enrichActionsWithDeepLinks(
         candidateLink = resolveCandidateLink({
           title: candidate.name,
           query: resolvedQuery,
-          category: mapCategoryToRecommendation(candidate.category),
+          category: normalizedCategory,
           locale,
           region: deployRegion,
           isMobile,
+          os: isAndroid ? "android" : isMobile ? "ios" : undefined,
         });
       } else {
         for (const provider of providerCandidates) {
@@ -1698,11 +1717,12 @@ function enrichActionsWithDeepLinks(
             candidateLink = resolveCandidateLink({
               title: candidate.name,
               query: resolvedQuery,
-              category: mapCategoryToRecommendation(candidate.category),
+              category: normalizedCategory,
               locale,
               region: deployRegion,
               provider,
               isMobile,
+              os: isAndroid ? "android" : isMobile ? "ios" : undefined,
             });
             break;
           } catch {
