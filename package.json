@@ -9,7 +9,7 @@
     "lint": "next lint",
     "start": "next start",
     "test:admin": "tsx scripts/test-admin-session.ts",
-    "test:zhipu": "tsx test-zhipu-api.ts",
+    "test:qwen": "tsx test-zhipu-api.ts",
     "verify:env": "tsx verify-env.ts",
     "verify:recommend:dedupe": "tsx scripts/verify-recommendation-dedupe.ts"
   },
@@ -89,7 +89,6 @@
     "tailwindcss-animate": "^1.0.7",
     "undici": "^7.16.0",
     "vaul": "^0.9.6",
-    "zhipuai": "^2.0.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {

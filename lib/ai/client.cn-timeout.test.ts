@@ -56,7 +56,7 @@ describe("callAI CN qwen timeout budget", () => {
     }
   });
 
-  it("allows qwen3.5-flash to finish within default CN timeout", async () => {
+  it("allows qwen3.5-plus to finish within default CN timeout", async () => {
     const { callAI } = await import("./client");
 
     const pending = callAI({
@@ -67,7 +67,7 @@ describe("callAI CN qwen timeout budget", () => {
     await vi.advanceTimersByTimeAsync(11_000);
 
     await expect(pending).resolves.toMatchObject({
-      model: "qwen3.5-flash",
+      model: "qwen3.5-plus",
       content: "ok",
     });
   });

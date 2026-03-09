@@ -1,10 +1,12 @@
-import OpenAI from "openai";
+﻿import OpenAI from "openai";
 import { ZhipuAI } from "zhipuai";
 import { isChinaDeployment } from "@/lib/config/deployment.config";
+import { getCnAiRuntimeModelConfig } from "@/lib/ai/runtime-model-config";
+import { type CnRuntimeModel } from "@/lib/ai/runtime-models";
 import { generateFallbackCandidates } from "@/lib/recommendation/fallback-generator";
 import type { RecommendationCategory } from "@/lib/types/recommendation";
 
-type CNQwenProvider = "qwen3.5-flash" | "qwen3.5-flash-2026-02-23" | "qwen3.5-35b-a3b";
+type CNQwenProvider = CnRuntimeModel;
 type AIProvider = "openai" | "mistral" | "zhipu" | CNQwenProvider;
 
 export type AIMessage = {
@@ -41,30 +43,50 @@ const DEFAULT_MODELS = {
   openai: process.env.OPENAI_MODEL || "gpt-4o-mini",
   mistral: process.env.MISTRAL_MODEL || "mistral-small-latest",
   zhipu: process.env.ZHIPU_MODEL || "glm-4.5-flash",
+  "qwen3.5-plus": "qwen3.5-plus",
   "qwen3.5-flash": "qwen3.5-flash",
   "qwen3.5-flash-2026-02-23": "qwen3.5-flash-2026-02-23",
   "qwen3.5-35b-a3b": "qwen3.5-35b-a3b",
 };
 
-// CN环境优先使用最快的模型，避免多模型fallback导致的延迟
-const CN_RECOMMENDATION_QWEN_MODELS: readonly CNQwenProvider[] = [
-  "qwen3.5-flash",  // 最快的模型，优先使用
-] as const;
-
 // 通义千问 API 端点
 const QWEN_API_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
+const DEFAULT_RECOMMENDATION_AI_PROVIDER_TIMEOUT_MS = 45_000;
 
 function hasValidKey(value?: string | null): value is string {
   return Boolean(value && value.trim() && !value.includes("your_"));
 }
 
-function getProviderOrder(): AIProvider[] {
+function parseBoundedIntEnv(
+  value: string | undefined,
+  fallback: number,
+  min: number,
+  max: number
+): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+
+  return Math.max(min, Math.min(max, Math.round(parsed)));
+}
+
+function getRecommendationProviderTimeoutMs(): number {
+  return parseBoundedIntEnv(
+    process.env.RECOMMENDATION_AI_PROVIDER_TIMEOUT_MS,
+    DEFAULT_RECOMMENDATION_AI_PROVIDER_TIMEOUT_MS,
+    5_000,
+    120_000
+  );
+}
+
+async function getProviderOrder(): Promise<AIProvider[]> {
   if (isChinaDeployment()) {
     // CN 环境：仅使用白名单模型，其他模型因额度不足禁用
     const providers: AIProvider[] = [];
 
     if (hasValidKey(process.env.QWEN_API_KEY)) {
-      providers.push(...CN_RECOMMENDATION_QWEN_MODELS);
+      providers.push((await getCnAiRuntimeModelConfig()).recommendationModel);
     }
 
     return providers;
@@ -84,7 +106,11 @@ function getProviderOrder(): AIProvider[] {
 }
 
 export function isAIProviderConfigured(): boolean {
-  return getProviderOrder().length > 0;
+  if (isChinaDeployment()) {
+    return hasValidKey(process.env.QWEN_API_KEY);
+  }
+
+  return hasValidKey(process.env.MISTRAL_API_KEY) || hasValidKey(process.env.OPENAI_API_KEY);
 }
 
 export function isZhipuConfigured(): boolean {
@@ -96,10 +122,15 @@ export function isQwenConfigured(): boolean {
 }
 
 async function callAIWithFallback(messages: AIMessage[], temperature = 0.8) {
-  const providers = getProviderOrder().filter((p) => !DISABLED_PROVIDERS.has(p));
+  const configuredProviders = await getProviderOrder();
+  const providers = configuredProviders.filter((p) => !DISABLED_PROVIDERS.has(p));
+
+  if (configuredProviders.length === 0) {
+    throw new Error("No AI provider configured for current deployment region");
+  }
 
   if (providers.length === 0) {
-    throw new Error("No AI provider configured for current deployment region");
+    throw new Error("All AI providers are temporarily unavailable for current deployment region");
   }
 
   let lastError: unknown;
@@ -125,6 +156,7 @@ async function callAIWithFallback(messages: AIMessage[], temperature = 0.8) {
             provider,
             model: DEFAULT_MODELS.zhipu,
           };
+        case "qwen3.5-plus":
         case "qwen3.5-flash":
         case "qwen3.5-flash-2026-02-23":
         case "qwen3.5-35b-a3b":
@@ -166,11 +198,20 @@ async function callQwen(
     throw new Error("QWEN_API_KEY is not configured");
   }
 
-  console.log(`[AI] Calling Qwen API with model: ${model}...`);
+  const timeoutMs = getRecommendationProviderTimeoutMs();
+  const requestBody = {
+    model,
+    messages,
+    temperature,
+    max_tokens: 600,
+    ...(model === "qwen3.5-plus" ? { enable_thinking: false } : {}),
+  };
+
+  console.log(`[AI] Calling Qwen API with model: ${model} (timeout=${timeoutMs}ms)...`);
 
   // 添加30秒超时控制，避免长时间等待
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30000);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(QWEN_API_URL, {
@@ -179,12 +220,7 @@ async function callQwen(
         Authorization: `Bearer ${apiKey!.trim()}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature,
-        max_tokens: 600,
-      }),
+      body: JSON.stringify(requestBody),
       signal: controller.signal,
     });
     clearTimeout(timeoutId);
@@ -245,7 +281,7 @@ async function callQwen(
     clearTimeout(timeoutId);
     if ((error as any).name === 'AbortError') {
       throw new AIRequestError({
-        message: `Qwen API (${model}) request timeout after 30s`,
+        message: `Qwen API (${model}) request timeout after ${timeoutMs}ms`,
         kind: "http_error",
         provider: model,
         status: 408,
@@ -1077,3 +1113,4 @@ function getFallbackRecommendations(category: string, locale: string): Recommend
     client: "web",
   }) as RecommendationItem[];
 }
+

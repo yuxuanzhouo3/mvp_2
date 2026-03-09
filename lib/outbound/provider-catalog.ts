@@ -210,6 +210,11 @@ function ctripAndroidSearchDeepLink(keyword: string): string {
   return `ctrip://wireless/search?keyword=${encodeURIComponent(keyword)}`;
 }
 
+function ctripAndroidH5DeepLink(webUrl: string): string {
+  const base64Url = encodeBase64Utf8(webUrl);
+  return `ctrip://wireless/h5?url=${encodeURIComponent(base64Url)}&type=1`;
+}
+
 function ctripAndroidSearchIntent(webUrl: string): string {
   const base64Url = encodeBase64Utf8(webUrl);
   return `intent://wireless/h5?url=${encodeURIComponent(base64Url)}&type=1#Intent;scheme=ctrip;package=ctrip.android.view;S.browser_fallback_url=${encodeURIComponent(webUrl)};end`;
@@ -1416,7 +1421,8 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       },
       androidScheme: (ctx) => {
         const keyword = resolveSearchKeyword(ctx);
-        return ctripAndroidSearchDeepLink(keyword);
+        const web = ctripWebSearchUrl(keyword);
+        return ctripAndroidH5DeepLink(web);
       },
       androidIntentScheme: (ctx) => {
         const keyword = resolveSearchKeyword(ctx);

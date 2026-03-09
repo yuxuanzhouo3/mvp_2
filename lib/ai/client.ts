@@ -1,5 +1,7 @@
 import OpenAI from "openai";
 import { isChinaDeployment } from "@/lib/config/deployment.config";
+import { getCnAiRuntimeModelConfig } from "@/lib/ai/runtime-model-config";
+import { CN_RUNTIME_MODEL_VALUES, type CnRuntimeModel } from "@/lib/ai/runtime-models";
 
 interface AIRequest {
   messages: Array<{
@@ -15,12 +17,8 @@ interface AIResponse {
   model: string;
 }
 
-const CN_QWEN_MODELS = [
-  "qwen3.5-flash",
-  "qwen3.5-flash-2026-02-23",
-  "qwen3.5-35b-a3b",
-] as const;
-type CNQwenModel = (typeof CN_QWEN_MODELS)[number];
+const CN_QWEN_MODELS = CN_RUNTIME_MODEL_VALUES;
+type CNQwenModel = CnRuntimeModel;
 type IntlProvider = "openai" | "mistral";
 
 const INTL_MODELS = {
@@ -29,8 +27,7 @@ const INTL_MODELS = {
 };
 
 const FAST_CN_QWEN_ORDER: readonly CNQwenModel[] = [
-  "qwen3.5-flash",
-  "qwen3.5-flash-2026-02-23",
+  "qwen3.5-plus",
 ];
 const DEFAULT_INTL_PROVIDER_ORDER: readonly IntlProvider[] = ["mistral", "openai"];
 const FAST_INTL_PROVIDER_ORDER: readonly IntlProvider[] = ["openai", "mistral"];
@@ -201,7 +198,7 @@ function parseIntlProviderOrder(
   return parsed.length > 0 ? parsed : [...fallback];
 }
 
-function getExecutionConfig(): AIExecutionConfig {
+async function getExecutionConfig(): Promise<AIExecutionConfig> {
   const isChinaRegion = isChinaDeployment();
   const fastModeDefault = isChinaRegion ? false : DEFAULT_FAST_MODE;
   const fastMode = parseBooleanEnv(
@@ -251,12 +248,16 @@ function getExecutionConfig(): AIExecutionConfig {
     2000
   );
 
+  const cnQwenOrder = isChinaRegion
+    ? [(await getCnAiRuntimeModelConfig()).assistantModel]
+    : parseQwenOrder(process.env.ASSISTANT_CN_QWEN_MODELS, defaultCnOrder);
+
   return {
     fastMode,
     providerTimeoutMs,
     totalTimeoutMs,
     maxRetries,
-    cnQwenOrder: parseQwenOrder(process.env.ASSISTANT_CN_QWEN_MODELS, defaultCnOrder),
+    cnQwenOrder,
     intlProviderOrder: parseIntlProviderOrder(
       process.env.ASSISTANT_INTL_PROVIDER_ORDER,
       defaultIntlOrder
@@ -670,7 +671,7 @@ async function callAIInternal(request: AIRequest, config: AIExecutionConfig): Pr
 }
 
 export async function callAI(request: AIRequest): Promise<AIResponse> {
-  const config = getExecutionConfig();
+  const config = await getExecutionConfig();
   const startedAt = Date.now();
 
   logAIDebug("[AIClient] callAI start", {
@@ -703,9 +704,9 @@ export async function callAI(request: AIRequest): Promise<AIResponse> {
   }
 }
 
-export function getAvailableModels(): string[] {
+export async function getAvailableModels(): Promise<string[]> {
   const models: string[] = [];
-  const config = getExecutionConfig();
+  const config = await getExecutionConfig();
 
   if (isChinaDeployment()) {
     if (isQwenConfigured()) {

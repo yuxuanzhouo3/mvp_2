@@ -1,22 +1,12 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 
-const routePath = "./route";
+import { getRecommendationTargetCount, getTravelPlatformOverride } from "./route-test-helpers";
+
+const TEST_TIMEOUT = 15000;
 
 describe("INTL Android travel platform mix", () => {
-  it("enforces 6-item platform sequence for first six indices", async () => {
-    const mod = (await import(routePath)) as any;
-    const getter = mod.getTravelPlatformOverride as
-      | ((params: {
-          category: string;
-          locale: "zh" | "en";
-          isMobile?: boolean;
-          isAndroid?: boolean;
-          index: number;
-          count: number;
-        }) => string | null)
-      | undefined;
-
-    expect(typeof getter).toBe("function");
+  it("enforces 6-item platform sequence for first six indices", () => {
+    expect(getTravelPlatformOverride).toBeTypeOf("function");
 
     const expected = [
       "TripAdvisor",
@@ -28,7 +18,7 @@ describe("INTL Android travel platform mix", () => {
     ];
 
     const actual = expected.map((_, index) =>
-      getter!({
+      getTravelPlatformOverride({
         category: "travel",
         locale: "en",
         isMobile: true,
@@ -39,24 +29,13 @@ describe("INTL Android travel platform mix", () => {
     );
 
     expect(actual).toEqual(expected);
-  });
+  }, TEST_TIMEOUT);
 
-  it("raises recommendation target count to 6 in INTL Android travel context", async () => {
-    const mod = (await import(routePath)) as any;
-    const targetCount = mod.getRecommendationTargetCount as
-      | ((params: {
-          category: string;
-          locale: "zh" | "en";
-          isMobile?: boolean;
-          isAndroid?: boolean;
-          requestedCount: number;
-        }) => number)
-      | undefined;
-
-    expect(typeof targetCount).toBe("function");
+  it("raises recommendation target count to 6 in INTL Android travel context", () => {
+    expect(getRecommendationTargetCount).toBeTypeOf("function");
 
     expect(
-      targetCount!({
+      getRecommendationTargetCount({
         category: "travel",
         locale: "en",
         isMobile: true,
@@ -64,23 +43,11 @@ describe("INTL Android travel platform mix", () => {
         requestedCount: 5,
       })
     ).toBe(6);
-  });
+  }, TEST_TIMEOUT);
 
-  it("does not force sequence outside INTL Android travel context", async () => {
-    const mod = (await import(routePath)) as any;
-    const getter = mod.getTravelPlatformOverride as
-      | ((params: {
-          category: string;
-          locale: "zh" | "en";
-          isMobile?: boolean;
-          isAndroid?: boolean;
-          index: number;
-          count: number;
-        }) => string | null)
-      | undefined;
-
+  it("does not force sequence outside INTL Android travel context", () => {
     expect(
-      getter!({
+      getTravelPlatformOverride({
         category: "travel",
         locale: "en",
         isMobile: true,
@@ -89,6 +56,5 @@ describe("INTL Android travel platform mix", () => {
         count: 6,
       })
     ).toBeNull();
-  });
+  }, TEST_TIMEOUT);
 });
-

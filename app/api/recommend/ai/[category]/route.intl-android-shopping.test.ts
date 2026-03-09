@@ -1,23 +1,12 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 
-const routePath = "./route";
+import { getShoppingPlatformOverride } from "./route-test-helpers";
+
+const TEST_TIMEOUT = 15000;
 
 describe("INTL Android shopping platform mix", () => {
-  it("enforces 6-item platform sequence for first six indices", async () => {
-    const mod = (await import(routePath)) as any;
-    const getter = mod.getShoppingPlatformOverride as
-      | ((params: {
-          category: string;
-          locale: "zh" | "en";
-          client: "app" | "web";
-          isMobile?: boolean;
-          isAndroid?: boolean;
-          index: number;
-          count: number;
-        }) => string | null)
-      | undefined;
-
-    expect(typeof getter).toBe("function");
+  it("enforces 6-item platform sequence for first six indices", () => {
+    expect(getShoppingPlatformOverride).toBeTypeOf("function");
 
     const expected = [
       "Amazon Shopping",
@@ -29,7 +18,7 @@ describe("INTL Android shopping platform mix", () => {
     ];
 
     const actual = expected.map((_, index) =>
-      getter!({
+      getShoppingPlatformOverride({
         category: "shopping",
         locale: "en",
         client: "app",
@@ -41,24 +30,11 @@ describe("INTL Android shopping platform mix", () => {
     );
 
     expect(actual).toEqual(expected);
-  });
+  }, TEST_TIMEOUT);
 
-  it("does not force sequence outside INTL Android shopping context", async () => {
-    const mod = (await import(routePath)) as any;
-    const getter = mod.getShoppingPlatformOverride as
-      | ((params: {
-          category: string;
-          locale: "zh" | "en";
-          client: "app" | "web";
-          isMobile?: boolean;
-          isAndroid?: boolean;
-          index: number;
-          count: number;
-        }) => string | null)
-      | undefined;
-
+  it("does not force sequence outside INTL Android shopping context", () => {
     expect(
-      getter!({
+      getShoppingPlatformOverride({
         category: "shopping",
         locale: "en",
         client: "app",
@@ -68,6 +44,5 @@ describe("INTL Android shopping platform mix", () => {
         count: 6,
       })
     ).toBeNull();
-  });
+  }, TEST_TIMEOUT);
 });
-

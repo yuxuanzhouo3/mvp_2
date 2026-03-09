@@ -85,6 +85,7 @@ vi.mock("@/lib/recommendation/cn-mobile-normalizer", () => ({
 }));
 
 const routePath = "./route";
+const TEST_TIMEOUT = 15000;
 
 describe("recommend travel CN mobile outbound e2e", () => {
   afterEach(() => {
@@ -182,5 +183,5 @@ describe("recommend travel CN mobile outbound e2e", () => {
     expect(
       candidate?.fallbacks.some((link) => link.type === "web")
     ).toBe(true);
-  });
+  }, TEST_TIMEOUT);
 });

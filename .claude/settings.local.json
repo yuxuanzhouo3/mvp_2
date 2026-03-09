@@ -50,7 +50,11 @@
       "mcp__thinking__sequentialthinking",
       "Read(//c/Users/18264/Downloads/mvp_24-master/**)",
       "Read(//d/code/Project One/android-CN/app/src/main/java/co/median/android/**)",
-      "Read(//d/code/Project One/android-CN/app/**)"
+      "Read(//d/code/Project One/android-CN/app/**)",
+      "Bash(cp lib/ai/zhipu-recommendation.cn-model.test.ts lib/ai/zhipu-recommendation.cn-model.test.ts.bak)",
+      "Bash(sed '96s/.*/                    platform: \"\"腾讯视频\"\",/' lib/ai/zhipu-recommendation.cn-model.test.ts.bak)",
+      "Bash(sed -n '96p' lib/ai/zhipu-recommendation.cn-model.test.ts)",
+      "Bash(npx vitest run lib/ai/zhipu-recommendation.cn-model.test.ts)"
     ],
     "deny": [],
     "ask": [],

@@ -235,8 +235,9 @@ describe("resolveCandidateLink android intent fallback", () => {
     });
 
     expect(result.primary.type).toBe("app");
-    expect(result.primary.url).toContain("ctrip://wireless/search?keyword=");
-    expect(result.primary.url).toContain(`keyword=${encodeURIComponent(query)}`);
+    expect(result.primary.url).toContain("ctrip://wireless/h5?url=");
+    const primaryEmbeddedUrl = extractCtripEmbeddedUrl(result.primary.url || "");
+    expect(primaryEmbeddedUrl).toContain(`keyword=${encodeURIComponent(query)}`);
 
     const androidIntent = result.fallbacks.find(
       (link) =>
@@ -252,20 +253,22 @@ describe("resolveCandidateLink android intent fallback", () => {
     {
       provider: "去哪儿",
       expectedScheme: "qunarphone://search?searchWord=",
-      fallbackScheme: "scheme=qunarphone",
+      fallbackScheme: "scheme=https",
+      fallbackPrefix: "intent://www.qunar.com/search?",
       paramKey: "searchWord",
       packageId: "com.qunar.atom",
     },
     {
       provider: "马蜂窝",
-      expectedScheme: "intent://search?keyword=",
-      fallbackScheme: "scheme=mafengwo",
+      expectedScheme: "intent://www.mafengwo.cn/search/q.php",
+      fallbackScheme: "scheme=https",
+      fallbackPrefix: "intent://www.mafengwo.cn/search/q.php",
       paramKey: "keyword",
       packageId: "com.mfw.roadbook",
     },
   ])(
     "uses $provider Android app deeplink first and keeps keyword intent fallback",
-    ({ provider, expectedScheme, fallbackScheme, paramKey, packageId }) => {
+    ({ provider, expectedScheme, fallbackScheme, fallbackPrefix, paramKey, packageId }) => {
       const query = "江苏苏州平江路游玩攻略";
       const result = resolveCandidateLink({
         title: "中国·苏州·平江路",
@@ -292,7 +295,7 @@ describe("resolveCandidateLink android intent fallback", () => {
         const androidIntent = result.fallbacks.find(
           (link) => link.type === "intent" && link.url.includes(`package=${packageId}`)
         );
-        expect(androidIntent?.url).toContain("intent://search?");
+        expect(androidIntent?.url).toContain(fallbackPrefix);
         expect(androidIntent?.url).toContain(fallbackScheme);
         expect(extractQueryParam(androidIntent?.url || "", paramKey)).toBe(query);
       }
@@ -338,9 +341,10 @@ describe("resolveCandidateLink android intent fallback", () => {
 
     expect(result.primary.type).toBe("intent");
     expect(result.primary.url).toContain("package=com.achievo.vipshop");
-    expect(result.primary.url).toContain("scheme=vipshop");
-    expect(result.primary.url).toContain(`keyword=${encodedTitle}`);
-    expect(extractQueryParam(result.primary.url, "keyword")).toBe(title);
+    expect(result.primary.url).toContain("scheme=https");
+    expect(result.primary.url).toContain(
+      encodeURIComponent(`https://category.vip.com/suggest.php?keyword=${encodedTitle}`)
+    );
 
     const webLink = result.fallbacks.find(
       (link) =>

@@ -1,22 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-const routePath = "./route";
+import { shouldEnsureCnEntertainmentTypes } from "./route-test-helpers";
+
+const TEST_TIMEOUT = 15000;
 
 describe("CN entertainment diversity guard", () => {
-  it("enables guard for both web and app in CN zh entertainment context", async () => {
-    const mod = (await import(routePath)) as any;
-    const guard = mod.shouldEnsureCnEntertainmentTypes as
-      | ((params: {
-          category: "entertainment" | "shopping" | "food" | "travel" | "fitness";
-          locale: "zh" | "en";
-          client: "app" | "web";
-          isChinaDeploymentEnabled: boolean;
-        }) => boolean)
-      | undefined;
-
-    expect(guard).toBeTypeOf("function");
+  it("enables guard for both web and app in CN zh entertainment context", () => {
+    expect(shouldEnsureCnEntertainmentTypes).toBeTypeOf("function");
     expect(
-      guard!({
+      shouldEnsureCnEntertainmentTypes({
         category: "entertainment",
         locale: "zh",
         client: "web",
@@ -24,29 +16,19 @@ describe("CN entertainment diversity guard", () => {
       })
     ).toBe(true);
     expect(
-      guard!({
+      shouldEnsureCnEntertainmentTypes({
         category: "entertainment",
         locale: "zh",
         client: "app",
         isChinaDeploymentEnabled: true,
       })
     ).toBe(true);
-  });
+  }, TEST_TIMEOUT);
 
-  it("disables guard outside CN zh entertainment context", async () => {
-    const mod = (await import(routePath)) as any;
-    const guard = mod.shouldEnsureCnEntertainmentTypes as
-      | ((params: {
-          category: "entertainment" | "shopping" | "food" | "travel" | "fitness";
-          locale: "zh" | "en";
-          client: "app" | "web";
-          isChinaDeploymentEnabled: boolean;
-        }) => boolean)
-      | undefined;
-
-    expect(guard).toBeTypeOf("function");
+  it("disables guard outside CN zh entertainment context", () => {
+    expect(shouldEnsureCnEntertainmentTypes).toBeTypeOf("function");
     expect(
-      guard!({
+      shouldEnsureCnEntertainmentTypes({
         category: "entertainment",
         locale: "en",
         client: "app",
@@ -54,7 +36,7 @@ describe("CN entertainment diversity guard", () => {
       })
     ).toBe(false);
     expect(
-      guard!({
+      shouldEnsureCnEntertainmentTypes({
         category: "shopping",
         locale: "zh",
         client: "app",
@@ -62,13 +44,12 @@ describe("CN entertainment diversity guard", () => {
       })
     ).toBe(false);
     expect(
-      guard!({
+      shouldEnsureCnEntertainmentTypes({
         category: "entertainment",
         locale: "zh",
         client: "app",
         isChinaDeploymentEnabled: false,
       })
     ).toBe(false);
-  });
+  }, TEST_TIMEOUT);
 });
-

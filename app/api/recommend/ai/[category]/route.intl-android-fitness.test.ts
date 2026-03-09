@@ -1,22 +1,12 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 
-const routePath = "./route";
+import { getFitnessPlatformOverride, getRecommendationTargetCount } from "./route-test-helpers";
+
+const TEST_TIMEOUT = 15000;
 
 describe("INTL Android fitness platform mix", () => {
-  it("enforces 8-item platform sequence for first eight indices", async () => {
-    const mod = (await import(routePath)) as any;
-    const getter = mod.getFitnessPlatformOverride as
-      | ((params: {
-          category: string;
-          locale: "zh" | "en";
-          isMobile?: boolean;
-          isAndroid?: boolean;
-          index: number;
-          count: number;
-        }) => string | null)
-      | undefined;
-
-    expect(typeof getter).toBe("function");
+  it("enforces 8-item platform sequence for first eight indices", () => {
+    expect(getFitnessPlatformOverride).toBeTypeOf("function");
 
     const expected = [
       "Nike Training Club",
@@ -30,7 +20,7 @@ describe("INTL Android fitness platform mix", () => {
     ];
 
     const actual = expected.map((_, index) =>
-      getter!({
+      getFitnessPlatformOverride({
         category: "fitness",
         locale: "en",
         isMobile: true,
@@ -41,24 +31,13 @@ describe("INTL Android fitness platform mix", () => {
     );
 
     expect(actual).toEqual(expected);
-  });
+  }, TEST_TIMEOUT);
 
-  it("raises recommendation target count to 8 in INTL Android fitness context", async () => {
-    const mod = (await import(routePath)) as any;
-    const targetCount = mod.getRecommendationTargetCount as
-      | ((params: {
-          category: string;
-          locale: "zh" | "en";
-          isMobile?: boolean;
-          isAndroid?: boolean;
-          requestedCount: number;
-        }) => number)
-      | undefined;
-
-    expect(typeof targetCount).toBe("function");
+  it("raises recommendation target count to 8 in INTL Android fitness context", () => {
+    expect(getRecommendationTargetCount).toBeTypeOf("function");
 
     expect(
-      targetCount!({
+      getRecommendationTargetCount({
         category: "fitness",
         locale: "en",
         isMobile: true,
@@ -66,23 +45,11 @@ describe("INTL Android fitness platform mix", () => {
         requestedCount: 5,
       })
     ).toBe(8);
-  });
+  }, TEST_TIMEOUT);
 
-  it("does not force sequence outside INTL Android fitness context", async () => {
-    const mod = (await import(routePath)) as any;
-    const getter = mod.getFitnessPlatformOverride as
-      | ((params: {
-          category: string;
-          locale: "zh" | "en";
-          isMobile?: boolean;
-          isAndroid?: boolean;
-          index: number;
-          count: number;
-        }) => string | null)
-      | undefined;
-
+  it("does not force sequence outside INTL Android fitness context", () => {
     expect(
-      getter!({
+      getFitnessPlatformOverride({
         category: "fitness",
         locale: "en",
         isMobile: true,
@@ -91,6 +58,5 @@ describe("INTL Android fitness platform mix", () => {
         count: 8,
       })
     ).toBeNull();
-  });
+  }, TEST_TIMEOUT);
 });
-

@@ -1,22 +1,17 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 
-const routePath = "./route";
+import {
+  alignIntlAndroidTitleWithSearchQuery,
+  enforceConcreteIntlAndroidSearchQuery,
+} from "./route-test-helpers";
+
+const TEST_TIMEOUT = 15000;
 
 describe("INTL Android concrete query enforcement", () => {
-  it("replaces generic entertainment query with concrete single item", async () => {
-    const mod = (await import(routePath)) as any;
-    const enforce = mod.enforceConcreteIntlAndroidSearchQuery as
-      | ((params: {
-          category: "entertainment" | "shopping" | "food" | "travel" | "fitness";
-          platform: string;
-          title?: string | null;
-          query?: string | null;
-        }) => string)
-      | undefined;
+  it("replaces generic entertainment query with concrete single item", () => {
+    expect(enforceConcreteIntlAndroidSearchQuery).toBeTypeOf("function");
 
-    expect(typeof enforce).toBe("function");
-
-    const result = enforce!({
+    const result = enforceConcreteIntlAndroidSearchQuery({
       category: "entertainment",
       platform: "TikTok",
       title: "TikTok Trends",
@@ -24,20 +19,10 @@ describe("INTL Android concrete query enforcement", () => {
     });
 
     expect(result).toBe("BookTok Fourth Wing edits");
-  });
+  }, TEST_TIMEOUT);
 
-  it("replaces generic query in all five INTL Android categories", async () => {
-    const mod = (await import(routePath)) as any;
-    const enforce = mod.enforceConcreteIntlAndroidSearchQuery as
-      | ((params: {
-          category: "entertainment" | "shopping" | "food" | "travel" | "fitness";
-          platform: string;
-          title?: string | null;
-          query?: string | null;
-        }) => string)
-      | undefined;
-
-    expect(enforce).toBeTypeOf("function");
+  it("replaces generic query in all five INTL Android categories", () => {
+    expect(enforceConcreteIntlAndroidSearchQuery).toBeTypeOf("function");
 
     const cases = [
       {
@@ -66,54 +51,32 @@ describe("INTL Android concrete query enforcement", () => {
       },
     ];
 
-    for (const c of cases) {
-      const output = enforce!({
-        category: c.category,
-        platform: c.platform,
-        query: c.query,
+    for (const testCase of cases) {
+      const output = enforceConcreteIntlAndroidSearchQuery({
+        category: testCase.category,
+        platform: testCase.platform,
+        query: testCase.query,
       });
-      expect(output).toBe(c.expected);
+      expect(output).toBe(testCase.expected);
     }
-  });
+  }, TEST_TIMEOUT);
 
-  it("keeps already concrete queries", async () => {
-    const mod = (await import(routePath)) as any;
-    const enforce = mod.enforceConcreteIntlAndroidSearchQuery as
-      | ((params: {
-          category: "entertainment" | "shopping" | "food" | "travel" | "fitness";
-          platform: string;
-          title?: string | null;
-          query?: string | null;
-        }) => string)
-      | undefined;
+  it("keeps already concrete queries", () => {
+    expect(enforceConcreteIntlAndroidSearchQuery).toBeTypeOf("function");
 
-    expect(enforce).toBeTypeOf("function");
-
-    const output = enforce!({
+    const output = enforceConcreteIntlAndroidSearchQuery({
       category: "travel",
       platform: "TripAdvisor",
       query: "Banff Lake Louise",
     });
 
     expect(output).toBe("Banff Lake Louise");
-  });
+  }, TEST_TIMEOUT);
 
-  it("aligns generic INTL Android title to concrete search query", async () => {
-    const mod = (await import(routePath)) as any;
-    const alignTitle = mod.alignIntlAndroidTitleWithSearchQuery as
-      | ((params: {
-          category: "entertainment" | "shopping" | "food" | "travel" | "fitness";
-          locale: "zh" | "en";
-          isMobile?: boolean;
-          isAndroid?: boolean;
-          title?: string | null;
-          searchQuery?: string | null;
-        }) => string)
-      | undefined;
+  it("aligns generic INTL Android title to concrete search query", () => {
+    expect(alignIntlAndroidTitleWithSearchQuery).toBeTypeOf("function");
 
-    expect(alignTitle).toBeTypeOf("function");
-
-    const output = alignTitle!({
+    const output = alignIntlAndroidTitleWithSearchQuery({
       category: "shopping",
       locale: "en",
       isMobile: true,
@@ -123,24 +86,12 @@ describe("INTL Android concrete query enforcement", () => {
     });
 
     expect(output).toBe("Stanley Quencher H2.0 40oz");
-  });
+  }, TEST_TIMEOUT);
 
-  it("keeps concrete title in INTL Android context", async () => {
-    const mod = (await import(routePath)) as any;
-    const alignTitle = mod.alignIntlAndroidTitleWithSearchQuery as
-      | ((params: {
-          category: "entertainment" | "shopping" | "food" | "travel" | "fitness";
-          locale: "zh" | "en";
-          isMobile?: boolean;
-          isAndroid?: boolean;
-          title?: string | null;
-          searchQuery?: string | null;
-        }) => string)
-      | undefined;
+  it("keeps concrete title in INTL Android context", () => {
+    expect(alignIntlAndroidTitleWithSearchQuery).toBeTypeOf("function");
 
-    expect(alignTitle).toBeTypeOf("function");
-
-    const output = alignTitle!({
+    const output = alignIntlAndroidTitleWithSearchQuery({
       category: "travel",
       locale: "en",
       isMobile: true,
@@ -150,5 +101,5 @@ describe("INTL Android concrete query enforcement", () => {
     });
 
     expect(output).toBe("Banff Lake Louise");
-  });
+  }, TEST_TIMEOUT);
 });

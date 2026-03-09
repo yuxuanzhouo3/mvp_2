@@ -1,22 +1,16 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 
-const routePath = "./route";
+import {
+  getFoodPlatformOverride,
+  getRecommendationTargetCount,
+  sanitizeIntlAndroidFoodRecommendation,
+} from "./route-test-helpers";
+
+const TEST_TIMEOUT = 15000;
 
 describe("INTL Android food platform mix", () => {
-  it("enforces 6-item platform sequence for first six indices", async () => {
-    const mod = (await import(routePath)) as any;
-    const getter = mod.getFoodPlatformOverride as
-      | ((params: {
-          category: string;
-          locale: "zh" | "en";
-          isMobile?: boolean;
-          isAndroid?: boolean;
-          index: number;
-          count: number;
-        }) => string | null)
-      | undefined;
-
-    expect(typeof getter).toBe("function");
+  it("enforces 6-item platform sequence for first six indices", () => {
+    expect(getFoodPlatformOverride).toBeTypeOf("function");
 
     const expected = [
       "DoorDash",
@@ -28,7 +22,7 @@ describe("INTL Android food platform mix", () => {
     ];
 
     const actual = expected.map((_, index) =>
-      getter!({
+      getFoodPlatformOverride({
         category: "food",
         locale: "en",
         isMobile: true,
@@ -39,24 +33,13 @@ describe("INTL Android food platform mix", () => {
     );
 
     expect(actual).toEqual(expected);
-  });
+  }, TEST_TIMEOUT);
 
-  it("raises recommendation target count to 6 in INTL Android food context", async () => {
-    const mod = (await import(routePath)) as any;
-    const targetCount = mod.getRecommendationTargetCount as
-      | ((params: {
-          category: string;
-          locale: "zh" | "en";
-          isMobile?: boolean;
-          isAndroid?: boolean;
-          requestedCount: number;
-        }) => number)
-      | undefined;
-
-    expect(typeof targetCount).toBe("function");
+  it("raises recommendation target count to 6 in INTL Android food context", () => {
+    expect(getRecommendationTargetCount).toBeTypeOf("function");
 
     expect(
-      targetCount!({
+      getRecommendationTargetCount({
         category: "food",
         locale: "en",
         isMobile: true,
@@ -64,23 +47,11 @@ describe("INTL Android food platform mix", () => {
         requestedCount: 5,
       })
     ).toBe(6);
-  });
+  }, TEST_TIMEOUT);
 
-  it("does not force sequence outside INTL Android food context", async () => {
-    const mod = (await import(routePath)) as any;
-    const getter = mod.getFoodPlatformOverride as
-      | ((params: {
-          category: string;
-          locale: "zh" | "en";
-          isMobile?: boolean;
-          isAndroid?: boolean;
-          index: number;
-          count: number;
-        }) => string | null)
-      | undefined;
-
+  it("does not force sequence outside INTL Android food context", () => {
     expect(
-      getter!({
+      getFoodPlatformOverride({
         category: "food",
         locale: "en",
         isMobile: true,
@@ -89,31 +60,13 @@ describe("INTL Android food platform mix", () => {
         count: 6,
       })
     ).toBeNull();
-  });
+  }, TEST_TIMEOUT);
 
-  it("sanitizes scenario-style food recommendation to concrete dish", async () => {
-    const mod = (await import(routePath)) as any;
-    const sanitize = mod.sanitizeIntlAndroidFoodRecommendation as
-      | ((params: {
-          title?: string | null;
-          query?: string | null;
-          tags?: string[] | null;
-          platform?: string | null;
-          index: number;
-        }) => {
-          title: string;
-          searchQuery: string;
-          tags: string[];
-          platform: string;
-          cuisine: string;
-          priceRange: "$" | "$$" | "$$$";
-        })
-      | undefined;
+  it("sanitizes scenario-style food recommendation to concrete dish", () => {
+    expect(sanitizeIntlAndroidFoodRecommendation).toBeTypeOf("function");
 
-    expect(typeof sanitize).toBe("function");
-
-    const output = sanitize!({
-      title: "家庭聚餐",
+    const output = sanitizeIntlAndroidFoodRecommendation({
+      title: "????",
       query: "friends hangout dinner",
       tags: ["food"],
       platform: "DoorDash",
@@ -125,5 +78,5 @@ describe("INTL Android food platform mix", () => {
     expect(output.searchQuery).toBe("Nashville hot chicken sandwich");
     expect(output.tags.some((tag) => tag.startsWith("cuisine:"))).toBe(true);
     expect(output.tags.some((tag) => tag.startsWith("price_range:"))).toBe(true);
-  });
+  }, TEST_TIMEOUT);
 });

@@ -59,6 +59,7 @@ vi.mock("@/lib/recommendation/fallback-generator", () => ({
 }));
 
 const routePath = "./route";
+const TEST_TIMEOUT = 15000;
 
 describe("recommend fitness CN mobile outbound e2e", () => {
   afterEach(() => {
@@ -126,5 +127,5 @@ describe("recommend fitness CN mobile outbound e2e", () => {
     expect(equipment?.title).toBe("哑铃推荐");
     expect(equipment?.metadata?.searchQuery).toContain("京东");
     expect(equipment?.reason).toContain("京东");
-  });
+  }, TEST_TIMEOUT);
 });

@@ -81,7 +81,7 @@ const ENV_CONFIG = {
       "NEXT_PUBLIC_WECHAT_CLOUDBASE_ID",
       "CLOUDBASE_SECRET_ID",
       "CLOUDBASE_SECRET_KEY",
-      "ZHIPU_API_KEY",
+      "QWEN_API_KEY",
       "AUTH_EMAIL_SMTP_HOST",
       "AUTH_EMAIL_SMTP_PORT",
       "AUTH_EMAIL_SMTP_USER",
@@ -414,7 +414,7 @@ function main() {
   console.log("\n📋 下一步操作:");
   
   if (deploymentRegion === "CN") {
-    console.log("   1. npm run test:zhipu     # 测试智谱 AI 连接");
+    console.log("   1. npm run test:qwen      # 测试通义千问 AI 连接");
     console.log("   2. npx tsx scripts/init-cloudbase-collections.ts  # 初始化 CloudBase 集合");
     console.log("   3. npm run dev            # 启动开发服务器");
   } else {

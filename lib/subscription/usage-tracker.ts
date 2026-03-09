@@ -10,6 +10,10 @@ import cloudbase from "@cloudbase/node-sdk";
 import { isChinaDeployment } from "@/lib/config/deployment.config";
 import { PlanType } from "../payment/payment-config";
 import { PLAN_FEATURES } from "./features";
+import {
+  getRecommendationUsageLimitConfig,
+  resolveRecommendationLimitForPlan,
+} from "./recommendation-limit-config";
 
 // ==========================================
 // 数据库客户端
@@ -189,11 +193,12 @@ export async function getUserUsageStats(userId: string): Promise<UsageStats> {
 async function getUserUsageStatsSupabase(userId: string): Promise<UsageStats> {
   const supabase = getSupabaseAdmin();
   const planType = await getUserPlanSupabase(userId);
-  const features = PLAN_FEATURES[planType];
+  const limitConfig = await getRecommendationUsageLimitConfig();
+  const recommendationPolicy = resolveRecommendationLimitForPlan(planType, limitConfig);
 
-  const periodType = features.recommendationPeriod;
-  const periodLimit = features.recommendationLimit;
-  const isUnlimited = periodLimit === -1;
+  const periodType = recommendationPolicy.periodType;
+  const periodLimit = recommendationPolicy.periodLimit;
+  const isUnlimited = recommendationPolicy.isUnlimited;
 
   const { start, end } = getPeriodBounds(periodType);
 
@@ -227,11 +232,12 @@ async function getUserUsageStatsSupabase(userId: string): Promise<UsageStats> {
 async function getUserUsageStatsCloudBase(userId: string): Promise<UsageStats> {
   const db = getCloudBaseDb();
   const planType = await getUserPlanCloudBase(userId);
-  const features = PLAN_FEATURES[planType];
+  const limitConfig = await getRecommendationUsageLimitConfig();
+  const recommendationPolicy = resolveRecommendationLimitForPlan(planType, limitConfig);
 
-  const periodType = features.recommendationPeriod;
-  const periodLimit = features.recommendationLimit;
-  const isUnlimited = periodLimit === -1;
+  const periodType = recommendationPolicy.periodType;
+  const periodLimit = recommendationPolicy.periodLimit;
+  const isUnlimited = recommendationPolicy.isUnlimited;
 
   const { start, end } = getPeriodBounds(periodType);
 

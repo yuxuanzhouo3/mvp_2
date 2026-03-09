@@ -1,9 +1,9 @@
 # 辰汇个性推荐
 
-基于 Next.js 14 + TypeScript 的多语言推荐应用，支持 **INTL（Supabase + Stripe/PayPal + OpenAI/Mistral）** 与 **CN（CloudBase + 支付宝/微信 + 智谱 AI）** 两套环境，前端一套代码通过环境变量自动适配。
+基于 Next.js 14 + TypeScript 的多语言推荐应用，支持 **INTL（Supabase + Stripe/PayPal + OpenAI/Mistral）** 与 **CN（CloudBase + 支付宝/微信 + 通义千问 AI）** 两套环境，前端一套代码通过环境变量自动适配。
 
 ## 核心特性
-- AI 推荐：娱乐/购物/美食/旅行/健身多品类，支持智谱 / OpenAI / Mistral 等多提供商顺序与超时回退（`AI_FAST_MODE` 等可调）。
+- AI 推荐：娱乐/购物/美食/旅行/健身多品类，支持通义千问 / OpenAI / Mistral 等多提供商顺序与超时回退（`AI_FAST_MODE` 等可调）。
 - 双区域适配：`NEXT_PUBLIC_DEPLOYMENT_REGION` 切换 CN/INTL，分别走 CloudBase 或 Supabase/Auth，支付通道跟随区域切换。
 - 账号与订阅：邮箱登录，订阅档位（Free/Pro/Enterprise）与支付方式写入用户资料；包含登录、注册、设置、历史记录、引导流程等页面。
 - 多语言：内置中/英文翻译，自动随区域选择，可在页面内手动切换。
@@ -14,7 +14,7 @@
 - Tailwind CSS / Radix UI / framer-motion
 - Supabase（INTL 数据库与 Auth）/ CloudBase（CN）
 - Stripe & PayPal（INTL 支付）；支付宝 / 微信支付（CN，占位配置）
-- AI 提供商：OpenAI、Mistral、智谱（可扩展 Groq/Google 等）
+- AI 提供商：OpenAI、Mistral、通义千问（可扩展 Groq/Google 等）
 
 ## 目录速览
 ```
@@ -38,7 +38,7 @@ docs/                # 架构、优化、验证文档
    pnpm run verify:env   # 必跑：检查必填项
    ```
    - INTL：`NEXT_PUBLIC_SUPABASE_URL`、`NEXT_PUBLIC_SUPABASE_ANON_KEY`、`SUPABASE_SERVICE_ROLE_KEY`、AI 密钥（至少配置 OpenAI/Mistral 之一）、Stripe/PayPal 密钥。  
-   - CN：`NEXT_PUBLIC_WECHAT_CLOUDBASE_ID`、`CLOUDBASE_SECRET_ID`、`CLOUDBASE_SECRET_KEY`、`ZHIPU_API_KEY`，可选支付宝/微信支付、微信 OAuth。  
+   - CN：`NEXT_PUBLIC_WECHAT_CLOUDBASE_ID`、`CLOUDBASE_SECRET_ID`、`CLOUDBASE_SECRET_KEY`、`QWEN_API_KEY`，可选支付宝/微信支付、微信 OAuth。  
    - 通用：`NEXT_PUBLIC_DEPLOYMENT_REGION`（INTL/CN）、`JWT_SECRET`、`NEXTAUTH_SECRET`、`NEXT_PUBLIC_APP_URL`、下载地址等。
 3) （INTL）应用数据库迁移  
    使用 Supabase CLI/控制台执行 `supabase/migrations/*.sql`，确保用户、推荐、支付相关表结构已创建。
@@ -67,7 +67,7 @@ docs/                # 架构、优化、验证文档
 - `pnpm build` / `pnpm start`：生产构建与启动
 - `pnpm lint`：代码检查
 - `pnpm run verify:env`：校验 CN/INTL 环境变量
-- `pnpm run test:zhipu`：本地智谱 API 连通性测试
+- `pnpm run test:qwen`：本地通义千问 API 连通性测试
 
 ## 关键配置与提示
 - AI 调优：`AI_FAST_MODE`、`AI_PROVIDER_TIMEOUT_MS`、`AI_HISTORY_LIMIT`，以及助手专用 `ASSISTANT_AI_TOTAL_TIMEOUT_MS`、`ASSISTANT_INTL_PARALLEL_RACE`、`ASSISTANT_MAX_TOKENS` 等位于 `.env.local`，详见 `docs/2025-12-24/AI_RECOMMENDATION_OPTIMIZATION.md`。

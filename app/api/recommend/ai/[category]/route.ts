@@ -43,6 +43,7 @@ import { isValidUserId } from "@/lib/utils";
 import { getLocale } from "@/lib/utils/locale";
 import type { RecommendationCategory, AIRecommendResponse, LinkType } from "@/lib/types/recommendation";
 import { canUseRecommendation, recordRecommendationUsage, getUserUsageStats } from "@/lib/subscription/usage-tracker";
+import { getRecommendationUsageLimitConfig } from "@/lib/subscription/recommendation-limit-config";
 import { resolveCandidateLink } from "@/lib/outbound/link-resolver";
 import { isChinaDeployment } from "@/lib/config/deployment.config";
 import { dedupeRecommendations } from "@/lib/recommendation/dedupe";
@@ -1517,6 +1518,8 @@ export async function GET(request: NextRequest, { params }: { params: { category
         if (!usageCheck.allowed) {
           const stats = usageCheck.stats;
           const isMonthly = stats.periodType === "monthly";
+          const recommendationLimitConfig = await getRecommendationUsageLimitConfig();
+          const vipDailyRecommendationLimit = recommendationLimitConfig.vipDailyLimit;
 
           let errorMessage: string;
           let upgradeMessage: string;
@@ -1524,7 +1527,7 @@ export async function GET(request: NextRequest, { params }: { params: { category
           if (locale === "zh") {
             if (isMonthly) {
               errorMessage = `您已达到本月 ${stats.periodLimit} 次推荐限制`;
-              upgradeMessage = "升级到 Pro 版获取每日 30 次推荐，或升级到企业版获取无限推荐";
+              upgradeMessage = `升级到 Pro 版获取每日 ${vipDailyRecommendationLimit} 次推荐，或升级到企业版获取无限推荐`;
             } else {
               errorMessage = `您已达到今日 ${stats.periodLimit} 次推荐限制`;
               upgradeMessage = "请明天再试，或升级到企业版获取无限推荐";
@@ -1532,7 +1535,7 @@ export async function GET(request: NextRequest, { params }: { params: { category
           } else {
             if (isMonthly) {
               errorMessage = `You have reached your monthly limit of ${stats.periodLimit} recommendations`;
-              upgradeMessage = "Upgrade to Pro for 30 daily recommendations, or Enterprise for unlimited";
+              upgradeMessage = `Upgrade to Pro for ${vipDailyRecommendationLimit} daily recommendations, or Enterprise for unlimited`;
             } else {
               errorMessage = `You have reached your daily limit of ${stats.periodLimit} recommendations`;
               upgradeMessage = "Please try again tomorrow, or upgrade to Enterprise for unlimited recommendations";
