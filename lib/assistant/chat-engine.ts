@@ -1671,22 +1671,49 @@ function enrichActionsWithDeepLinks(
   const deployRegion = region as DeploymentRegion;
 
   for (const candidate of candidates) {
-    const resolvedProvider = options?.forceProvider || candidate.platform;
     const resolvedQuery =
       candidate.searchQuery?.trim() ||
       candidate.name?.trim() ||
       "nearby";
-    // 使用 provider-catalog 解析深链
+    const providerCandidates = [candidate.platform, options?.forceProvider]
+      .map((provider) => String(provider || "").trim())
+      .filter(Boolean)
+      .filter((provider, index, list) => list.findIndex((item) => item.toLowerCase() === provider.toLowerCase()) === index);
+
     try {
-      const candidateLink = resolveCandidateLink({
-        title: candidate.name,
-        query: resolvedQuery,
-        category: mapCategoryToRecommendation(candidate.category),
-        locale,
-        region: deployRegion,
-        provider: resolvedProvider,
-        isMobile,
-      });
+      let candidateLink = null as ReturnType<typeof resolveCandidateLink> | null;
+
+      if (providerCandidates.length === 0) {
+        candidateLink = resolveCandidateLink({
+          title: candidate.name,
+          query: resolvedQuery,
+          category: mapCategoryToRecommendation(candidate.category),
+          locale,
+          region: deployRegion,
+          isMobile,
+        });
+      } else {
+        for (const provider of providerCandidates) {
+          try {
+            candidateLink = resolveCandidateLink({
+              title: candidate.name,
+              query: resolvedQuery,
+              category: mapCategoryToRecommendation(candidate.category),
+              locale,
+              region: deployRegion,
+              provider,
+              isMobile,
+            });
+            break;
+          } catch {
+            continue;
+          }
+        }
+      }
+
+      if (!candidateLink) {
+        throw new Error("No provider could be resolved for candidate action");
+      }
 
       // 构建跳转 URL（通过 outbound 中间页）
       const outboundUrl = buildOutboundHref(candidateLink, "/assistant");
@@ -1696,15 +1723,18 @@ function enrichActionsWithDeepLinks(
         type: "open_app",
         label:
           locale === "zh"
-            ? `打开${candidateLink.metadata?.providerDisplayName || resolvedProvider}查看“${candidate.name}”`
-            : `Open ${candidateLink.metadata?.providerDisplayName || resolvedProvider} for "${candidate.name}"`,
+            ? `打开${candidateLink.metadata?.providerDisplayName || candidateLink.provider}查看“${candidate.name}”`
+            : `Open ${candidateLink.metadata?.providerDisplayName || candidateLink.provider} for "${candidate.name}"`,
         payload: outboundUrl,
-        providerId: resolvedProvider,
+        providerId: candidateLink.provider,
         candidateId: candidate.id,
         icon: "external-link",
       });
     } catch (err) {
-      console.warn(`[ChatEngine] Failed to resolve deep link for ${resolvedProvider}:`, err);
+      console.warn(
+        `[ChatEngine] Failed to resolve deep link for ${candidate.platform || options?.forceProvider || "unknown"}:`,
+        err
+      );
     }
 
     // 添加电话拨打动作

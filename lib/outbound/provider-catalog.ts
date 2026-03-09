@@ -183,41 +183,21 @@ function vipshopSearchUrl(keyword: string): string {
   return `https://category.vip.com/suggest.php?keyword=${encodeURIComponent(keyword)}`;
 }
 
-function vipshopAndroidSearchIntent(keyword: string): string {
-  const web = vipshopSearchUrl(keyword);
-  // 修复：使用HTTPS universal link作为intent，确保唯品会APP能正确接收搜索词
-  return `intent://${encodeURIComponent(web)}#Intent;scheme=https;package=com.achievo.vipshop;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+function vipshopSchemeSearchUrl(keyword: string): string {
+  return `vipshop://search?keyword=${encodeURIComponent(keyword)}`;
 }
 
-function encodeBase64Utf8(value: string): string {
-  if (typeof Buffer !== "undefined") {
-    return Buffer.from(value, "utf8").toString("base64");
-  }
-
-  if (typeof btoa !== "undefined") {
-    const bytes = new TextEncoder().encode(value);
-    let binary = "";
-    for (const byte of bytes) {
-      binary += String.fromCharCode(byte);
-    }
-    return btoa(binary);
-  }
-
-  return value;
+function vipshopAndroidSearchIntent(keyword: string): string {
+  const web = vipshopSearchUrl(keyword);
+  return `intent://search?keyword=${encodeURIComponent(keyword)}#Intent;scheme=vipshop;package=com.achievo.vipshop;S.browser_fallback_url=${encodeURIComponent(web)};end`;
 }
 
 function ctripAndroidSearchDeepLink(keyword: string): string {
   return `ctrip://wireless/search?keyword=${encodeURIComponent(keyword)}`;
 }
 
-function ctripAndroidH5DeepLink(webUrl: string): string {
-  const base64Url = encodeBase64Utf8(webUrl);
-  return `ctrip://wireless/h5?url=${encodeURIComponent(base64Url)}&type=1`;
-}
-
-function ctripAndroidSearchIntent(webUrl: string): string {
-  const base64Url = encodeBase64Utf8(webUrl);
-  return `intent://wireless/h5?url=${encodeURIComponent(base64Url)}&type=1#Intent;scheme=ctrip;package=ctrip.android.view;S.browser_fallback_url=${encodeURIComponent(webUrl)};end`;
+function ctripAndroidSearchIntent(keyword: string, webUrl: string): string {
+  return `intent://wireless/search?keyword=${encodeURIComponent(keyword)}#Intent;scheme=ctrip;package=ctrip.android.view;S.browser_fallback_url=${encodeURIComponent(webUrl)};end`;
 }
 
 function qunarWebSearchUrl(keyword: string): string {
@@ -234,8 +214,7 @@ function qunarAndroidSearchDeepLink(keyword: string): string {
 
 function qunarAndroidSearchIntent(keyword: string): string {
   const web = qunarWebSearchUrl(keyword);
-  // 修复：使用HTTPS universal link作为intent，确保去哪儿APP能正确处理搜索词
-  return `intent://www.qunar.com/search?searchWord=${encodeURIComponent(keyword)}#Intent;scheme=https;package=com.qunar.atom;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+  return `intent://search?searchWord=${encodeURIComponent(keyword)}#Intent;scheme=qunarphone;package=com.qunar.atom;S.browser_fallback_url=${encodeURIComponent(web)};end`;
 }
 
 function mafengwoWebSearchUrl(keyword: string): string {
@@ -248,8 +227,7 @@ function mafengwoSearchDeepLink(keyword: string): string {
 
 function mafengwoAndroidSearchIntent(keyword: string): string {
   const web = mafengwoWebSearchUrl(keyword);
-  // 修复：使用HTTPS universal link作为intent，确保马蜂窝APP能正确唤醒
-  return `intent://www.mafengwo.cn/search/q.php?t=sales&q=${encodeURIComponent(keyword)}#Intent;scheme=https;package=com.mfw.roadbook;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+  return `intent://search?keyword=${encodeURIComponent(keyword)}#Intent;scheme=mafengwo;package=com.mfw.roadbook;S.browser_fallback_url=${encodeURIComponent(web)};end`;
 }
 
 function kugouWebSearchUrl(keyword: string): string {
@@ -257,16 +235,17 @@ function kugouWebSearchUrl(keyword: string): string {
 }
 
 function buildKugouSearchPayload(keyword: string): string {
-  return encodeURIComponent(
+  const params = new URLSearchParams();
+  params.set("cmd", "116");
+  params.set(
+    "jsonStr",
     JSON.stringify({
-      cmd: 116,
-      jsonStr: {
-        keyword,
-        searchKeyWord: keyword,
-        keyWord: keyword,
-      },
+      keyword,
+      searchKeyWord: keyword,
+      keyWord: keyword,
     })
   );
+  return params.toString();
 }
 
 function kugouSchemeSearchUrl(keyword: string): string {
@@ -308,8 +287,49 @@ function taptapSearchUrl(keyword: string): string {
   return `https://www.taptap.cn/search/${encodeURIComponent(keyword)}`;
 }
 
+function taptapSchemeSearchUrl(keyword: string): string {
+  return `taptap://taptap.cn/search?keyword=${encodeURIComponent(keyword)}`;
+}
+
 function taptapAndroidIntentSearchUrl(keyword: string, fallbackWebUrl: string): string {
   return `intent://www.taptap.cn/search/${encodeURIComponent(keyword)}#Intent;scheme=https;package=com.taptap;S.browser_fallback_url=${encodeURIComponent(fallbackWebUrl)};end`;
+}
+
+function dianpingSchemeSearchUrl(keyword: string): string {
+  return `dianping://search?keyword=${encodeURIComponent(keyword)}`;
+}
+
+function dianpingAndroidIntentSearchUrl(keyword: string): string {
+  const web = `https://m.dianping.com/search/keyword/1/0_${encodeURIComponent(keyword)}`;
+  return `intent://search?keyword=${encodeURIComponent(keyword)}#Intent;scheme=dianping;package=com.dianping.v1;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+}
+
+function meituanSchemeSearchUrl(keyword: string): string {
+  return `imeituan://www.meituan.com/search?q=${encodeURIComponent(keyword)}`;
+}
+
+function meituanAndroidIntentSearchUrl(keyword: string): string {
+  const web = `https://www.meituan.com/s/${encodeURIComponent(keyword)}/`;
+  return `intent://www.meituan.com/search?q=${encodeURIComponent(keyword)}#Intent;scheme=imeituan;package=com.sankuai.meituan;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+}
+
+function meituanWaimaiSchemeSearchUrl(keyword: string): string {
+  return `meituanwaimai://waimai.meituan.com/search?query=${encodeURIComponent(keyword)}`;
+}
+
+function meituanWaimaiAndroidIntentSearchUrl(keyword: string): string {
+  const web = `https://waimai.meituan.com/search?query=${encodeURIComponent(keyword)}`;
+  return `intent://waimai.meituan.com/search?query=${encodeURIComponent(keyword)}#Intent;scheme=meituanwaimai;package=com.sankuai.meituan.takeoutnew;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+}
+
+function amapSchemeSearchUrl(keyword: string, os: "ios" | "android"): string {
+  const scheme = os === "ios" ? "iosamap" : "androidamap";
+  return `${scheme}://poi?sourceApplication=mvp_2_demo&keywords=${encodeURIComponent(keyword)}`;
+}
+
+function amapAndroidIntentSearchUrl(keyword: string): string {
+  const web = amapUniversalSearchUrl(keyword);
+  return `intent://poi?sourceApplication=mvp_2_demo&keywords=${encodeURIComponent(keyword)}#Intent;scheme=androidamap;package=com.autonavi.minimap;S.browser_fallback_url=${encodeURIComponent(web)};end`;
 }
 
 export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
@@ -457,6 +477,10 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       },
       androidScheme: ({ query, title }) => {
         const keyword = resolveSearchKeyword({ query, title });
+        return kugouSchemeSearchUrl(keyword);
+      },
+      androidIntentScheme: ({ query, title }) => {
+        const keyword = resolveSearchKeyword({ query, title });
         const web = kugouWebSearchUrl(keyword);
         return kugouAndroidIntentSearchUrl(keyword, web);
       },
@@ -505,9 +529,13 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       },
       iosScheme: ({ query, title }) => {
         const keyword = resolveSearchKeyword({ query, title });
-        return `taptap://taptap.cn/search?keyword=${encodeURIComponent(keyword)}`;
+        return taptapSchemeSearchUrl(keyword);
       },
       androidScheme: ({ query, title }) => {
+        const keyword = resolveSearchKeyword({ query, title });
+        return taptapSchemeSearchUrl(keyword);
+      },
+      androidIntentScheme: ({ query, title }) => {
         const keyword = resolveSearchKeyword({ query, title });
         const web = taptapSearchUrl(keyword);
         return taptapAndroidIntentSearchUrl(keyword, web);
@@ -596,13 +624,9 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       androidPackageId: "com.dianping.v1",
       webLink: ({ query }) =>
         `https://www.dianping.com/search/keyword/1/0_${encodeURIComponent(query)}`,
-      // 大众点评 iOS：使用 scheme 直接打开搜索
-      iosScheme: ({ query }) => `dianping://search?keyword=${encodeURIComponent(query)}`,
-      // 大众点评 Android：使用 intent 打开搜索，带 web fallback
-      androidScheme: ({ query }) => {
-        const web = `https://m.dianping.com/search/keyword/1/0_${encodeURIComponent(query)}`;
-        return `intent://search?keyword=${encodeURIComponent(query)}#Intent;scheme=dianping;package=com.dianping.v1;S.browser_fallback_url=${encodeURIComponent(web)};end`;
-      },
+      iosScheme: ({ query }) => dianpingSchemeSearchUrl(query),
+      androidScheme: ({ query }) => dianpingSchemeSearchUrl(query),
+      androidIntentScheme: ({ query }) => dianpingAndroidIntentSearchUrl(query),
     },
     "下厨房": {
       id: "下厨房",
@@ -738,9 +762,13 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       },
       iosScheme: ({ query, title }) => {
         const keyword = resolveSearchKeyword({ query, title });
-        return `vipshop://search?keyword=${encodeURIComponent(keyword)}`;
+        return vipshopSchemeSearchUrl(keyword);
       },
       androidScheme: ({ query, title }) => {
+        const keyword = resolveSearchKeyword({ query, title });
+        return vipshopSchemeSearchUrl(keyword);
+      },
+      androidIntentScheme: ({ query, title }) => {
         const keyword = resolveSearchKeyword({ query, title });
         return vipshopAndroidSearchIntent(keyword);
       },
@@ -758,12 +786,12 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       displayName: { zh: "高德地图", en: "Amap" },
       domains: ["amap.com", "uri.amap.com", "ditu.amap.com"],
       hasApp: true,
+      androidPackageId: "com.autonavi.minimap",
       universalLink: ({ query }) => amapUniversalSearchUrl(query),
       webLink: ({ query }) => amapWebSearchUrl(query),
-      iosScheme: ({ query }) =>
-        `iosamap://poi?keywords=${encodeURIComponent(query)}`,
-      androidScheme: ({ query }) =>
-        `androidamap://poi?keywords=${encodeURIComponent(query)}`,
+      iosScheme: ({ query }) => amapSchemeSearchUrl(query, "ios"),
+      androidScheme: ({ query }) => amapSchemeSearchUrl(query, "android"),
+      androidIntentScheme: ({ query }) => amapAndroidIntentSearchUrl(query),
     },
     百度地图: {
       id: "百度地图",
@@ -796,12 +824,9 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       androidPackageId: "com.sankuai.meituan",
       webLink: ({ query }) =>
         `https://www.meituan.com/s/${encodeURIComponent(query)}/`,
-      iosScheme: ({ query }) =>
-        `imeituan://www.meituan.com/search?q=${encodeURIComponent(query)}`,
-      androidScheme: ({ query }) => {
-        const web = `https://www.meituan.com/s/${encodeURIComponent(query)}/`;
-        return `intent://www.meituan.com/search?q=${encodeURIComponent(query)}#Intent;scheme=imeituan;package=com.sankuai.meituan;S.browser_fallback_url=${encodeURIComponent(web)};end`;
-      },
+      iosScheme: ({ query }) => meituanSchemeSearchUrl(query),
+      androidScheme: ({ query }) => meituanSchemeSearchUrl(query),
+      androidIntentScheme: ({ query }) => meituanAndroidIntentSearchUrl(query),
     },
     "美团外卖": {
       id: "美团外卖",
@@ -811,12 +836,9 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       androidPackageId: "com.sankuai.meituan.takeoutnew",
       webLink: ({ query }) =>
         `https://waimai.meituan.com/search?query=${encodeURIComponent(query)}`,
-      iosScheme: ({ query }) =>
-        `meituanwaimai://waimai.meituan.com/search?query=${encodeURIComponent(query)}`,
-      androidScheme: ({ query }) => {
-        const web = `https://waimai.meituan.com/search?query=${encodeURIComponent(query)}`;
-        return `intent://waimai.meituan.com/search?query=${encodeURIComponent(query)}#Intent;scheme=meituanwaimai;package=com.sankuai.meituan.takeoutnew;S.browser_fallback_url=${encodeURIComponent(web)};end`;
-      },
+      iosScheme: ({ query }) => meituanWaimaiSchemeSearchUrl(query),
+      androidScheme: ({ query }) => meituanWaimaiSchemeSearchUrl(query),
+      androidIntentScheme: ({ query }) => meituanWaimaiAndroidIntentSearchUrl(query),
     },
     饿了么: {
       id: "饿了么",
@@ -1421,13 +1443,12 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       },
       androidScheme: (ctx) => {
         const keyword = resolveSearchKeyword(ctx);
-        const web = ctripWebSearchUrl(keyword);
-        return ctripAndroidH5DeepLink(web);
+        return ctripAndroidSearchDeepLink(keyword);
       },
       androidIntentScheme: (ctx) => {
         const keyword = resolveSearchKeyword(ctx);
         const web = ctripWebSearchUrl(keyword);
-        return ctripAndroidSearchIntent(web);
+        return ctripAndroidSearchIntent(keyword, web);
       },
     },
     "去哪儿": {

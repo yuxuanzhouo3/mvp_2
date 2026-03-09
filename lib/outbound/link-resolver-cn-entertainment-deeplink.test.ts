@@ -2,15 +2,20 @@ import { describe, expect, it } from "vitest";
 import { getAutoTryLinks } from "./deep-link-helpers";
 import { resolveCandidateLink } from "./link-resolver";
 
-function decodeOpaqueSearchPayload(url: string): Record<string, any> {
-  const parsed = new URL(url);
-  const encodedPayload = parsed.search.replace(/^\?/, "");
-  const decoded = decodeURIComponent(encodedPayload);
-  return JSON.parse(decoded) as Record<string, any>;
+function decodeKugouSearchPayload(url: string): Record<string, any> {
+  const query = url
+    .replace(/^intent:\/\/[^?]*\?/, "")
+    .replace(/^kugouurl:\/\/[^?]*\?/, "")
+    .replace(/#Intent.*$/i, "");
+  const params = new URLSearchParams(query);
+  return {
+    cmd: Number(params.get("cmd")),
+    jsonStr: JSON.parse(params.get("jsonStr") || "{}"),
+  };
 }
 
 describe("resolveCandidateLink CN entertainment mobile deep links", () => {
-  it("TapTap Android auto-try uses Android intent and keeps search keyword", () => {
+  it("TapTap Android auto-try uses app scheme first and keeps search keyword", () => {
     const query = "genshin impact";
 
     const result = resolveCandidateLink({
@@ -26,16 +31,21 @@ describe("resolveCandidateLink CN entertainment mobile deep links", () => {
 
     const autoTry = getAutoTryLinks(result, "android");
     expect(autoTry.length).toBeGreaterThan(0);
-    expect(result.primary.type).toBe("intent");
-    expect(autoTry[0]?.type).toBe("intent");
-    expect(autoTry[0]?.url).toContain("package=com.taptap");
-    expect(autoTry[0]?.url).toContain(`intent://www.taptap.cn/search/${encodeURIComponent(query)}`);
-    expect(autoTry[0]?.url).toContain("scheme=https");
+    expect(result.primary.type).toBe("app");
+    expect(autoTry[0]?.type).toBe("app");
+    expect(autoTry[0]?.url).toContain("taptap://taptap.cn/search?keyword=");
+    expect(autoTry[0]?.url).toContain(`keyword=${encodeURIComponent(query)}`);
 
     const hasAndroidDeepLink = autoTry.some(
       (link) => link.type === "app" || link.type === "intent"
     );
     expect(hasAndroidDeepLink).toBe(true);
+
+    const androidIntent = result.fallbacks.find(
+      (link) => link.type === "intent" && link.url.includes("package=com.taptap")
+    );
+    expect(androidIntent?.url).toContain(`intent://www.taptap.cn/search/${encodeURIComponent(query)}`);
+    expect(androidIntent?.url).toContain("scheme=https");
 
     const webFallback = result.fallbacks.find((link) => link.type === "web");
     expect(webFallback?.url).toBe(`https://www.taptap.cn/search/${encodeURIComponent(query)}`);
@@ -57,7 +67,7 @@ describe("resolveCandidateLink CN entertainment mobile deep links", () => {
     expect(result.primary.type).toBe("app");
     expect(result.primary.url).toContain("kugouurl://start.music/?");
 
-    const primaryPayload = decodeOpaqueSearchPayload(result.primary.url);
+    const primaryPayload = decodeKugouSearchPayload(result.primary.url);
     expect(primaryPayload.cmd).toBe(116);
     expect(primaryPayload.jsonStr?.keyword).toBe(query);
 
@@ -73,7 +83,7 @@ describe("resolveCandidateLink CN entertainment mobile deep links", () => {
     expect(androidIntent?.url).toContain("intent://start.music/?");
     expect(androidIntent?.url).toContain("scheme=kugouurl");
 
-    const intentPayload = decodeOpaqueSearchPayload(androidIntent!.url);
+    const intentPayload = decodeKugouSearchPayload(androidIntent!.url);
     expect(intentPayload.cmd).toBe(116);
     expect(intentPayload.jsonStr?.keyword).toBe(query);
     expect(intentPayload.jsonStr?.searchKeyWord).toBe(query);

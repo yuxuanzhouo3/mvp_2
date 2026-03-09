@@ -2749,41 +2749,119 @@ function collapseCnLocationSpacing(value: string): string {
   return normalized;
 }
 
+const CN_TRAVEL_GENERIC_REGION_TOKENS = ["中国", "国内", "国外", "热门"] as const;
+
+const CN_TRAVEL_NOISE_TOKENS = [
+  "旅游",
+  "旅行",
+  "游玩",
+  "景点",
+  "景区",
+  "攻略",
+  "指南",
+  "路线",
+  "路书",
+  "玩法",
+  "打卡",
+  "避坑",
+  "行程",
+  "一日游",
+  "半日游",
+  "半天",
+  "周末",
+  "周边",
+  "附近",
+  "推荐",
+  "citywalk",
+  "city walk",
+  "walk",
+  "漫游",
+  "徒步",
+  "骑行",
+  "拍照",
+  "夜景",
+] as const;
+
+function extractCnTravelHierarchySegments(value: string): string[] {
+  const segments = String(value || "")
+    .split(/[·・]/)
+    .map((segment) => normalizeQueryBase(segment))
+    .filter(Boolean)
+    .filter((segment) => !CN_TRAVEL_GENERIC_REGION_TOKENS.includes(segment as (typeof CN_TRAVEL_GENERIC_REGION_TOKENS)[number]));
+
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const segment of segments) {
+    const key = segment.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(segment);
+  }
+  return result;
+}
+
+function tokenizeCnTravelLocationQuery(value: string): string[] {
+  let query = normalizeQueryBase(value);
+  if (!query) return [];
+
+  query = stripQueryTokens(query, [...CN_TRAVEL_GENERIC_REGION_TOKENS]);
+  query = stripQueryTokens(query, [...CN_TRAVEL_NOISE_TOKENS]);
+
+  const seen = new Set<string>();
+  const tokens: string[] = [];
+  for (const token of query.split(/\s+/).map((item) => normalizeQueryBase(item)).filter(Boolean)) {
+    const key = token.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    tokens.push(token);
+  }
+
+  return tokens;
+}
+
+function buildStructuredCnTravelSearchKeyword(title: string, searchQuery: string): string {
+  const titleSegments = extractCnTravelHierarchySegments(title);
+  if (titleSegments.length < 2) return "";
+
+  const queryTokens = tokenizeCnTravelLocationQuery(searchQuery);
+  if (queryTokens.length === 0) {
+    return titleSegments.join("·");
+  }
+
+  const normalizedTitleSegments = titleSegments.map((segment) => normalizeQueryBase(segment));
+  const prefixTokens: string[] = [];
+  let matchedTitleSegment = false;
+
+  for (const token of queryTokens) {
+    const matched = normalizedTitleSegments.some(
+      (segment) => segment === token || segment.includes(token) || token.includes(segment)
+    );
+    if (matched) {
+      matchedTitleSegment = true;
+      break;
+    }
+    prefixTokens.push(token);
+  }
+
+  const merged = matchedTitleSegment ? [...prefixTokens, ...titleSegments] : titleSegments;
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const segment of merged) {
+    const key = normalizeQueryBase(segment).toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    result.push(segment);
+  }
+
+  return result.join("·");
+}
+
 function normalizeCnTravelSearchKeyword(value: string): string {
   let query = normalizeQueryBase(value);
   if (!query) return query;
 
-  query = stripQueryTokens(query, ["中国", "国内", "国外", "热门"]);
-  query = stripQueryTokens(query, [
-    "旅游",
-    "旅行",
-    "游玩",
-    "景点",
-    "景区",
-    "攻略",
-    "指南",
-    "路线",
-    "路书",
-    "玩法",
-    "打卡",
-    "避坑",
-    "行程",
-    "一日游",
-    "半日游",
-    "半天",
-    "周末",
-    "周边",
-    "附近",
-    "推荐",
-    "citywalk",
-    "city walk",
-    "walk",
-    "漫游",
-    "徒步",
-    "骑行",
-    "拍照",
-    "夜景",
-  ]);
+  query = stripQueryTokens(query, [...CN_TRAVEL_GENERIC_REGION_TOKENS]);
+  query = stripQueryTokens(query, [...CN_TRAVEL_NOISE_TOKENS]);
 
   query = dedupeSpaceSeparatedTokens(query);
   return collapseCnLocationSpacing(query);
@@ -2853,6 +2931,10 @@ function sanitizeSearchQueryForLink(params: {
     locale === "zh" &&
     ["携程", "去哪儿", "马蜂窝"].includes(platform)
   ) {
+    const structuredQuery = buildStructuredCnTravelSearchKeyword(title, String(searchQuery || base));
+    if (structuredQuery) {
+      return structuredQuery;
+    }
     const query = normalizeCnTravelSearchKeyword(base);
     const titleQuery = normalizeCnTravelSearchKeyword(title);
     return query || titleQuery || normalizeQueryBase(title) || base;

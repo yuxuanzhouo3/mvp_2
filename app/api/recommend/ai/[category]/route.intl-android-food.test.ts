@@ -66,7 +66,7 @@ describe("INTL Android food platform mix", () => {
     expect(sanitizeIntlAndroidFoodRecommendation).toBeTypeOf("function");
 
     const output = sanitizeIntlAndroidFoodRecommendation({
-      title: "????",
+      title: "朋友小聚",
       query: "friends hangout dinner",
       tags: ["food"],
       platform: "DoorDash",

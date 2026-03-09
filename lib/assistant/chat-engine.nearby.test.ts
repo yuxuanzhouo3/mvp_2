@@ -14,8 +14,9 @@ vi.mock("./reverse-geocode", () => ({
 }));
 
 vi.mock("@/lib/outbound/link-resolver", () => ({
-  resolveCandidateLink: vi.fn(() => ({
-    metadata: { providerDisplayName: "Google Maps" },
+  resolveCandidateLink: vi.fn((input: { provider?: string }) => ({
+    provider: input?.provider || "Google Maps",
+    metadata: { providerDisplayName: input?.provider || "Google Maps" },
   })),
 }));
 
@@ -193,6 +194,51 @@ describe("processChat INTL nearby flow", () => {
           call[0].query.includes("Joe's Pizza")
       )
     ).toBe(true);
+  });
+
+  it("prefers concrete CN provider over forced map provider for search_nearby actions", async () => {
+    vi.mocked(resolveCandidateLink).mockClear();
+
+    vi.mocked(callAI).mockResolvedValueOnce({
+      model: "mock",
+      content: JSON.stringify({
+        type: "results",
+        message: "\u5df2\u627e\u5230\u53ef\u67e5\u770b\u7ed3\u679c",
+        intent: "search_nearby",
+        candidates: [
+          {
+            id: "dp_food_1",
+            name: "\u6d77\u5e95\u635e",
+            description: "\u53e3\u7891\u4e0d\u9519",
+            category: "food",
+            platform: "\u5927\u4f17\u70b9\u8bc4",
+            searchQuery: "\u6d77\u5e95\u635e",
+          },
+        ],
+      }),
+    });
+
+    const response = await processChat(
+      {
+        message: "\u5e2e\u6211\u627e\u6d77\u5e95\u635e",
+        locale: "zh",
+        region: "CN",
+        location: { lat: 23.476458472108877, lng: 110.45730570700682 },
+      },
+      "test-user"
+    );
+
+    expect(response.type).toBe("results");
+    expect(vi.mocked(resolveCandidateLink).mock.calls.length).toBeGreaterThan(0);
+    expect(vi.mocked(resolveCandidateLink).mock.calls[0]?.[0]).toMatchObject({
+      provider: "\u5927\u4f17\u70b9\u8bc4",
+      query: "\u6d77\u5e95\u635e",
+    });
+    expect(
+      vi.mocked(resolveCandidateLink).mock.calls.some(
+        (call) => call[0]?.provider === "\u9ad8\u5fb7\u5730\u56fe"
+      )
+    ).toBe(false);
   });
 
   it("drops non-seed concrete names in INTL nearby results", async () => {

@@ -115,7 +115,7 @@ export function launchRecommendationViaGestureOrOutbound(
         window.location.href = outboundHref;
       }
       cleanup();
-    }, 900);
+    }, 1400);
 
     document.addEventListener("visibilitychange", onVisibilityChange);
     window.addEventListener("blur", onBlur);

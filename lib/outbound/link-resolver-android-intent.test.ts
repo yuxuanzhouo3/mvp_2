@@ -1,18 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { resolveCandidateLink } from "./link-resolver";
 
-function decodeBase64Utf8(value: string): string {
-  return Buffer.from(value, "base64").toString("utf8");
-}
-
-function extractCtripEmbeddedUrl(linkUrl: string): string | null {
-  const match = linkUrl.match(/[?&]url=([^&#]+)/i);
-  if (!match?.[1]) return null;
-
-  const base64Payload = decodeURIComponent(match[1]);
-  return decodeBase64Utf8(base64Payload);
-}
-
 function extractQueryParam(linkUrl: string, key: string): string | null {
   const match = linkUrl.match(new RegExp(`[?&]${key}=([^&#]+)`, "i"));
   return match?.[1] ? decodeURIComponent(match[1]) : null;
@@ -216,9 +204,8 @@ describe("resolveCandidateLink android intent fallback", () => {
         link.type === "intent" &&
         link.url.includes("package=ctrip.android.view")
     );
-    expect(androidIntent?.url).toContain("intent://wireless/h5?url=");
-    const intentEmbeddedUrl = extractCtripEmbeddedUrl(androidIntent?.url || "");
-    expect(intentEmbeddedUrl).toContain(`keyword=${encodedTitle}`);
+    expect(androidIntent?.url).toContain("intent://wireless/search?keyword=");
+    expect(androidIntent?.url).toContain(`keyword=${encodedTitle}`);
   });
 
   it("uses Ctrip Android app deeplink first and keeps keyword intent fallback", () => {
@@ -235,34 +222,32 @@ describe("resolveCandidateLink android intent fallback", () => {
     });
 
     expect(result.primary.type).toBe("app");
-    expect(result.primary.url).toContain("ctrip://wireless/h5?url=");
-    const primaryEmbeddedUrl = extractCtripEmbeddedUrl(result.primary.url || "");
-    expect(primaryEmbeddedUrl).toContain(`keyword=${encodeURIComponent(query)}`);
+    expect(result.primary.url).toContain("ctrip://wireless/search?keyword=");
+    expect(result.primary.url).toContain(`keyword=${encodeURIComponent(query)}`);
 
     const androidIntent = result.fallbacks.find(
       (link) =>
         link.type === "intent" &&
         link.url.includes("package=ctrip.android.view")
     );
-    expect(androidIntent?.url).toContain("intent://wireless/h5?url=");
-    const intentEmbeddedUrl = extractCtripEmbeddedUrl(androidIntent?.url || "");
-    expect(intentEmbeddedUrl).toContain(`keyword=${encodeURIComponent(query)}`);
+    expect(androidIntent?.url).toContain("intent://wireless/search?keyword=");
+    expect(androidIntent?.url).toContain(`keyword=${encodeURIComponent(query)}`);
   });
 
   it.each([
     {
       provider: "去哪儿",
       expectedScheme: "qunarphone://search?searchWord=",
-      fallbackScheme: "scheme=https",
-      fallbackPrefix: "intent://www.qunar.com/search?",
+      fallbackScheme: "scheme=qunarphone",
+      fallbackPrefix: "intent://search?searchWord=",
       paramKey: "searchWord",
       packageId: "com.qunar.atom",
     },
     {
       provider: "马蜂窝",
-      expectedScheme: "intent://www.mafengwo.cn/search/q.php",
-      fallbackScheme: "scheme=https",
-      fallbackPrefix: "intent://www.mafengwo.cn/search/q.php",
+      expectedScheme: "intent://search?keyword=",
+      fallbackScheme: "scheme=mafengwo",
+      fallbackPrefix: "intent://search?keyword=",
       paramKey: "keyword",
       packageId: "com.mfw.roadbook",
     },
@@ -339,12 +324,9 @@ describe("resolveCandidateLink android intent fallback", () => {
       os: "android",
     });
 
-    expect(result.primary.type).toBe("intent");
-    expect(result.primary.url).toContain("package=com.achievo.vipshop");
-    expect(result.primary.url).toContain("scheme=https");
-    expect(result.primary.url).toContain(
-      encodeURIComponent(`https://category.vip.com/suggest.php?keyword=${encodedTitle}`)
-    );
+    expect(result.primary.type).toBe("app");
+    expect(result.primary.url).toContain("vipshop://search?keyword=");
+    expect(result.primary.url).toContain(`keyword=${encodedTitle}`);
 
     const webLink = result.fallbacks.find(
       (link) =>
@@ -358,7 +340,60 @@ describe("resolveCandidateLink android intent fallback", () => {
         link.type === "intent" &&
         link.url.includes("package=com.achievo.vipshop")
     );
-    expect(androidIntent).toBeUndefined();
+    expect(androidIntent?.url).toContain("intent://search?keyword=");
+    expect(androidIntent?.url).toContain("scheme=vipshop");
+    expect(extractQueryParam(androidIntent?.url || "", "keyword")).toBe(title);
+  });
+
+  it("uses Dianping Android app deeplink first and keeps keyword intent fallback", () => {
+    const query = "海底捞火锅";
+    const result = resolveCandidateLink({
+      title: query,
+      query,
+      category: "food",
+      locale: "zh",
+      region: "CN",
+      provider: "大众点评",
+      isMobile: true,
+      os: "android",
+    });
+
+    expect(result.primary.type).toBe("app");
+    expect(result.primary.url).toContain("dianping://search?keyword=");
+    expect(extractQueryParam(result.primary.url, "keyword")).toBe(query);
+
+    const androidIntent = result.fallbacks.find(
+      (link) => link.type === "intent" && link.url.includes("package=com.dianping.v1")
+    );
+    expect(androidIntent?.url).toContain("intent://search?keyword=");
+    expect(androidIntent?.url).toContain("scheme=dianping");
+    expect(extractQueryParam(androidIntent?.url || "", "keyword")).toBe(query);
+  });
+
+  it("uses Amap Android app deeplink first and keeps keyword intent fallback", () => {
+    const query = "海底捞火锅";
+    const result = resolveCandidateLink({
+      title: query,
+      query,
+      category: "food",
+      locale: "zh",
+      region: "CN",
+      provider: "高德地图",
+      isMobile: true,
+      os: "android",
+    });
+
+    expect(result.primary.type).toBe("app");
+    expect(result.primary.url).toContain("androidamap://poi?");
+    expect(extractQueryParam(result.primary.url, "keywords")).toBe(query);
+    expect(extractQueryParam(result.primary.url, "sourceApplication")).toBe("mvp_2_demo");
+
+    const androidIntent = result.fallbacks.find(
+      (link) => link.type === "intent" && link.url.includes("package=com.autonavi.minimap")
+    );
+    expect(androidIntent?.url).toContain("intent://poi?");
+    expect(androidIntent?.url).toContain("scheme=androidamap");
+    expect(extractQueryParam(androidIntent?.url || "", "keywords")).toBe(query);
   });
 
   it("supports fitness apps android deep links with search query", () => {

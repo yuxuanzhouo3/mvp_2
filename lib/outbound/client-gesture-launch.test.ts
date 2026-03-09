@@ -9,6 +9,24 @@ function extractQueryParam(linkUrl: string, key: string): string | null {
   return match?.[1] ? decodeURIComponent(match[1]) : null;
 }
 
+function extractKugouKeyword(linkUrl: string): string | null {
+  const query = linkUrl.split("?")[1] || "";
+  const params = new URLSearchParams(query);
+  const jsonStr = params.get("jsonStr");
+  if (!jsonStr) return null;
+
+  try {
+    const payload = JSON.parse(jsonStr) as {
+      keyword?: string;
+      searchKeyWord?: string;
+      keyWord?: string;
+    };
+    return payload.keyword || payload.searchKeyWord || payload.keyWord || null;
+  } catch {
+    return null;
+  }
+}
+
 function buildTravelRecommendation(candidateLink?: AIRecommendation["candidateLink"]): AIRecommendation {
   return {
     title: "中国·苏州·平江路",
@@ -114,7 +132,7 @@ describe("buildRecommendationGestureLaunchPlan", () => {
     expect(decoded.candidateLink?.primary.url).toBe(recommendation.link);
   });
 
-  it("uses TapTap Android intent as first deep link and keeps keyword", () => {
+  it("uses TapTap Android app scheme as first deep link and keeps keyword", () => {
     const query = "原神";
     const candidateLink = resolveCandidateLink({
       title: query,
@@ -134,9 +152,9 @@ describe("buildRecommendationGestureLaunchPlan", () => {
     );
 
     expect(plan.firstDeepLink).toBeTruthy();
-    expect(plan.firstDeepLink?.type).toBe("intent");
-    expect(plan.firstDeepLink?.url).toContain("package=com.taptap");
-    expect(plan.firstDeepLink?.url).toContain(encodeURIComponent(query));
+    expect(plan.firstDeepLink?.type).toBe("app");
+    expect(plan.firstDeepLink?.url).toContain("taptap://taptap.cn/search?keyword=");
+    expect(extractQueryParam(plan.firstDeepLink?.url || "", "keyword")).toBe(query);
   });
 
   it("uses NetEase app scheme as first Android deep link and keeps keyword", () => {
@@ -164,7 +182,7 @@ describe("buildRecommendationGestureLaunchPlan", () => {
     expect(extractQueryParam(plan.firstDeepLink?.url || "", "keyword")).toBe(query);
   });
 
-  it("uses Vipshop Android https intent as first deep link and keeps keyword", () => {
+  it("uses Vipshop Android app scheme as first deep link and keeps keyword", () => {
     const query = "春季防晒外套";
     const candidateLink = resolveCandidateLink({
       title: query,
@@ -184,9 +202,33 @@ describe("buildRecommendationGestureLaunchPlan", () => {
     );
 
     expect(plan.firstDeepLink).toBeTruthy();
-    expect(plan.firstDeepLink?.type).toBe("intent");
-    expect(plan.firstDeepLink?.url).toContain("package=com.achievo.vipshop");
-    expect(plan.firstDeepLink?.url).toContain("scheme=vipshop");
+    expect(plan.firstDeepLink?.type).toBe("app");
+    expect(plan.firstDeepLink?.url).toContain("vipshop://search?keyword=");
     expect(extractQueryParam(plan.firstDeepLink?.url || "", "keyword")).toBe(query);
+  });
+
+  it("uses Kugou Android app scheme as first deep link and keeps keyword", () => {
+    const query = "林俊杰 修炼爱情";
+    const candidateLink = resolveCandidateLink({
+      title: query,
+      query,
+      category: "entertainment",
+      locale: "zh",
+      region: "CN",
+      provider: "酷狗音乐",
+      isMobile: true,
+      os: "android",
+    });
+
+    const plan = buildRecommendationGestureLaunchPlan(
+      buildEntertainmentRecommendation(query, "酷狗音乐", candidateLink),
+      "/category/entertainment",
+      "android"
+    );
+
+    expect(plan.firstDeepLink).toBeTruthy();
+    expect(plan.firstDeepLink?.type).toBe("app");
+    expect(plan.firstDeepLink?.url).toContain("kugouurl://start.music/?cmd=116");
+    expect(extractKugouKeyword(plan.firstDeepLink?.url || "")).toBe(query);
   });
 });

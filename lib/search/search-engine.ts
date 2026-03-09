@@ -429,6 +429,7 @@ export function generateSearchLink(
       '腾讯地图美食': (q) => `https://map.qq.com/m/search?keyword=${encodeURIComponent(q)}`,
       '饿了么': (q) => `https://www.ele.me/search/${encodeURIComponent(q)}`,  // 外卖平台
       '美团': (q) => `https://www.meituan.com/s/${encodeURIComponent(q)}/`,  // 本地生活/外卖
+      '美团外卖': (q) => `https://waimai.meituan.com/search?query=${encodeURIComponent(q)}`,
       '百度美食': (q) => `https://www.baidu.com/s?wd=${encodeURIComponent(q)}`,
       '豆果美食': (q) => `https://www.douguo.com/caipu/${encodeURIComponent(q)}`,  // 菜谱平台 - 正确URL格式
       '小红书美食': (q) => `https://www.xiaohongshu.com/search_result?keyword=${encodeURIComponent(q)}&type=note`,  // 美食攻略

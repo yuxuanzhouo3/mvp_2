@@ -1,6 +1,6 @@
 ﻿import type { RecommendationCategory } from "@/lib/types/recommendation";
 
-const REQUIRED_SHOPPING_PLATFORMS_CN_WEB = ["??", "?????", "???"] as const;
+const REQUIRED_SHOPPING_PLATFORMS_CN_WEB = ["京东", "什么值得买", "慢慢买"] as const;
 const REQUIRED_ENTERTAINMENT_PLATFORMS_INTL_MOBILE = [
   "YouTube",
   "TikTok",
@@ -57,8 +57,8 @@ const INTL_ANDROID_CONCRETE_QUERY_FALLBACK_BY_PLATFORM: Partial<Record<string, s
   Pinterest: "small apartment entryway storage",
   DoorDash: "Nashville hot chicken sandwich",
   "Uber Eats": "Chipotle chicken burrito bowl",
-  "Fantuan Delivery": "???",
-  HungryPanda: "?????",
+  "Fantuan Delivery": "Richmond BC dim sum",
+  HungryPanda: "Toronto brown sugar bubble tea",
   TripAdvisor: "Banff Lake Louise",
   Yelp: "Pike Place Chowder Seattle",
   Wanderlog: "New York City 3 day itinerary",
@@ -106,11 +106,11 @@ const INTL_ANDROID_FOOD_SCENARIO_TERMS = [
   "date night",
   "office lunch",
   "group dinner",
-  "????",
-  "????",
-  "????",
-  "??",
-  "?????",
+  "家庭聚餐",
+  "朋友小聚",
+  "宵夜场景",
+  "约会",
+  "办公室午餐",
 ];
 
 const INTL_ANDROID_FOOD_GENERIC_LABEL_TERMS = new Set<string>([
@@ -133,12 +133,12 @@ const INTL_ANDROID_FOOD_GENERIC_LABEL_TERMS = new Set<string>([
   "chinese food",
   "western food",
   "fast food",
-  "??",
-  "??",
-  "??",
-  "??",
-  "??",
-  "??",
+  "中餐",
+  "西餐",
+  "快餐",
+  "面食",
+  "甜品",
+  "饮品",
 ]);
 
 const INTL_ANDROID_FOOD_FALLBACK_DISHES_BY_PLATFORM: Record<string, IntlAndroidFoodFallbackDish[]> = {
@@ -153,14 +153,14 @@ const INTL_ANDROID_FOOD_FALLBACK_DISHES_BY_PLATFORM: Record<string, IntlAndroidF
     { dishName: "Pad thai shrimp", cuisine: "Thai", priceRange: "$$" },
   ],
   "Fantuan Delivery": [
-    { dishName: "???", cuisine: "Chinese", priceRange: "$$" },
-    { dishName: "?????", cuisine: "Chinese", priceRange: "$" },
-    { dishName: "???", cuisine: "Chinese", priceRange: "$$" },
+    { dishName: "麻辣烫", cuisine: "Chinese", priceRange: "$$" },
+    { dishName: "兰州牛肉面", cuisine: "Chinese", priceRange: "$" },
+    { dishName: "小笼包", cuisine: "Chinese", priceRange: "$$" },
   ],
   HungryPanda: [
-    { dishName: "?????", cuisine: "Chinese", priceRange: "$" },
-    { dishName: "????", cuisine: "Chinese", priceRange: "$" },
-    { dishName: "???", cuisine: "Chinese", priceRange: "$$" },
+    { dishName: "黄焖鸡米饭", cuisine: "Chinese", priceRange: "$" },
+    { dishName: "重庆小面", cuisine: "Chinese", priceRange: "$" },
+    { dishName: "螺蛳粉", cuisine: "Chinese", priceRange: "$$" },
   ],
 };
 
