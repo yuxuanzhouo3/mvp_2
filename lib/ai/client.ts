@@ -198,6 +198,31 @@ function parseIntlProviderOrder(
   return parsed.length > 0 ? parsed : [...fallback];
 }
 
+function dedupeCnQwenOrder(models: Iterable<CNQwenModel>): CNQwenModel[] {
+  const order: CNQwenModel[] = [];
+  for (const model of models) {
+    if (!order.includes(model)) {
+      order.push(model);
+    }
+  }
+
+  return order;
+}
+
+async function buildCnQwenOrder(
+  isChinaRegion: boolean,
+  fallback: readonly CNQwenModel[]
+): Promise<CNQwenModel[]> {
+  const configuredOrder = parseQwenOrder(process.env.ASSISTANT_CN_QWEN_MODELS, fallback);
+
+  if (!isChinaRegion) {
+    return configuredOrder;
+  }
+
+  const runtimePrimaryModel = (await getCnAiRuntimeModelConfig()).assistantModel;
+  return dedupeCnQwenOrder([runtimePrimaryModel, ...configuredOrder, ...CN_QWEN_MODELS]);
+}
+
 async function getExecutionConfig(): Promise<AIExecutionConfig> {
   const isChinaRegion = isChinaDeployment();
   const fastModeDefault = isChinaRegion ? false : DEFAULT_FAST_MODE;
@@ -248,9 +273,7 @@ async function getExecutionConfig(): Promise<AIExecutionConfig> {
     2000
   );
 
-  const cnQwenOrder = isChinaRegion
-    ? [(await getCnAiRuntimeModelConfig()).assistantModel]
-    : parseQwenOrder(process.env.ASSISTANT_CN_QWEN_MODELS, defaultCnOrder);
+  const cnQwenOrder = await buildCnQwenOrder(isChinaRegion, defaultCnOrder);
 
   return {
     fastMode,
@@ -370,6 +393,7 @@ async function callQwenAPI(
         messages: request.messages,
         temperature: request.temperature ?? 0.7,
         max_tokens: request.maxTokens ?? DEFAULT_MAX_TOKENS,
+        ...(model === "qwen3.5-plus" ? { enable_thinking: false } : {}),
       }),
       signal: AbortSignal.timeout(options.timeoutMs),
     });

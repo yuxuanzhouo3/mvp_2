@@ -59,10 +59,10 @@ describe("callAI CN runtime model config", () => {
     const requestBody = JSON.parse(String(init?.body || "{}"));
 
     expect(requestBody.model).toBe("qwen3.5-flash");
+    expect(requestBody.enable_thinking).toBeUndefined();
     expect(response).toMatchObject({
       model: "qwen3.5-flash",
       content: "ok",
     });
   });
 });
-
