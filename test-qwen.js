@@ -3,7 +3,7 @@ import OpenAI from "openai";
 const openai = new OpenAI(
     {
         // 若没有配置环境变量，请用百炼API Key将下行替换为：apiKey: "sk-xxx",
-        apiKey: "sk-ae423dd968d0459d9298405cbc485e10",
+        apiKey: "zzz",
         baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1"
     }
 );
