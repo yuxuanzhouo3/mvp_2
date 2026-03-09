@@ -1,5 +1,4 @@
 ﻿import OpenAI from "openai";
-import { ZhipuAI } from "zhipuai";
 import { isChinaDeployment } from "@/lib/config/deployment.config";
 import { getCnAiRuntimeModelConfig } from "@/lib/ai/runtime-model-config";
 import { type CnRuntimeModel } from "@/lib/ai/runtime-models";
@@ -7,7 +6,7 @@ import { generateFallbackCandidates } from "@/lib/recommendation/fallback-genera
 import type { RecommendationCategory } from "@/lib/types/recommendation";
 
 type CNQwenProvider = CnRuntimeModel;
-type AIProvider = "openai" | "mistral" | "zhipu" | CNQwenProvider;
+type AIProvider = "openai" | "mistral" | CNQwenProvider;
 
 export type AIMessage = {
   role: "system" | "user" | "assistant";
@@ -42,7 +41,6 @@ const DISABLED_PROVIDERS = new Set<AIProvider>();
 const DEFAULT_MODELS = {
   openai: process.env.OPENAI_MODEL || "gpt-4o-mini",
   mistral: process.env.MISTRAL_MODEL || "mistral-small-latest",
-  zhipu: process.env.ZHIPU_MODEL || "glm-4.5-flash",
   "qwen3.5-plus": "qwen3.5-plus",
   "qwen3.5-flash": "qwen3.5-flash",
   "qwen3.5-flash-2026-02-23": "qwen3.5-flash-2026-02-23",
@@ -114,7 +112,7 @@ export function isAIProviderConfigured(): boolean {
 }
 
 export function isZhipuConfigured(): boolean {
-  return hasValidKey(process.env.ZHIPU_API_KEY);
+  return false;
 }
 
 export function isQwenConfigured(): boolean {
@@ -149,12 +147,6 @@ async function callAIWithFallback(messages: AIMessage[], temperature = 0.8) {
             content: await callMistral(messages, temperature),
             provider,
             model: DEFAULT_MODELS.mistral,
-          };
-        case "zhipu":
-          return {
-            content: await callZhipu(messages, temperature),
-            provider,
-            model: DEFAULT_MODELS.zhipu,
           };
         case "qwen3.5-plus":
         case "qwen3.5-flash":
@@ -342,27 +334,6 @@ async function callMistral(messages: AIMessage[], temperature: number) {
   const content = data?.choices?.[0]?.message?.content;
   if (!content) {
     throw new Error("Mistral returned empty content");
-  }
-  return content;
-}
-
-async function callZhipu(messages: AIMessage[], temperature: number) {
-  const apiKey = process.env.ZHIPU_API_KEY;
-  if (!hasValidKey(apiKey)) {
-    throw new Error("ZHIPU_API_KEY is not configured");
-  }
-
-  const client = new ZhipuAI({ apiKey: apiKey.trim() });
-  const response = await client.chat.completions.create({
-    model: DEFAULT_MODELS.zhipu,
-    messages,
-    temperature,
-    top_p: 0.9,
-  });
-
-  const content = response.choices?.[0]?.message?.content;
-  if (!content) {
-    throw new Error("Zhipu returned empty content");
   }
   return content;
 }
