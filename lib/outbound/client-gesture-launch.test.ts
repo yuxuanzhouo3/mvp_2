@@ -79,8 +79,8 @@ function buildShoppingRecommendation(
 
 describe("buildRecommendationGestureLaunchPlan", () => {
   it.each([
-    { provider: "去哪儿", paramKey: "searchWord", expectedScheme: "qunarphone://search?searchWord=" },
-    { provider: "马蜂窝", paramKey: "keyword", expectedScheme: "intent://search?keyword=" },
+    { provider: "去哪儿", paramKey: "keyword", expectedScheme: "intent://i.qunar.com/touch/?keyword=" },
+    { provider: "马蜂窝", paramKey: "q", expectedScheme: "intent://www.mafengwo.cn/search/q.php?t=sales&q=" },
   ])("keeps travel keyword for $provider Android deeplink", ({ provider, paramKey, expectedScheme }) => {
     const query = "江苏苏州平江路游玩攻略";
     const candidateLink = resolveCandidateLink({
@@ -101,12 +101,9 @@ describe("buildRecommendationGestureLaunchPlan", () => {
     );
 
     expect(plan.firstDeepLink).toBeTruthy();
-    const expectedType = provider === "马蜂窝" ? "intent" : "app";
-    expect(plan.firstDeepLink?.type).toBe(expectedType);
+    expect(plan.firstDeepLink?.type).toBe("intent");
     expect(plan.firstDeepLink?.url).toContain(expectedScheme);
-    if (provider !== "马蜂窝") {
-      expect(extractQueryParam(plan.firstDeepLink?.url || "", paramKey)).toBe(query);
-    }
+    expect(extractQueryParam(plan.firstDeepLink?.url || "", paramKey)).toBe(query);
 
     const data = new URL(`https://example.com${plan.outboundHref}`).searchParams.get("data");
     const decoded = decodeCandidateLink(data || "", "zh");
@@ -132,7 +129,7 @@ describe("buildRecommendationGestureLaunchPlan", () => {
     expect(decoded.candidateLink?.primary.url).toBe(recommendation.link);
   });
 
-  it("uses TapTap Android app scheme as first deep link and keeps keyword", () => {
+  it("uses TapTap Android https intent as first deep link and keeps keyword", () => {
     const query = "原神";
     const candidateLink = resolveCandidateLink({
       title: query,
@@ -152,9 +149,9 @@ describe("buildRecommendationGestureLaunchPlan", () => {
     );
 
     expect(plan.firstDeepLink).toBeTruthy();
-    expect(plan.firstDeepLink?.type).toBe("app");
-    expect(plan.firstDeepLink?.url).toContain("taptap://taptap.cn/search?keyword=");
-    expect(extractQueryParam(plan.firstDeepLink?.url || "", "keyword")).toBe(query);
+    expect(plan.firstDeepLink?.type).toBe("intent");
+    expect(plan.firstDeepLink?.url).toContain("intent://www.taptap.cn/search/");
+    expect(plan.firstDeepLink?.url).toContain(encodeURIComponent(query));
   });
 
   it("uses NetEase app scheme as first Android deep link and keeps keyword", () => {
@@ -182,7 +179,7 @@ describe("buildRecommendationGestureLaunchPlan", () => {
     expect(extractQueryParam(plan.firstDeepLink?.url || "", "keyword")).toBe(query);
   });
 
-  it("uses Vipshop Android app scheme as first deep link and keeps keyword", () => {
+  it("uses Vipshop Android https intent as first deep link and keeps keyword", () => {
     const query = "春季防晒外套";
     const candidateLink = resolveCandidateLink({
       title: query,
@@ -202,8 +199,8 @@ describe("buildRecommendationGestureLaunchPlan", () => {
     );
 
     expect(plan.firstDeepLink).toBeTruthy();
-    expect(plan.firstDeepLink?.type).toBe("app");
-    expect(plan.firstDeepLink?.url).toContain("vipshop://search?keyword=");
+    expect(plan.firstDeepLink?.type).toBe("intent");
+    expect(plan.firstDeepLink?.url).toContain("intent://category.vip.com/suggest.php?keyword=");
     expect(extractQueryParam(plan.firstDeepLink?.url || "", "keyword")).toBe(query);
   });
 

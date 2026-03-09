@@ -179,6 +179,27 @@ function ctripWebSearchUrl(keyword: string): string {
   return `https://you.ctrip.com/globalsearch/?keyword=${encodeURIComponent(keyword)}`;
 }
 
+function buildAndroidHttpsIntentUrl(webUrl: string, packageId: string): string {
+  const parsedUrl = new URL(webUrl);
+  return `intent://${parsedUrl.host}${parsedUrl.pathname}${parsedUrl.search}${parsedUrl.hash}#Intent;scheme=https;package=${packageId};S.browser_fallback_url=${encodeURIComponent(webUrl)};end`;
+}
+
+function tencentVideoSearchUrl(keyword: string): string {
+  return `https://v.qq.com/x/search/?q=${encodeURIComponent(keyword)}`;
+}
+
+function qqMusicSearchUrl(keyword: string): string {
+  return `https://y.qq.com/n/ryqq/search?w=${encodeURIComponent(keyword)}`;
+}
+
+function jdMobileSearchUrl(keyword: string): string {
+  return `https://search.m.jd.com/search?keyword=${encodeURIComponent(keyword)}`;
+}
+
+function dianpingMobileSearchUrl(keyword: string): string {
+  return `https://m.dianping.com/search/keyword/1/0_${encodeURIComponent(keyword)}`;
+}
+
 function vipshopSearchUrl(keyword: string): string {
   return `https://category.vip.com/suggest.php?keyword=${encodeURIComponent(keyword)}`;
 }
@@ -189,7 +210,7 @@ function vipshopSchemeSearchUrl(keyword: string): string {
 
 function vipshopAndroidSearchIntent(keyword: string): string {
   const web = vipshopSearchUrl(keyword);
-  return `intent://search?keyword=${encodeURIComponent(keyword)}#Intent;scheme=vipshop;package=com.achievo.vipshop;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+  return buildAndroidHttpsIntentUrl(web, "com.achievo.vipshop");
 }
 
 function ctripAndroidSearchDeepLink(keyword: string): string {
@@ -201,20 +222,16 @@ function ctripAndroidSearchIntent(keyword: string, webUrl: string): string {
 }
 
 function qunarWebSearchUrl(keyword: string): string {
-  return `https://www.qunar.com/search?searchWord=${encodeURIComponent(keyword)}`;
+  return `https://i.qunar.com/touch/?keyword=${encodeURIComponent(keyword)}`;
 }
 
 function qunarIosSearchDeepLink(keyword: string): string {
   return `qunarphone://search?searchWord=${encodeURIComponent(keyword)}&from=deeplink`;
 }
 
-function qunarAndroidSearchDeepLink(keyword: string): string {
-  return `qunarphone://search?searchWord=${encodeURIComponent(keyword)}&from=deeplink`;
-}
-
 function qunarAndroidSearchIntent(keyword: string): string {
   const web = qunarWebSearchUrl(keyword);
-  return `intent://search?searchWord=${encodeURIComponent(keyword)}#Intent;scheme=qunarphone;package=com.qunar.atom;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+  return buildAndroidHttpsIntentUrl(web, "com.qunar.atom");
 }
 
 function mafengwoWebSearchUrl(keyword: string): string {
@@ -227,7 +244,7 @@ function mafengwoSearchDeepLink(keyword: string): string {
 
 function mafengwoAndroidSearchIntent(keyword: string): string {
   const web = mafengwoWebSearchUrl(keyword);
-  return `intent://search?keyword=${encodeURIComponent(keyword)}#Intent;scheme=mafengwo;package=com.mfw.roadbook;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+  return buildAndroidHttpsIntentUrl(web, "com.mfw.roadbook");
 }
 
 function kugouWebSearchUrl(keyword: string): string {
@@ -292,7 +309,7 @@ function taptapSchemeSearchUrl(keyword: string): string {
 }
 
 function taptapAndroidIntentSearchUrl(keyword: string, fallbackWebUrl: string): string {
-  return `intent://www.taptap.cn/search/${encodeURIComponent(keyword)}#Intent;scheme=https;package=com.taptap;S.browser_fallback_url=${encodeURIComponent(fallbackWebUrl)};end`;
+  return buildAndroidHttpsIntentUrl(fallbackWebUrl, "com.taptap");
 }
 
 function dianpingSchemeSearchUrl(keyword: string): string {
@@ -300,8 +317,8 @@ function dianpingSchemeSearchUrl(keyword: string): string {
 }
 
 function dianpingAndroidIntentSearchUrl(keyword: string): string {
-  const web = `https://m.dianping.com/search/keyword/1/0_${encodeURIComponent(keyword)}`;
-  return `intent://search?keyword=${encodeURIComponent(keyword)}#Intent;scheme=dianping;package=com.dianping.v1;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+  const web = dianpingMobileSearchUrl(keyword);
+  return buildAndroidHttpsIntentUrl(web, "com.dianping.v1");
 }
 
 function meituanSchemeSearchUrl(keyword: string): string {
@@ -376,12 +393,15 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       domains: ["v.qq.com"],
       hasApp: true,
       androidPackageId: "com.tencent.qqlive",
-      universalLink: ({ query }) => `https://v.qq.com/x/search/?q=${encodeURIComponent(query)}`,
-      webLink: ({ query }) => `https://v.qq.com/x/search/?q=${encodeURIComponent(query)}`,
+      disableAndroidPackageIntentFallback: true,
+      universalLink: ({ query, title }) =>
+        tencentVideoSearchUrl(resolveSearchKeyword({ query, title })),
+      webLink: ({ query, title }) =>
+        tencentVideoSearchUrl(resolveSearchKeyword({ query, title })),
       iosScheme: ({ query }) => `tenvideo://search?keyword=${encodeURIComponent(query)}`,
-      androidScheme: ({ query }) => {
-        const web = `https://v.qq.com/x/search/?q=${encodeURIComponent(query)}`;
-        return `intent://search?keyword=${encodeURIComponent(query)}#Intent;scheme=tenvideo;package=com.tencent.qqlive;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      androidScheme: ({ query, title }) => {
+        const web = tencentVideoSearchUrl(resolveSearchKeyword({ query, title }));
+        return buildAndroidHttpsIntentUrl(web, "com.tencent.qqlive");
       },
     },
     "爱奇艺": {
@@ -454,11 +474,13 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       domains: ["y.qq.com"],
       hasApp: true,
       androidPackageId: "com.tencent.qqmusic",
-      webLink: ({ query }) => `https://y.qq.com/n/ryqq/search?w=${encodeURIComponent(query)}`,
+      disableAndroidPackageIntentFallback: true,
+      universalLink: ({ query, title }) => qqMusicSearchUrl(resolveSearchKeyword({ query, title })),
+      webLink: ({ query, title }) => qqMusicSearchUrl(resolveSearchKeyword({ query, title })),
       iosScheme: ({ query }) => `qqmusic://qq.com/ui/search?keyword=${encodeURIComponent(query)}`,
-      androidScheme: ({ query }) => {
-        const web = `https://y.qq.com/n/ryqq/search?w=${encodeURIComponent(query)}`;
-        return `intent://qq.com/ui/search?keyword=${encodeURIComponent(query)}#Intent;scheme=qqmusic;package=com.tencent.qqmusic;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      androidScheme: ({ query, title }) => {
+        const web = qqMusicSearchUrl(resolveSearchKeyword({ query, title }));
+        return buildAndroidHttpsIntentUrl(web, "com.tencent.qqmusic");
       },
     },
     "酷狗音乐": {
@@ -532,10 +554,6 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
         return taptapSchemeSearchUrl(keyword);
       },
       androidScheme: ({ query, title }) => {
-        const keyword = resolveSearchKeyword({ query, title });
-        return taptapSchemeSearchUrl(keyword);
-      },
-      androidIntentScheme: ({ query, title }) => {
         const keyword = resolveSearchKeyword({ query, title });
         const web = taptapSearchUrl(keyword);
         return taptapAndroidIntentSearchUrl(keyword, web);
@@ -622,11 +640,14 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       domains: ["dianping.com"],
       hasApp: true,
       androidPackageId: "com.dianping.v1",
+      disableAndroidPackageIntentFallback: true,
+      universalLink: ({ query, title }) =>
+        dianpingMobileSearchUrl(resolveSearchKeyword({ query, title })),
       webLink: ({ query }) =>
         `https://www.dianping.com/search/keyword/1/0_${encodeURIComponent(query)}`,
       iosScheme: ({ query }) => dianpingSchemeSearchUrl(query),
-      androidScheme: ({ query }) => dianpingSchemeSearchUrl(query),
-      androidIntentScheme: ({ query }) => dianpingAndroidIntentSearchUrl(query),
+      androidScheme: ({ query, title }) =>
+        dianpingAndroidIntentSearchUrl(resolveSearchKeyword({ query, title })),
     },
     "下厨房": {
       id: "下厨房",
@@ -690,6 +711,8 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       domains: ["jd.com"],
       hasApp: true,
       androidPackageId: "com.jingdong.app.mall",
+      disableAndroidPackageIntentFallback: true,
+      universalLink: ({ query, title }) => jdMobileSearchUrl(resolveSearchKeyword({ query, title })),
       webLink: ({ query }) => `https://search.jd.com/Search?keyword=${encodeURIComponent(query)}`,
       iosScheme: ({ query }) => {
         const params = {
@@ -700,15 +723,9 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
         };
         return `openapp.jdmobile://virtual?params=${encodeURIComponent(JSON.stringify(params))}`;
       },
-      androidScheme: ({ query }) => {
-        const params = {
-          category: "jump",
-          des: "productList",
-          keyWord: query,
-          from: "search",
-        };
-        const web = `https://search.jd.com/Search?keyword=${encodeURIComponent(query)}`;
-        return `intent://virtual?params=${encodeURIComponent(JSON.stringify(params))}#Intent;scheme=openapp.jdmobile;package=com.jingdong.app.mall;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+      androidScheme: ({ query, title }) => {
+        const web = jdMobileSearchUrl(resolveSearchKeyword({ query, title }));
+        return buildAndroidHttpsIntentUrl(web, "com.jingdong.app.mall");
       },
     },
     "拼多多": {
@@ -765,10 +782,6 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
         return vipshopSchemeSearchUrl(keyword);
       },
       androidScheme: ({ query, title }) => {
-        const keyword = resolveSearchKeyword({ query, title });
-        return vipshopSchemeSearchUrl(keyword);
-      },
-      androidIntentScheme: ({ query, title }) => {
         const keyword = resolveSearchKeyword({ query, title });
         return vipshopAndroidSearchIntent(keyword);
       },
@@ -1457,10 +1470,11 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       domains: ["qunar.com"],
       hasApp: true,
       androidPackageId: "com.qunar.atom",
+      disableAndroidPackageIntentFallback: true,
+      universalLink: (ctx) => qunarWebSearchUrl(resolveSearchKeyword(ctx)),
       webLink: (ctx) => qunarWebSearchUrl(resolveSearchKeyword(ctx)),
       iosScheme: (ctx) => qunarIosSearchDeepLink(resolveSearchKeyword(ctx)),
-      androidScheme: (ctx) => qunarAndroidSearchDeepLink(resolveSearchKeyword(ctx)),
-      androidIntentScheme: (ctx) => qunarAndroidSearchIntent(resolveSearchKeyword(ctx)),
+      androidScheme: (ctx) => qunarAndroidSearchIntent(resolveSearchKeyword(ctx)),
     },
     "马蜂窝": {
       id: "马蜂窝",
@@ -1468,10 +1482,11 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       domains: ["mafengwo.cn"],
       hasApp: true,
       androidPackageId: "com.mfw.roadbook",
+      disableAndroidPackageIntentFallback: true,
+      universalLink: (ctx) => mafengwoWebSearchUrl(resolveSearchKeyword(ctx)),
       webLink: (ctx) => mafengwoWebSearchUrl(resolveSearchKeyword(ctx)),
       iosScheme: (ctx) => mafengwoSearchDeepLink(resolveSearchKeyword(ctx)),
       androidScheme: (ctx) => mafengwoAndroidSearchIntent(resolveSearchKeyword(ctx)),
-      androidIntentScheme: (ctx) => mafengwoAndroidSearchIntent(resolveSearchKeyword(ctx)),
     },
     "穷游": {
       id: "穷游",

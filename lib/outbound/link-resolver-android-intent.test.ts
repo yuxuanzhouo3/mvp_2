@@ -237,23 +237,21 @@ describe("resolveCandidateLink android intent fallback", () => {
   it.each([
     {
       provider: "去哪儿",
-      expectedScheme: "qunarphone://search?searchWord=",
-      fallbackScheme: "scheme=qunarphone",
-      fallbackPrefix: "intent://search?searchWord=",
-      paramKey: "searchWord",
+      expectedScheme: "intent://i.qunar.com/touch/?keyword=",
+      webPrefix: "https://i.qunar.com/touch/?keyword=",
+      paramKey: "keyword",
       packageId: "com.qunar.atom",
     },
     {
       provider: "马蜂窝",
-      expectedScheme: "intent://search?keyword=",
-      fallbackScheme: "scheme=mafengwo",
-      fallbackPrefix: "intent://search?keyword=",
-      paramKey: "keyword",
+      expectedScheme: "intent://www.mafengwo.cn/search/q.php?t=sales&q=",
+      webPrefix: "https://www.mafengwo.cn/search/q.php?t=sales&q=",
+      paramKey: "q",
       packageId: "com.mfw.roadbook",
     },
   ])(
-    "uses $provider Android app deeplink first and keeps keyword intent fallback",
-    ({ provider, expectedScheme, fallbackScheme, fallbackPrefix, paramKey, packageId }) => {
+    "uses $provider Android https intent first and keeps keyword on official search route",
+    ({ provider, expectedScheme, webPrefix, paramKey, packageId }) => {
       const query = "江苏苏州平江路游玩攻略";
       const result = resolveCandidateLink({
         title: "中国·苏州·平江路",
@@ -266,30 +264,21 @@ describe("resolveCandidateLink android intent fallback", () => {
         os: "android",
       });
 
-      const expectedType = provider === "马蜂窝" ? "intent" : "app";
-      expect(result.primary.type).toBe(expectedType);
+      expect(result.primary.type).toBe("intent");
       expect(result.primary.url).toContain(expectedScheme);
-      if (provider !== "马蜂窝") {
-        expect(extractQueryParam(result.primary.url, paramKey)).toBe(query);
-      }
+      expect(result.primary.url).toContain(`package=${packageId}`);
+      expect(result.primary.url).toContain("scheme=https");
+      expect(extractQueryParam(result.primary.url, paramKey)).toBe(query);
 
-      if (provider === "马蜂窝") {
-        expect(result.primary.url).toContain(`package=${packageId}`);
-        expect(result.primary.url).toContain(fallbackScheme);
-      } else {
-        const androidIntent = result.fallbacks.find(
-          (link) => link.type === "intent" && link.url.includes(`package=${packageId}`)
-        );
-        expect(androidIntent?.url).toContain(fallbackPrefix);
-        expect(androidIntent?.url).toContain(fallbackScheme);
-        expect(extractQueryParam(androidIntent?.url || "", paramKey)).toBe(query);
-      }
+      const webLink = result.fallbacks.find((link) => link.type === "web");
+      expect(webLink?.url).toContain(webPrefix);
+      expect(webLink?.url).toContain(`${paramKey}=${encodeURIComponent(query)}`);
     }
   );
 
   it.each([
-    { provider: "去哪儿", paramKey: "searchWord" },
-    { provider: "马蜂窝", paramKey: "keyword" },
+    { provider: "去哪儿", paramKey: "keyword" },
+    { provider: "马蜂窝", paramKey: "q" },
   ])("uses recommendation title as $provider keyword fallback when query is empty", ({ provider, paramKey }) => {
     const title = "中国 杭州 西湖";
     const result = resolveCandidateLink({
@@ -303,11 +292,8 @@ describe("resolveCandidateLink android intent fallback", () => {
       os: "android",
     });
 
-    const expectedType = provider === "马蜂窝" ? "intent" : "app";
-    expect(result.primary.type).toBe(expectedType);
-    if (provider !== "马蜂窝") {
-      expect(extractQueryParam(result.primary.url, paramKey)).toBe(title);
-    }
+    expect(result.primary.type).toBe("intent");
+    expect(extractQueryParam(result.primary.url, paramKey)).toBe(title);
   });
 
   it("uses recommendation title as Vipshop keyword fallback when query is empty", () => {
@@ -324,9 +310,11 @@ describe("resolveCandidateLink android intent fallback", () => {
       os: "android",
     });
 
-    expect(result.primary.type).toBe("app");
-    expect(result.primary.url).toContain("vipshop://search?keyword=");
+    expect(result.primary.type).toBe("intent");
+    expect(result.primary.url).toContain("intent://category.vip.com/suggest.php?keyword=");
     expect(result.primary.url).toContain(`keyword=${encodedTitle}`);
+    expect(result.primary.url).toContain("scheme=https");
+    expect(result.primary.url).toContain("package=com.achievo.vipshop");
 
     const webLink = result.fallbacks.find(
       (link) =>
@@ -335,17 +323,10 @@ describe("resolveCandidateLink android intent fallback", () => {
     );
     expect(webLink?.url).toContain(`keyword=${encodedTitle}`);
 
-    const androidIntent = result.fallbacks.find(
-      (link) =>
-        link.type === "intent" &&
-        link.url.includes("package=com.achievo.vipshop")
-    );
-    expect(androidIntent?.url).toContain("intent://search?keyword=");
-    expect(androidIntent?.url).toContain("scheme=vipshop");
-    expect(extractQueryParam(androidIntent?.url || "", "keyword")).toBe(title);
+    expect(extractQueryParam(result.primary.url, "keyword")).toBe(title);
   });
 
-  it("uses Dianping Android app deeplink first and keeps keyword intent fallback", () => {
+  it("uses Dianping Android https intent first and keeps keyword on mobile search route", () => {
     const query = "海底捞火锅";
     const result = resolveCandidateLink({
       title: query,
@@ -358,16 +339,41 @@ describe("resolveCandidateLink android intent fallback", () => {
       os: "android",
     });
 
-    expect(result.primary.type).toBe("app");
-    expect(result.primary.url).toContain("dianping://search?keyword=");
-    expect(extractQueryParam(result.primary.url, "keyword")).toBe(query);
+    expect(result.primary.type).toBe("intent");
+    expect(result.primary.url).toContain(`intent://m.dianping.com/search/keyword/1/0_${encodeURIComponent(query)}`);
+    expect(result.primary.url).toContain("scheme=https");
+    expect(result.primary.url).toContain("package=com.dianping.v1");
 
-    const androidIntent = result.fallbacks.find(
-      (link) => link.type === "intent" && link.url.includes("package=com.dianping.v1")
+    const webLink = result.fallbacks.find(
+      (link) => link.type === "web" && link.url.includes("www.dianping.com/search/keyword/1/0_")
     );
-    expect(androidIntent?.url).toContain("intent://search?keyword=");
-    expect(androidIntent?.url).toContain("scheme=dianping");
-    expect(extractQueryParam(androidIntent?.url || "", "keyword")).toBe(query);
+    expect(webLink?.url).toContain(`0_${encodeURIComponent(query)}`);
+  });
+
+  it("uses JD Android https intent first and avoids legacy openapp virtual intent path", () => {
+    const query = "蓝牙耳机";
+    const result = resolveCandidateLink({
+      title: query,
+      query,
+      category: "shopping",
+      locale: "zh",
+      region: "CN",
+      provider: "京东",
+      isMobile: true,
+      os: "android",
+    });
+
+    expect(result.primary.type).toBe("intent");
+    expect(result.primary.url).toContain("intent://search.m.jd.com/search?keyword=");
+    expect(result.primary.url).toContain(`keyword=${encodeURIComponent(query)}`);
+    expect(result.primary.url).toContain("scheme=https");
+    expect(result.primary.url).toContain("package=com.jingdong.app.mall");
+    expect(result.primary.url).not.toContain("intent://virtual?params=");
+
+    const webLink = result.fallbacks.find(
+      (link) => link.type === "web" && link.url.includes("search.jd.com/Search")
+    );
+    expect(webLink?.url).toContain(`keyword=${encodeURIComponent(query)}`);
   });
 
   it("uses Amap Android app deeplink first and keeps keyword intent fallback", () => {

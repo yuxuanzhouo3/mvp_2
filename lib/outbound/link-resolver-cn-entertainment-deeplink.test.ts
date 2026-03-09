@@ -15,7 +15,7 @@ function decodeKugouSearchPayload(url: string): Record<string, any> {
 }
 
 describe("resolveCandidateLink CN entertainment mobile deep links", () => {
-  it("TapTap Android auto-try uses app scheme first and keeps search keyword", () => {
+  it("TapTap Android auto-try uses https intent first and keeps search keyword", () => {
     const query = "genshin impact";
 
     const result = resolveCandidateLink({
@@ -31,24 +31,72 @@ describe("resolveCandidateLink CN entertainment mobile deep links", () => {
 
     const autoTry = getAutoTryLinks(result, "android");
     expect(autoTry.length).toBeGreaterThan(0);
-    expect(result.primary.type).toBe("app");
-    expect(autoTry[0]?.type).toBe("app");
-    expect(autoTry[0]?.url).toContain("taptap://taptap.cn/search?keyword=");
-    expect(autoTry[0]?.url).toContain(`keyword=${encodeURIComponent(query)}`);
+    expect(result.primary.type).toBe("intent");
+    expect(autoTry[0]?.type).toBe("intent");
+    expect(autoTry[0]?.url).toContain(`intent://www.taptap.cn/search/${encodeURIComponent(query)}`);
+    expect(autoTry[0]?.url).toContain("scheme=https");
+    expect(autoTry[0]?.url).toContain("package=com.taptap");
 
-    const hasAndroidDeepLink = autoTry.some(
-      (link) => link.type === "app" || link.type === "intent"
-    );
-    expect(hasAndroidDeepLink).toBe(true);
-
-    const androidIntent = result.fallbacks.find(
-      (link) => link.type === "intent" && link.url.includes("package=com.taptap")
-    );
-    expect(androidIntent?.url).toContain(`intent://www.taptap.cn/search/${encodeURIComponent(query)}`);
-    expect(androidIntent?.url).toContain("scheme=https");
+    expect(autoTry.some((link) => link.type === "intent")).toBe(true);
 
     const webFallback = result.fallbacks.find((link) => link.type === "web");
     expect(webFallback?.url).toBe(`https://www.taptap.cn/search/${encodeURIComponent(query)}`);
+  });
+
+  it("Tencent Video Android auto-try uses https intent first and keeps search keyword", () => {
+    const query = "流浪地球2";
+
+    const result = resolveCandidateLink({
+      title: query,
+      query,
+      category: "entertainment",
+      locale: "zh",
+      region: "CN",
+      provider: "腾讯视频",
+      isMobile: true,
+      os: "android",
+    });
+
+    expect(result.primary.type).toBe("intent");
+    expect(result.primary.url).toContain("intent://v.qq.com/x/search/?q=");
+    expect(result.primary.url).toContain(`q=${encodeURIComponent(query)}`);
+    expect(result.primary.url).toContain("scheme=https");
+    expect(result.primary.url).toContain("package=com.tencent.qqlive");
+
+    const autoTry = getAutoTryLinks(result, "android");
+    expect(autoTry[0]?.type).toBe("intent");
+    expect(autoTry[0]?.url).toContain(`q=${encodeURIComponent(query)}`);
+
+    const webFallback = result.fallbacks.find((link) => link.type === "web");
+    expect(webFallback?.url).toBe(`https://v.qq.com/x/search/?q=${encodeURIComponent(query)}`);
+  });
+
+  it("QQ Music Android auto-try uses https intent first and keeps search keyword", () => {
+    const query = "周杰伦 晴天";
+
+    const result = resolveCandidateLink({
+      title: query,
+      query,
+      category: "entertainment",
+      locale: "zh",
+      region: "CN",
+      provider: "QQ音乐",
+      isMobile: true,
+      os: "android",
+    });
+
+    expect(result.primary.type).toBe("intent");
+    expect(result.primary.url).toContain("intent://y.qq.com/n/ryqq/search?w=");
+    expect(result.primary.url).toContain(`w=${encodeURIComponent(query)}`);
+    expect(result.primary.url).toContain("scheme=https");
+    expect(result.primary.url).toContain("package=com.tencent.qqmusic");
+
+    const autoTry = getAutoTryLinks(result, "android");
+    expect(autoTry[0]?.type).toBe("intent");
+    expect(autoTry[0]?.url).toContain(`w=${encodeURIComponent(query)}`);
+
+    const webFallback = result.fallbacks.find((link) => link.type === "web");
+    expect(webFallback?.url).toBe(`https://y.qq.com/n/ryqq/search?w=${encodeURIComponent(query)}`);
   });
 
   it("Kugou Android intent uses cmd=116 payload and carries keyword", () => {
