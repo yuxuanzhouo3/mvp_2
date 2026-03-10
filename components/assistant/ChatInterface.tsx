@@ -688,6 +688,9 @@ export default function ChatInterface({
         if (!data.success) {
           // 处理限制错误
           if (res.status === 403) {
+            if (data.usage) {
+              setUsage(data.usage);
+            }
             const errorMsg: ChatMessage = {
               id: generateId(),
               role: "assistant",
@@ -695,7 +698,11 @@ export default function ChatInterface({
               structuredResponse: {
                 type: "error",
                 message:
-                  data.error === "monthly_limit_reached" || data.error === "free_limit_reached"
+                  data.error === "token_limit_reached"
+                    ? isZh
+                      ? "免费 token 已用尽，请升级后继续使用 AI 超级助手。"
+                      : "Free token quota exhausted. Upgrade to continue using the AI assistant."
+                    : data.error === "monthly_limit_reached" || data.error === "free_limit_reached"
                     ? isZh
                       ? "本月免费使用次数已达上限，开通 VIP 可获得更多使用次数。"
                       : "Your free monthly limit has been reached. Subscribe to VIP for more usage."
@@ -781,10 +788,21 @@ export default function ChatInterface({
             </button>
           )}
           {usage && (
-            <div className="flex items-center gap-1.5 text-xs">
+            <div className="flex flex-col items-end gap-1 text-xs">
+              {usage.model ? (
+                <span className="text-gray-500">
+                  {isZh ? `模型：${usage.model}` : `Model: ${usage.model}`}
+                </span>
+              ) : null}
               {usage.remaining === -1 ? (
                 <span className="text-green-600 font-medium">
                   {isZh ? "无限次" : "Unlimited"}
+                </span>
+              ) : usage.quotaType === "token" ? (
+                <span className="text-gray-500">
+                  {isZh
+                    ? `已用 ${usage.used} / ${usage.limit} token · 剩余 ${usage.remaining}（总计）`
+                    : `Used ${usage.used} / ${usage.limit} tokens · ${usage.remaining} remaining (total)`}
                 </span>
               ) : (
                 <>

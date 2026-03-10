@@ -56,6 +56,7 @@ import {
   normalizeCnMobileFitnessRecommendation,
   stripCnFoodGenericTerms,
 } from "@/lib/recommendation/cn-mobile-normalizer";
+import type { AIExecutionMetadata, AIUsageMetrics } from "@/lib/ai/provider-metadata";
 
 const VALID_CATEGORIES: RecommendationCategory[] = [
   "entertainment",
@@ -64,6 +65,77 @@ const VALID_CATEGORIES: RecommendationCategory[] = [
   "travel",
   "fitness",
 ];
+
+type RecommendationUsageSnapshot = Awaited<ReturnType<typeof getUserUsageStats>>;
+
+type RetryableRecommendationError = Error & {
+  status?: number;
+  code?: string;
+};
+
+function createRetryableRecommendationError(
+  message: string,
+  code = "retryable_error",
+  status = 503
+): RetryableRecommendationError {
+  const error = new Error(message) as RetryableRecommendationError;
+  error.code = code;
+  error.status = status;
+  return error;
+}
+
+function isRetryableRecommendationError(error: unknown): error is RetryableRecommendationError {
+  return error instanceof Error && typeof (error as RetryableRecommendationError).status === "number";
+}
+
+function getRecommendationMissingUsageMessage(locale: "zh" | "en"): string {
+  return locale === "zh"
+    ? "本次推荐暂时无法计量 token，请稍后重试"
+    : "Token usage is temporarily unavailable for this recommendation. Please retry.";
+}
+
+function mergeUsageMetrics(
+  current: AIUsageMetrics | null,
+  next: AIUsageMetrics | null
+): AIUsageMetrics | null {
+  if (!next) {
+    return current;
+  }
+
+  if (!current) {
+    return { ...next };
+  }
+
+  return {
+    promptTokens: current.promptTokens + next.promptTokens,
+    completionTokens: current.completionTokens + next.completionTokens,
+    totalTokens: current.totalTokens + next.totalTokens,
+  };
+}
+
+function buildUsageInfo(
+  stats: RecommendationUsageSnapshot,
+  consumedUsage: number,
+  model: string | null
+): NonNullable<AIRecommendResponse["usage"]> {
+  const current =
+    stats.quotaType === "token"
+      ? stats.currentPeriodUsage + consumedUsage
+      : consumedUsage > 0
+        ? Math.min(stats.periodLimit, stats.currentPeriodUsage + consumedUsage)
+        : stats.currentPeriodUsage;
+
+  return {
+    current,
+    limit: stats.periodLimit,
+    remaining: stats.isUnlimited ? -1 : Math.max(0, stats.periodLimit - current),
+    periodType: stats.periodType,
+    periodEnd: stats.periodEnd?.toISOString() ?? null,
+    isUnlimited: stats.isUnlimited,
+    quotaType: stats.quotaType,
+    model,
+  };
+}
 
 function stableHashToUnitInterval(seed: string): number {
   let hash = 2166136261;
@@ -1524,8 +1596,28 @@ export async function GET(request: NextRequest, { params }: { params: { category
         if (!usageCheck.allowed) {
           const stats = usageCheck.stats;
           const isMonthly = stats.periodType === "monthly";
+          const isTokenQuota = stats.quotaType === "token";
           const recommendationLimitConfig = await getRecommendationUsageLimitConfig();
           const vipDailyRecommendationLimit = recommendationLimitConfig.vipDailyLimit;
+
+          if (isTokenQuota) {
+            return NextResponse.json(
+              {
+                success: false,
+                recommendations: [],
+                source: "fallback" as const,
+                error: locale === "zh" ? "免费 token 已用尽" : "Free token quota exhausted",
+                limitExceeded: true,
+                usage: buildUsageInfo(stats, 0, stats.model),
+                upgradeMessage:
+                  locale === "zh"
+                    ? "升级到 Pro 或 Enterprise 后可继续使用 AI 推荐"
+                    : "Upgrade to Pro or Enterprise to continue using AI recommendations",
+                upgradeUrl: "/pro",
+              },
+              { status: 429 }
+            );
+          }
 
           let errorMessage: string;
           let upgradeMessage: string;
@@ -1560,8 +1652,10 @@ export async function GET(request: NextRequest, { params }: { params: { category
                 limit: stats.periodLimit,
                 remaining: 0,
                 periodType: stats.periodType,
-                periodEnd: stats.periodEnd.toISOString(),
+                periodEnd: stats.periodEnd?.toISOString() ?? null,
                 isUnlimited: false,
+                quotaType: stats.quotaType,
+                model: stats.model,
               },
               upgradeMessage,
               upgradeUrl: "/pro",
@@ -1741,6 +1835,34 @@ export async function GET(request: NextRequest, { params }: { params: { category
     }
 
     try {
+      const requestLocale = locale;
+      const runtimeModelOverride = usageStats?.model ?? undefined;
+      const requiresTokenUsage = usageStats?.quotaType === "token";
+      const aiMetadataState: {
+        model: string | null;
+        usage: AIUsageMetrics | null;
+        missingUsage: boolean;
+      } = {
+        model: usageStats?.model ?? null,
+        usage: null,
+        missingUsage: false,
+      };
+
+      const onAiMetadata = (metadata: AIExecutionMetadata) => {
+        if (typeof metadata.model === "string" && metadata.model.trim().length > 0) {
+          aiMetadataState.model = metadata.model.trim();
+        }
+
+        if (metadata.usage) {
+          aiMetadataState.usage = mergeUsageMetrics(aiMetadataState.usage, metadata.usage);
+          return;
+        }
+
+        if (requiresTokenUsage) {
+          aiMetadataState.missingUsage = true;
+        }
+      };
+
       const computeValidatedRecommendations = async () => {
         const candidateCount = Math.min(12, Math.max(count * 2, 8));
         const aiRecommendations = await generateRecommendations(userHistory || [], category, locale, candidateCount, userPreference, {
@@ -1750,6 +1872,8 @@ export async function GET(request: NextRequest, { params }: { params: { category
           signals: recommendationSignals,
           isMobile,
           isAndroid,
+          modelOverride: runtimeModelOverride,
+          onAiMetadata,
         });
 
         const shouldEnsureEntertainmentTypes = shouldEnsureCnEntertainmentTypes({
@@ -1818,6 +1942,8 @@ export async function GET(request: NextRequest, { params }: { params: { category
             signals: recommendationSignals,
             isMobile,
             isAndroid,
+            modelOverride: runtimeModelOverride,
+            onAiMetadata,
           });
 
           processedRecommendations = dedupeRecommendations([...(processedRecommendations as any[]), ...(topUps as any[])], {
@@ -2426,6 +2552,49 @@ export async function GET(request: NextRequest, { params }: { params: { category
         return validatedRecommendations;
       };
 
+      const ensureTokenUsageMetadata = () => {
+        if (!requiresTokenUsage) {
+          return;
+        }
+
+        if (aiMetadataState.missingUsage || !aiMetadataState.usage) {
+          throw createRetryableRecommendationError(
+            getRecommendationMissingUsageMessage(requestLocale),
+            "token_usage_required"
+          );
+        }
+      };
+
+      const buildConsumedUsage = (selectedCount: number) => {
+        if (!usageStats) {
+          return {
+            shouldRecordUsage: false,
+            consumedUsage: 0,
+            usageInfo: null as AIRecommendResponse["usage"] | null,
+          };
+        }
+
+        const shouldRecordUsage =
+          usageStats.quotaType === "token"
+            ? Boolean(aiMetadataState.usage?.totalTokens)
+            : selectedCount > 0;
+        const consumedUsage = usageStats.quotaType === "token"
+          ? aiMetadataState.usage?.totalTokens ?? 0
+          : shouldRecordUsage
+            ? 1
+            : 0;
+
+        return {
+          shouldRecordUsage,
+          consumedUsage,
+          usageInfo: buildUsageInfo(
+            usageStats,
+            consumedUsage,
+            aiMetadataState.model ?? usageStats.model
+          ),
+        };
+      };
+
       if (enableStreaming) {
         const stream = new ReadableStream({
           async start(controller) {
@@ -2461,7 +2630,11 @@ export async function GET(request: NextRequest, { params }: { params: { category
               });
 
               const validatedRecommendations = await computeValidatedRecommendations();
+              ensureTokenUsageMetadata();
               const selectedRecommendations = validatedRecommendations.slice(0, count);
+              const { shouldRecordUsage, usageInfo } = buildConsumedUsage(
+                selectedRecommendations.length
+              );
 
               for (let i = 0; i < selectedRecommendations.length; i += 1) {
                 send("recommend", {
@@ -2474,19 +2647,29 @@ export async function GET(request: NextRequest, { params }: { params: { category
                 });
               }
 
-              let usageInfo = null;
-              if (usageStats) {
-                usageInfo = {
-                  current: usageStats.currentPeriodUsage + 1,
-                  limit: usageStats.periodLimit,
-                  remaining: usageStats.isUnlimited ? -1 : Math.max(0, usageStats.remainingUsage - 1),
-                  periodType: usageStats.periodType,
-                  periodEnd: usageStats.periodEnd.toISOString(),
-                  isUnlimited: usageStats.isUnlimited,
-                };
-              }
-
               const streamCompleteRecs = selectedRecommendations.length > 0 ? selectedRecommendations : warmupRecs;
+
+              if (isValidUserId(userId) && shouldRecordUsage) {
+                const usageRecord = await recordRecommendationUsage(userId, {
+                  category,
+                  count: selectedRecommendations.length,
+                  promptTokens: aiMetadataState.usage?.promptTokens,
+                  completionTokens: aiMetadataState.usage?.completionTokens,
+                  totalTokens: aiMetadataState.usage?.totalTokens,
+                  model: aiMetadataState.model ?? usageStats?.model,
+                });
+
+                if (!usageRecord.success && usageRecord.error === "token_usage_required") {
+                  throw createRetryableRecommendationError(
+                    getRecommendationMissingUsageMessage(requestLocale),
+                    "token_usage_required"
+                  );
+                }
+
+                if (!usageRecord.success) {
+                  console.error("[Stream Usage] Failed to record usage:", usageRecord.error);
+                }
+              }
 
               send("recommend", {
                 type: "complete",
@@ -2502,7 +2685,6 @@ export async function GET(request: NextRequest, { params }: { params: { category
                 Promise.all([
                   saveRecommendationsToHistory(userId, selectedRecommendations),
                   updateUserPreferences(userId, category, { incrementView: true }),
-                  recordRecommendationUsage(userId, { category, count: selectedRecommendations.length }),
                 ]).catch((err) => {
                   console.error(`[Stream Save] Failed to save:`, err);
                 });
@@ -2514,6 +2696,14 @@ export async function GET(request: NextRequest, { params }: { params: { category
                 });
               }
             } catch (err) {
+              if (isRetryableRecommendationError(err)) {
+                send("error", {
+                  type: "error",
+                  message: err.message,
+                });
+                return;
+              }
+
               const fallbackRecs = await generateFallbackRecommendations({
                 category,
                 locale,
@@ -2557,12 +2747,37 @@ export async function GET(request: NextRequest, { params }: { params: { category
       }
 
       const validatedRecommendations = await computeValidatedRecommendations();
+      ensureTokenUsageMetadata();
+      const { shouldRecordUsage, usageInfo } = buildConsumedUsage(
+        validatedRecommendations.length
+      );
+
+      if (isValidUserId(userId) && shouldRecordUsage) {
+        const usageRecord = await recordRecommendationUsage(userId, {
+          category,
+          count: validatedRecommendations.length,
+          promptTokens: aiMetadataState.usage?.promptTokens,
+          completionTokens: aiMetadataState.usage?.completionTokens,
+          totalTokens: aiMetadataState.usage?.totalTokens,
+          model: aiMetadataState.model ?? usageStats?.model,
+        });
+
+        if (!usageRecord.success && usageRecord.error === "token_usage_required") {
+          throw createRetryableRecommendationError(
+            getRecommendationMissingUsageMessage(requestLocale),
+            "token_usage_required"
+          );
+        }
+
+        if (!usageRecord.success) {
+          console.error("[Usage] Failed to record recommendation usage:", usageRecord.error);
+        }
+      }
 
       if (isValidUserId(userId) && validatedRecommendations.length > 0) {
         Promise.all([
           saveRecommendationsToHistory(userId, validatedRecommendations),
           updateUserPreferences(userId, category, { incrementView: true }),
-          recordRecommendationUsage(userId, { category, count: validatedRecommendations.length }),
         ]).catch((err) => {
           console.error(`[Save] Failed to save recommendations:`, err);
         });
@@ -2572,18 +2787,6 @@ export async function GET(request: NextRequest, { params }: { params: { category
         cacheRecommendations(category, preferenceHash, validatedRecommendations, 30).catch((err) => {
           console.error("[Cache] Failed to cache recommendations:", err);
         });
-      }
-
-      let usageInfo = null;
-      if (usageStats) {
-        usageInfo = {
-          current: usageStats.currentPeriodUsage + 1,
-          limit: usageStats.periodLimit,
-          remaining: usageStats.isUnlimited ? -1 : Math.max(0, usageStats.remainingUsage - 1),
-          periodType: usageStats.periodType,
-          periodEnd: usageStats.periodEnd.toISOString(),
-          isUnlimited: usageStats.isUnlimited,
-        };
       }
 
       const finalOutput = isIntlMobileEntertainmentContext({ category, locale, isMobile })
@@ -2598,6 +2801,18 @@ export async function GET(request: NextRequest, { params }: { params: { category
       } satisfies AIRecommendResponse);
     } catch (aiError) {
       console.error("AI recommendation failed:", aiError);
+
+      if (isRetryableRecommendationError(aiError)) {
+        return NextResponse.json(
+          {
+            success: false,
+            recommendations: [],
+            source: "fallback",
+            error: aiError.message,
+          } satisfies AIRecommendResponse,
+          { status: aiError.status || 503 }
+        );
+      }
 
       const fallbackRecs = await generateFallbackRecommendations({
         category,

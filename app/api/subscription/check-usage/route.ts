@@ -30,6 +30,9 @@ export async function GET(request: NextRequest) {
         remaining: result.stats.remainingUsage,
         isUnlimited: result.stats.isUnlimited,
         periodType: result.stats.periodType,
+        periodEnd: result.stats.periodEnd?.toISOString() ?? null,
+        quotaType: result.stats.quotaType,
+        model: result.stats.model,
       },
     });
   } catch (error) {

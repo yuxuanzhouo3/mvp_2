@@ -5,14 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  CN_RUNTIME_MODEL_OPTIONS,
   DEFAULT_CN_ASSISTANT_MODEL,
   DEFAULT_CN_RECOMMENDATION_MODEL,
   type CnRuntimeModel,
@@ -43,6 +35,14 @@ type AdminAiConfigResponse = {
     updatedAt: string | null;
     source: "default" | "storage";
   };
+  freeTierConfig?: {
+    assistantModel: CnRuntimeModel;
+    assistantTokenLimit: number;
+    recommendationModel: CnRuntimeModel;
+    recommendationTokenLimit: number;
+    updatedAt: string | null;
+    source: "default" | "storage";
+  };
 };
 
 function toLocalTime(value: string | null): string {
@@ -54,6 +54,8 @@ function toLocalTime(value: string | null): string {
 
 const DEFAULT_REGION: "CN" | "INTL" =
   process.env.NEXT_PUBLIC_DEPLOYMENT_REGION === "CN" ? "CN" : "INTL";
+
+const DEFAULT_FREE_TIER_TOKEN_LIMIT = 100000;
 
 export default function AdminAiConfigPage() {
   const [loading, setLoading] = React.useState(true);
@@ -79,6 +81,20 @@ export default function AdminAiConfigPage() {
   const [recommendationCnModel, setRecommendationCnModel] = React.useState<CnRuntimeModel>(
     DEFAULT_CN_RECOMMENDATION_MODEL
   );
+  const [freeTierUpdatedAt, setFreeTierUpdatedAt] = React.useState<string | null>(null);
+  const [freeTierSource, setFreeTierSource] = React.useState<"default" | "storage">("default");
+  const [freeAssistantCnModel, setFreeAssistantCnModel] = React.useState<CnRuntimeModel>(
+    DEFAULT_CN_ASSISTANT_MODEL
+  );
+  const [freeRecommendationCnModel, setFreeRecommendationCnModel] = React.useState<CnRuntimeModel>(
+    DEFAULT_CN_RECOMMENDATION_MODEL
+  );
+  const [freeAssistantTokenLimit, setFreeAssistantTokenLimit] = React.useState(
+    String(DEFAULT_FREE_TIER_TOKEN_LIMIT)
+  );
+  const [freeRecommendationTokenLimit, setFreeRecommendationTokenLimit] = React.useState(
+    String(DEFAULT_FREE_TIER_TOKEN_LIMIT)
+  );
 
   const isZh = region === "CN";
   const t = {
@@ -89,50 +105,60 @@ export default function AdminAiConfigPage() {
     saveError: isZh ? "保存 AI 配置失败" : "Failed to save AI config",
     saveOk: isZh ? "AI 配置已保存并立即生效" : "AI config saved and applied immediately",
 
-    usageTitle: isZh ? "助手额度配置" : "Assistant Usage Limits",
-    shakeTitle: isZh ? "摇一摇次数配置" : "Shake Usage Limits",
-    regionLabel: isZh ? "部署环境" : "Deployment Region",
-    sourceLabel: isZh ? "配置来源" : "Source",
+    usageTitle: isZh ? "助手使用额度" : "Assistant Usage Limits",
+    shakeTitle: isZh ? "AI 推荐使用额度" : "Recommendation Usage Limits",
+    regionLabel: isZh ? "部署区域" : "Deployment Region",
+    sourceLabel: isZh ? "数据来源" : "Source",
     sourceStorage: isZh ? "数据库" : "Database",
     sourceDefault: isZh ? "默认值" : "Default",
-    updatedAtLabel: isZh ? "最近更新时间" : "Last Updated",
-    freeDailyLabel: isZh ? "免费用户每日可用次数" : "Free Users Daily Usage Count",
-    freeMonthlyLabel: isZh ? "免费用户每月可用次数" : "Free Users Monthly Usage Count",
-    vipLabel: isZh ? "VIP 用户每日可用次数" : "VIP Users Daily Usage Count",
+    updatedAtLabel: isZh ? "最后更新时间" : "Last Updated",
+    freeDailyLabel: isZh ? "免费用户每日使用次数" : "Free Users Daily Usage Count",
+    freeMonthlyLabel: isZh ? "免费用户每月使用次数" : "Free Users Monthly Usage Count",
+    vipLabel: isZh ? "VIP 用户每日使用次数" : "VIP Users Daily Usage Count",
     enterpriseHint: isZh
-      ? "Enterprise 用户仍保持无限次数，不受本页额度配置影响。"
+      ? "Enterprise 用户保持无限制，不受本页配置影响。"
       : "Enterprise users remain unlimited and are not affected by this page.",
     shakeHint: isZh
-      ? "摇一摇本质上是 AI 推荐请求。保存后，摇一摇剩余次数与超限提示会立即按新配置生效。"
-      : "Shake uses the recommendation quota and applies immediately after save.",
-    shakeFreeMonthlyLabel: isZh ? "免费用户每月可摇次数" : "Free Users Monthly Shake Limit",
-    shakeVipDailyLabel: isZh ? "VIP 用户每日可摇次数" : "VIP Users Daily Shake Limit",
+      ? "AI 推荐仍按次数限额控制，保存后立即生效。"
+      : "Recommendation keeps the existing count-based quota and applies immediately after save.",
+    shakeFreeMonthlyLabel: isZh ? "免费用户每月推荐次数" : "Free Users Monthly Recommendation Limit",
+    shakeVipDailyLabel: isZh ? "VIP 用户每日推荐次数" : "VIP Users Daily Recommendation Limit",
     shakeEnterpriseHint: isZh
-      ? "Enterprise 用户摇一摇仍保持无限次数。"
-      : "Enterprise users remain unlimited for Shake.",
+      ? "Enterprise 用户的 AI 推荐保持无限制。"
+      : "Enterprise users remain unlimited for recommendation.",
 
-    modelTitle: isZh ? "CN 底层模型切换" : "CN Runtime Model Switching",
+    modelTitle: isZh ? "CN 运行时模型切换" : "CN Runtime Model Switching",
     modelHint: isZh
-      ? "保存后立即生效，无需重启服务。AI 推荐与 AI 超级助手将按此配置读取底层模型。"
-      : "Changes apply immediately after saving with no restart required.",
-    recommendationModelLabel: isZh ? "AI 推荐底层模型" : "Recommendation Model",
-    assistantModelLabel: isZh ? "AI 超级助手底层模型" : "Assistant Model",
-    cnOnlyHint: isZh ? "当前仅 CN 环境支持在线切换底层模型。" : "Online model switching is only available in CN.",
+      ? "仅作用于 CN 区域的非免费用户，保存后立即生效，无需重启。"
+      : "Applies to non-free users in CN and takes effect immediately with no restart required.",
+    recommendationModelLabel: isZh ? "AI 推荐模型" : "Recommendation Model",
+    assistantModelLabel: isZh ? "AI 助手模型" : "Assistant Model",
+    cnOnlyHint: isZh ? "在线模型切换仅在 CN 区域可用。" : "Online model switching is only available in CN.",
 
     freeDailyError: isZh ? "免费用户每日次数必须是大于等于 0 的整数" : "Free daily limit must be an integer >= 0",
-    freeMonthlyError: isZh
-      ? "免费用户每月次数必须是大于等于 0 的整数"
-      : "Free monthly limit must be an integer >= 0",
+    freeMonthlyError: isZh ? "免费用户每月次数必须是大于等于 0 的整数" : "Free monthly limit must be an integer >= 0",
     freeMonthlyLessThanDaily: isZh
-      ? "免费用户每月次数不能小于每日次数"
+      ? "免费用户每月次数必须大于或等于每日次数"
       : "Free monthly limit must be greater than or equal to free daily limit",
     vipError: isZh ? "VIP 用户每日次数必须是大于等于 0 的整数" : "VIP daily limit must be an integer >= 0",
     shakeFreeMonthlyError: isZh
-      ? "免费用户每月可摇次数必须是大于等于 0 的整数"
-      : "Free monthly shake limit must be an integer >= 0",
+      ? "免费用户每月推荐次数必须是大于等于 0 的整数"
+      : "Free monthly recommendation limit must be an integer >= 0",
     shakeVipDailyError: isZh
-      ? "VIP 用户每日可摇次数必须是大于等于 0 的整数"
-      : "VIP daily shake limit must be an integer >= 0",
+      ? "VIP 用户每日推荐次数必须是大于等于 0 的整数"
+      : "VIP daily recommendation limit must be an integer >= 0",
+    freeTierTitle: isZh ? "免费用户模型与 Token 配额" : "Free User Models & Token Quotas",
+    freeTierHint: isZh
+      ? "仅限 CN 区域，保存后立即生效。AI 推荐与 AI 助手分别使用独立的免费模型和总 Token 配额。"
+      : "CN only. Changes apply immediately. Recommendation and Assistant use separate free-tier models and total token quotas.",
+    freeAssistantModelLabel: isZh ? "免费助手模型" : "Free Assistant Model",
+    freeRecommendationModelLabel: isZh ? "免费推荐模型" : "Free Recommendation Model",
+    freeAssistantTokenLabel: isZh ? "免费助手 Token 配额" : "Free Assistant Token Limit",
+    freeRecommendationTokenLabel: isZh ? "免费推荐 Token 配额" : "Free Recommendation Token Limit",
+    freeAssistantModelError: isZh ? "免费助手模型不能为空" : "Free assistant model is required",
+    freeRecommendationModelError: isZh ? "免费推荐模型不能为空" : "Free recommendation model is required",
+    freeAssistantTokenError: isZh ? "免费助手 Token 配额必须是大于等于 0 的整数" : "Free assistant token limit must be an integer >= 0",
+    freeRecommendationTokenError: isZh ? "免费推荐 Token 配额必须是大于等于 0 的整数" : "Free recommendation token limit must be an integer >= 0",
   };
 
   const loadConfig = React.useCallback(async () => {
@@ -167,6 +193,15 @@ export default function AdminAiConfigPage() {
         setModelUpdatedAt(data.cnRuntimeConfig.updatedAt || null);
         setModelSource(data.cnRuntimeConfig.source);
       }
+
+      if (data.region === "CN" && data.freeTierConfig) {
+        setFreeAssistantCnModel(data.freeTierConfig.assistantModel);
+        setFreeRecommendationCnModel(data.freeTierConfig.recommendationModel);
+        setFreeAssistantTokenLimit(String(data.freeTierConfig.assistantTokenLimit));
+        setFreeRecommendationTokenLimit(String(data.freeTierConfig.recommendationTokenLimit));
+        setFreeTierUpdatedAt(data.freeTierConfig.updatedAt || null);
+        setFreeTierSource(data.freeTierConfig.source);
+      }
     } catch (err: any) {
       setError(err?.message ? String(err.message) : t.loadError);
     } finally {
@@ -188,6 +223,8 @@ export default function AdminAiConfigPage() {
     const vip = Number(vipDailyLimit);
     const shakeFreeMonthly = Number(shakeFreeMonthlyLimit);
     const shakeVipDaily = Number(shakeVipDailyLimit);
+    const freeAssistantTokens = Number(freeAssistantTokenLimit);
+    const freeRecommendationTokens = Number(freeRecommendationTokenLimit);
 
     if (!Number.isInteger(freeDaily) || freeDaily < 0) {
       setError(t.freeDailyError);
@@ -214,6 +251,41 @@ export default function AdminAiConfigPage() {
       return;
     }
 
+    const trimmedAssistantCnModel = assistantCnModel.trim();
+    const trimmedRecommendationCnModel = recommendationCnModel.trim();
+    const trimmedFreeAssistantCnModel = freeAssistantCnModel.trim();
+    const trimmedFreeRecommendationCnModel = freeRecommendationCnModel.trim();
+
+    if (region === "CN" && !trimmedRecommendationCnModel) {
+      setError(isZh ? "AI 推荐模型不能为空" : "Recommendation model is required");
+      return;
+    }
+
+    if (region === "CN" && !trimmedAssistantCnModel) {
+      setError(isZh ? "AI 助手模型不能为空" : "Assistant model is required");
+      return;
+    }
+
+    if (region === "CN" && !trimmedFreeAssistantCnModel) {
+      setError(t.freeAssistantModelError);
+      return;
+    }
+
+    if (region === "CN" && !trimmedFreeRecommendationCnModel) {
+      setError(t.freeRecommendationModelError);
+      return;
+    }
+
+    if (region === "CN" && (!Number.isInteger(freeAssistantTokens) || freeAssistantTokens < 0)) {
+      setError(t.freeAssistantTokenError);
+      return;
+    }
+
+    if (region === "CN" && (!Number.isInteger(freeRecommendationTokens) || freeRecommendationTokens < 0)) {
+      setError(t.freeRecommendationTokenError);
+      return;
+    }
+
     setSaving(true);
     try {
       const response = await fetch("/api/admin/ai-config", {
@@ -227,8 +299,12 @@ export default function AdminAiConfigPage() {
           shakeVipDailyLimit: shakeVipDaily,
           ...(region === "CN"
             ? {
-                assistantCnModel,
-                recommendationCnModel,
+                assistantCnModel: trimmedAssistantCnModel,
+                recommendationCnModel: trimmedRecommendationCnModel,
+                freeAssistantCnModel: trimmedFreeAssistantCnModel,
+                freeRecommendationCnModel: trimmedFreeRecommendationCnModel,
+                freeAssistantTokenLimit: freeAssistantTokens,
+                freeRecommendationTokenLimit: freeRecommendationTokens,
               }
             : {}),
         }),
@@ -258,6 +334,15 @@ export default function AdminAiConfigPage() {
         setRecommendationCnModel(data.cnRuntimeConfig.recommendationModel);
         setModelUpdatedAt(data.cnRuntimeConfig.updatedAt || new Date().toISOString());
         setModelSource(data.cnRuntimeConfig.source);
+      }
+
+      if (data.region === "CN" && data.freeTierConfig) {
+        setFreeAssistantCnModel(data.freeTierConfig.assistantModel);
+        setFreeRecommendationCnModel(data.freeTierConfig.recommendationModel);
+        setFreeAssistantTokenLimit(String(data.freeTierConfig.assistantTokenLimit));
+        setFreeRecommendationTokenLimit(String(data.freeTierConfig.recommendationTokenLimit));
+        setFreeTierUpdatedAt(data.freeTierConfig.updatedAt || new Date().toISOString());
+        setFreeTierSource(data.freeTierConfig.source);
       }
 
       setMessage(t.saveOk);
@@ -414,43 +499,120 @@ export default function AdminAiConfigPage() {
               </div>
 
               <div className="space-y-1">
-                <label className="text-sm font-medium">{t.recommendationModelLabel}</label>
-                <Select
+                <label className="text-sm font-medium" htmlFor="recommendationCnModel">
+                  {t.recommendationModelLabel}
+                </label>
+                <Input
+                  id="recommendationCnModel"
+                  type="text"
                   value={recommendationCnModel}
-                  onValueChange={(value) => setRecommendationCnModel(value as CnRuntimeModel)}
+                  onChange={(e) => setRecommendationCnModel(e.target.value)}
                   disabled={loading || saving}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder={t.recommendationModelLabel} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CN_RUNTIME_MODEL_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  placeholder={DEFAULT_CN_RECOMMENDATION_MODEL}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
               </div>
 
               <div className="space-y-1">
-                <label className="text-sm font-medium">{t.assistantModelLabel}</label>
-                <Select
+                <label className="text-sm font-medium" htmlFor="assistantCnModel">
+                  {t.assistantModelLabel}
+                </label>
+                <Input
+                  id="assistantCnModel"
+                  type="text"
                   value={assistantCnModel}
-                  onValueChange={(value) => setAssistantCnModel(value as CnRuntimeModel)}
+                  onChange={(e) => setAssistantCnModel(e.target.value)}
                   disabled={loading || saving}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder={t.assistantModelLabel} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CN_RUNTIME_MODEL_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  placeholder={DEFAULT_CN_ASSISTANT_MODEL}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </div>
+            </>
+          ) : (
+            <div className="text-sm text-muted-foreground">{t.cnOnlyHint}</div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t.freeTierTitle}</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {region === "CN" ? (
+            <>
+              <div className="space-y-1 text-sm text-muted-foreground">
+                <div>
+                  {t.sourceLabel}: {freeTierSource === "storage" ? t.sourceStorage : t.sourceDefault}
+                </div>
+                <div>
+                  {t.updatedAtLabel}: {toLocalTime(freeTierUpdatedAt)}
+                </div>
+                <div>{t.freeTierHint}</div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-sm font-medium" htmlFor="freeRecommendationCnModel">
+                  {t.freeRecommendationModelLabel}
+                </label>
+                <Input
+                  id="freeRecommendationCnModel"
+                  type="text"
+                  value={freeRecommendationCnModel}
+                  onChange={(e) => setFreeRecommendationCnModel(e.target.value)}
+                  disabled={loading || saving}
+                  placeholder={DEFAULT_CN_RECOMMENDATION_MODEL}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-sm font-medium" htmlFor="freeRecommendationTokenLimit">
+                  {t.freeRecommendationTokenLabel}
+                </label>
+                <Input
+                  id="freeRecommendationTokenLimit"
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={freeRecommendationTokenLimit}
+                  onChange={(e) => setFreeRecommendationTokenLimit(e.target.value)}
+                  disabled={loading || saving}
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-sm font-medium" htmlFor="freeAssistantCnModel">
+                  {t.freeAssistantModelLabel}
+                </label>
+                <Input
+                  id="freeAssistantCnModel"
+                  type="text"
+                  value={freeAssistantCnModel}
+                  onChange={(e) => setFreeAssistantCnModel(e.target.value)}
+                  disabled={loading || saving}
+                  placeholder={DEFAULT_CN_ASSISTANT_MODEL}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-sm font-medium" htmlFor="freeAssistantTokenLimit">
+                  {t.freeAssistantTokenLabel}
+                </label>
+                <Input
+                  id="freeAssistantTokenLimit"
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={freeAssistantTokenLimit}
+                  onChange={(e) => setFreeAssistantTokenLimit(e.target.value)}
+                  disabled={loading || saving}
+                />
               </div>
             </>
           ) : (
@@ -469,3 +631,4 @@ export default function AdminAiConfigPage() {
     </form>
   );
 }
+

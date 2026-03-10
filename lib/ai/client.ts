@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import { isChinaDeployment } from "@/lib/config/deployment.config";
 import { getCnAiRuntimeModelConfig } from "@/lib/ai/runtime-model-config";
 import { CN_RUNTIME_MODEL_VALUES, type CnRuntimeModel } from "@/lib/ai/runtime-models";
+import type { AIUsageMetrics } from "@/lib/ai/provider-metadata";
 
 interface AIRequest {
   messages: Array<{
@@ -10,11 +11,13 @@ interface AIRequest {
   }>;
   temperature?: number;
   maxTokens?: number;
+  modelOverride?: string;
 }
 
 interface AIResponse {
   content: string;
   model: string;
+  usage?: AIUsageMetrics | null;
 }
 
 const CN_QWEN_MODELS = CN_RUNTIME_MODEL_VALUES;
@@ -157,15 +160,14 @@ function parseQwenOrder(raw: string | undefined, fallback: readonly CNQwenModel[
     return [...fallback];
   }
 
-  const allowed = new Set<string>(CN_QWEN_MODELS);
   const parsed: CNQwenModel[] = [];
   for (const token of raw.split(/[,\s]+/)) {
     const normalized = token.trim().toLowerCase();
-    if (!normalized || !allowed.has(normalized)) {
+    if (!normalized) {
       continue;
     }
 
-    const model = normalized as CNQwenModel;
+    const model = normalized;
     if (!parsed.includes(model)) {
       parsed.push(model);
     }
@@ -373,7 +375,7 @@ async function callQwenAPI(
   model: CNQwenModel,
   options: ProviderRuntimeOptions,
   retryCount = 0
-): Promise<string> {
+): Promise<AIResponse> {
   const apiKey = process.env.QWEN_API_KEY;
 
   if (!hasValidKey(apiKey)) {
@@ -431,14 +433,18 @@ async function callQwenAPI(
     throw new Error(`Qwen API (${model}) returned no valid content`);
   }
 
-  return content;
+  return {
+    content,
+    model,
+    usage: normalizeUsageMetrics(data?.usage),
+  };
 }
 
 async function callMistralAPI(
   request: AIRequest,
   options: ProviderRuntimeOptions,
   retryCount = 0
-): Promise<string> {
+): Promise<AIResponse> {
   const apiKey = process.env.MISTRAL_API_KEY;
 
   if (!hasValidKey(apiKey)) {
@@ -485,14 +491,18 @@ async function callMistralAPI(
     throw new Error("Mistral API returned no valid content");
   }
 
-  return content;
+  return {
+    content,
+    model: INTL_MODELS.mistral,
+    usage: normalizeUsageMetrics(data?.usage),
+  };
 }
 
 async function callOpenAIAPI(
   request: AIRequest,
   options: ProviderRuntimeOptions,
   retryCount = 0
-): Promise<string> {
+): Promise<AIResponse> {
   const apiKey = process.env.OPENAI_API_KEY;
 
   if (!hasValidKey(apiKey)) {
@@ -518,7 +528,11 @@ async function callOpenAIAPI(
       throw new Error("OpenAI API returned no valid content");
     }
 
-    return content;
+    return {
+      content,
+      model: INTL_MODELS.openai,
+      usage: normalizeUsageMetrics(response.usage),
+    };
   } catch (error) {
     const statusCode =
       typeof (error as { status?: unknown })?.status === "number"
@@ -544,6 +558,22 @@ function getConfiguredIntlProviders(order: IntlProvider[]): IntlProvider[] {
   });
 }
 
+function normalizeUsageMetrics(raw: any): AIUsageMetrics | null {
+  const promptTokens = Number(raw?.prompt_tokens ?? raw?.promptTokens ?? 0);
+  const completionTokens = Number(raw?.completion_tokens ?? raw?.completionTokens ?? 0);
+  const totalTokens = Number(raw?.total_tokens ?? raw?.totalTokens ?? 0);
+
+  if (!Number.isFinite(totalTokens) || totalTokens <= 0) {
+    return null;
+  }
+
+  return {
+    promptTokens: Number.isFinite(promptTokens) && promptTokens >= 0 ? promptTokens : 0,
+    completionTokens: Number.isFinite(completionTokens) && completionTokens >= 0 ? completionTokens : 0,
+    totalTokens,
+  };
+}
+
 function getIntlProviderModel(provider: IntlProvider): string {
   return provider === "openai" ? INTL_MODELS.openai : INTL_MODELS.mistral;
 }
@@ -555,18 +585,16 @@ async function callIntlProvider(
   config: AIExecutionConfig
 ): Promise<AIResponse> {
   if (provider === "openai") {
-    const content = await callOpenAIAPI(request, {
+    return callOpenAIAPI(request, {
       timeoutMs: resolveProviderTimeout(startedAt, config),
       maxRetries: config.maxRetries,
     });
-    return { content, model: INTL_MODELS.openai };
   }
 
-  const content = await callMistralAPI(request, {
+  return callMistralAPI(request, {
     timeoutMs: resolveProviderTimeout(startedAt, config),
     maxRetries: config.maxRetries,
   });
-  return { content, model: INTL_MODELS.mistral };
 }
 
 async function callAIInternal(request: AIRequest, config: AIExecutionConfig): Promise<AIResponse> {
@@ -574,24 +602,29 @@ async function callAIInternal(request: AIRequest, config: AIExecutionConfig): Pr
   const startedAt = Date.now();
 
   if (isChinaDeployment()) {
+    const requestedModel = request.modelOverride?.trim();
+    const modelOrder = requestedModel
+      ? dedupeCnQwenOrder([requestedModel as CNQwenModel, ...config.cnQwenOrder])
+      : config.cnQwenOrder;
+
     if (isQwenConfigured()) {
-      for (const model of config.cnQwenOrder) {
+      for (const model of modelOrder) {
         logAIDebug("[AIClient] Trying CN provider", {
           provider: "qwen",
           model,
           timeoutMs: estimateRemainingTimeout(startedAt, config),
         });
         try {
-          const content = await callQwenAPI(request, model, {
+          const response = await callQwenAPI(request, model, {
             timeoutMs: resolveProviderTimeout(startedAt, config),
             maxRetries: config.maxRetries,
           });
           logAIDebug("[AIClient] CN provider succeeded", {
             provider: "qwen",
-            model,
+            model: response.model,
             elapsedMs: Date.now() - startedAt,
           });
-          return { content, model };
+          return response;
         } catch (error) {
           errors.push(`${model}: ${getErrorMessage(error)}`);
           logAIDebug("[AIClient] CN provider failed", {

@@ -33,9 +33,11 @@ interface UsageInfo {
   current: number;
   limit: number;
   remaining: number;
-  periodType: "daily" | "monthly";
-  periodEnd: string;
+  periodType: "daily" | "monthly" | "total";
+  periodEnd: string | null;
   isUnlimited: boolean;
+  quotaType: "count" | "token";
+  model: string | null;
 }
 
 // 分类配置
@@ -288,6 +290,26 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
   const [locationRequestPending, setLocationRequestPending] = useState(false)
   const [locationConsent, setLocationConsent] = useState<"unknown" | "granted" | "denied">("unknown")
   const [locationCoords, setLocationCoords] = useState<{ lat: number; lng: number } | null>(null)
+
+  const getUsagePeriodLabel = useCallback((usage: UsageInfo) => {
+    if (usage.periodType === "total") {
+      return locale === "zh" ? "（总计）" : " (total)"
+    }
+
+    if (usage.periodType === "monthly") {
+      return locale === "zh" ? "（本月）" : " this month"
+    }
+
+    return locale === "zh" ? "（今日）" : " today"
+  }, [locale])
+
+  const isLowUsageRemaining = useCallback((usage: UsageInfo) => {
+    if (usage.quotaType === "token") {
+      return usage.remaining > 0 && usage.remaining <= 20000
+    }
+
+    return usage.remaining > 0 && usage.remaining <= 5
+  }, [])
 
 
   // 用户画像状态
@@ -1243,7 +1265,7 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
               <div className="text-center">
                 {limitExceeded && (
                   <div className="text-3xl mb-2">
-                    {usageInfo?.periodType === "monthly" ? "📅" : "⏰"}
+                    {usageInfo?.quotaType === "token" ? "🪙" : usageInfo?.periodType === "monthly" ? "📅" : "⏰"}
                   </div>
                 )}
                 <p className={`${limitExceeded ? 'text-amber-700' : 'text-red-600'} text-sm font-medium`}>
@@ -1254,17 +1276,18 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
                 )}
                 {limitExceeded && usageInfo && (
                   <div className="mt-3 text-xs text-gray-500">
-                    {locale === "zh" ? (
-                      <>
-                        已使用 {usageInfo.current}/{usageInfo.limit} 次
-                        {usageInfo.periodType === "monthly" ? " (本月)" : " (今日)"}
-                      </>
-                    ) : (
-                      <>
-                        Used {usageInfo.current}/{usageInfo.limit}
-                        {usageInfo.periodType === "monthly" ? " this month" : " today"}
-                      </>
-                    )}
+                    {usageInfo.model ? (
+                      <div>{locale === "zh" ? `当前模型：${usageInfo.model}` : `Model: ${usageInfo.model}`}</div>
+                    ) : null}
+                    <div>
+                      {usageInfo.quotaType === "token"
+                        ? (locale === "zh"
+                          ? `已使用 ${usageInfo.current}/${usageInfo.limit} token${getUsagePeriodLabel(usageInfo)}`
+                          : `Used ${usageInfo.current}/${usageInfo.limit} tokens${getUsagePeriodLabel(usageInfo)}`)
+                        : (locale === "zh"
+                          ? `已使用 ${usageInfo.current}/${usageInfo.limit} 次${getUsagePeriodLabel(usageInfo)}`
+                          : `Used ${usageInfo.current}/${usageInfo.limit}${getUsagePeriodLabel(usageInfo)}`)}
+                    </div>
                   </div>
                 )}
                 {limitExceeded && !isIPhone && (
@@ -1282,20 +1305,21 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
         {/* 使用量信息显示（正常情况下） */}
         {usageInfo && !limitExceeded && !usageInfo.isUnlimited && (
           <div className="mb-4 text-center">
+            {usageInfo.model ? (
+              <div className="text-xs text-gray-500 mb-1">
+                {locale === "zh" ? `当前模型：${usageInfo.model}` : `Model: ${usageInfo.model}`}
+              </div>
+            ) : null}
             <span className="text-xs text-gray-500">
-              {locale === "zh" ? (
-                <>
-                  剩余 {usageInfo.remaining} 次
-                  {usageInfo.periodType === "monthly" ? " (本月)" : " (今日)"}
-                </>
-              ) : (
-                <>
-                  {usageInfo.remaining} remaining
-                  {usageInfo.periodType === "monthly" ? " this month" : " today"}
-                </>
-              )}
+              {usageInfo.quotaType === "token"
+                ? (locale === "zh"
+                  ? `剩余 ${usageInfo.remaining} token${getUsagePeriodLabel(usageInfo)}`
+                  : `${usageInfo.remaining} tokens remaining${getUsagePeriodLabel(usageInfo)}`)
+                : (locale === "zh"
+                  ? `剩余 ${usageInfo.remaining} 次${getUsagePeriodLabel(usageInfo)}`
+                  : `${usageInfo.remaining} remaining${getUsagePeriodLabel(usageInfo)}`)}
             </span>
-            {usageInfo.remaining <= 5 && usageInfo.remaining > 0 && !isIPhone && (
+            {isLowUsageRemaining(usageInfo) && !isIPhone && (
               <Link href="/pro" className="ml-2 text-xs text-purple-600 hover:underline">
                 {locale === "zh" ? "升级获取更多" : "Upgrade for more"}
               </Link>

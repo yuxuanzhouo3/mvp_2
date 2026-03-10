@@ -11,6 +11,8 @@
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { isChinaDeployment } from "@/lib/config/deployment.config";
+import { getCnAiFreeTierConfig } from "@/lib/ai/free-tier-config";
+import { getEffectiveAssistantRuntimeModel } from "@/lib/ai/effective-runtime-model";
 import type { AssistantUsageStats } from "./types";
 import { getAssistantUsageLimitConfig } from "./usage-limit-config";
 
@@ -316,6 +318,75 @@ async function getUsageCountCN(userId: string, periodType: "daily" | "monthly"):
   }
 }
 
+function extractTokenUsageMetadata(
+  metadata?: Record<string, unknown>
+): {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  model: string | null;
+} | null {
+  const promptTokens = Number(metadata?.promptTokens ?? metadata?.prompt_tokens ?? 0);
+  const completionTokens = Number(metadata?.completionTokens ?? metadata?.completion_tokens ?? 0);
+  const totalTokens = Number(metadata?.totalTokens ?? metadata?.total_tokens ?? 0);
+  const model =
+    typeof metadata?.model === "string" && metadata.model.trim().length > 0
+      ? metadata.model.trim()
+      : null;
+
+  if (!Number.isFinite(totalTokens) || totalTokens <= 0) {
+    return null;
+  }
+
+  return {
+    promptTokens: Number.isFinite(promptTokens) && promptTokens >= 0 ? promptTokens : 0,
+    completionTokens: Number.isFinite(completionTokens) && completionTokens >= 0 ? completionTokens : 0,
+    totalTokens,
+    model,
+  };
+}
+
+async function getTotalTokenUsageCN(userId: string): Promise<number> {
+  const db = await getCloudBaseDb();
+  const batchSize = 500;
+  let skip = 0;
+  let total = 0;
+
+  try {
+    while (true) {
+      const result = await db
+        .collection("assistant_usage")
+        .where({ user_id: userId, quota_type: "token" })
+        .skip(skip)
+        .limit(batchSize)
+        .get();
+
+      const rows = Array.isArray(result?.data) ? result.data : [];
+      if (rows.length === 0) {
+        break;
+      }
+
+      for (const row of rows) {
+        const value = Number((row as Record<string, unknown>).total_tokens ?? 0);
+        if (Number.isFinite(value) && value > 0) {
+          total += value;
+        }
+      }
+
+      if (rows.length < batchSize) {
+        break;
+      }
+
+      skip += rows.length;
+    }
+  } catch (error) {
+    console.error("[AssistantUsage] Failed to sum CN token usage:", error);
+    return 0;
+  }
+
+  return total;
+}
+
 // ==========================================
 // 公开 API
 // ==========================================
@@ -327,6 +398,25 @@ async function getUsageCountCN(userId: string, periodType: "daily" | "monthly"):
  */
 export async function getAssistantUsageStats(userId: string): Promise<AssistantUsageStats> {
   const planType = await getUserPlanType(userId);
+  const runtimeModel = await getEffectiveAssistantRuntimeModel(planType);
+
+  if (isChinaDeployment() && planType === "free") {
+    const freeTierConfig = await getCnAiFreeTierConfig();
+    const used = await getTotalTokenUsageCN(userId);
+    const limit = freeTierConfig.assistantTokenLimit;
+
+    return {
+      userId,
+      planType,
+      used,
+      limit,
+      remaining: Math.max(0, limit - used),
+      periodType: "total",
+      quotaType: "token",
+      model: freeTierConfig.assistantModel,
+    };
+  }
+
   const limits = await getAssistantUsageLimitConfig();
 
   if (planType === "free") {
@@ -348,6 +438,8 @@ export async function getAssistantUsageStats(userId: string): Promise<AssistantU
         limit: monthlyLimit,
         remaining: monthlyRemaining,
         periodType: "monthly",
+        quotaType: "count",
+        model: runtimeModel,
       };
     }
 
@@ -358,6 +450,8 @@ export async function getAssistantUsageStats(userId: string): Promise<AssistantU
       limit: dailyLimit,
       remaining: dailyRemaining,
       periodType: "daily",
+      quotaType: "count",
+      model: runtimeModel,
     };
   }
 
@@ -367,7 +461,16 @@ export async function getAssistantUsageStats(userId: string): Promise<AssistantU
   const isUnlimited = limit === -1;
   const remaining = isUnlimited ? -1 : Math.max(0, limit - used);
 
-  return { userId, planType, used, limit, remaining, periodType: "daily" };
+  return {
+    userId,
+    planType,
+    used,
+    limit,
+    remaining,
+    periodType: "daily",
+    quotaType: "count",
+    model: runtimeModel,
+  };
 }
 
 /**
@@ -388,9 +491,11 @@ export async function canUseAssistant(userId: string): Promise<{
 
   if (stats.remaining <= 0) {
     const reason =
-      stats.planType === "free" && stats.periodType === "monthly"
-        ? "monthly_limit_reached"
-        : "daily_limit_reached";
+      stats.quotaType === "token"
+        ? "token_limit_reached"
+        : stats.planType === "free" && stats.periodType === "monthly"
+          ? "monthly_limit_reached"
+          : "daily_limit_reached";
     return { allowed: false, reason, stats };
   }
 
@@ -407,13 +512,18 @@ export async function recordAssistantUsage(
   userId: string,
   metadata?: Record<string, unknown>
 ): Promise<{ success: boolean; error?: string }> {
-  const { allowed, reason } = await canUseAssistant(userId);
+  const { allowed, reason, stats } = await canUseAssistant(userId);
   if (!allowed) {
     return { success: false, error: reason };
   }
 
+  const tokenUsage = extractTokenUsageMetadata(metadata);
+  if (stats.quotaType === "token" && !tokenUsage) {
+    return { success: false, error: "token_usage_required" };
+  }
+
   if (isChinaDeployment()) {
-    return recordUsageCN(userId, metadata);
+    return recordUsageCN(userId, metadata, stats);
   }
   return recordUsageINTL(userId, metadata);
 }
@@ -438,13 +548,24 @@ async function recordUsageINTL(
 
 async function recordUsageCN(
   userId: string,
-  metadata?: Record<string, unknown>
+  metadata: Record<string, unknown> | undefined,
+  stats: AssistantUsageStats
 ): Promise<{ success: boolean; error?: string }> {
   const db = await getCloudBaseDb();
   try {
+    const tokenUsage = extractTokenUsageMetadata(metadata);
     await db.collection("assistant_usage").add({
       user_id: userId,
       metadata: metadata || {},
+      ...(stats.quotaType === "token" && tokenUsage
+        ? {
+            quota_type: "token",
+            prompt_tokens: tokenUsage.promptTokens,
+            completion_tokens: tokenUsage.completionTokens,
+            total_tokens: tokenUsage.totalTokens,
+            model: tokenUsage.model ?? stats.model,
+          }
+        : {}),
       created_at: new Date().toISOString(),
     });
     return { success: true };

@@ -5,7 +5,7 @@ export const CN_RUNTIME_MODEL_VALUES = [
   "qwen3.5-35b-a3b",
 ] as const;
 
-export type CnRuntimeModel = (typeof CN_RUNTIME_MODEL_VALUES)[number];
+export type CnRuntimeModel = string;
 
 export const DEFAULT_CN_ASSISTANT_MODEL: CnRuntimeModel = "qwen3.5-plus";
 export const DEFAULT_CN_RECOMMENDATION_MODEL: CnRuntimeModel = "qwen3.5-plus";
@@ -21,6 +21,5 @@ export const CN_RUNTIME_MODEL_OPTIONS: ReadonlyArray<{
 ];
 
 export function isCnRuntimeModel(value: unknown): value is CnRuntimeModel {
-  return typeof value === "string" && CN_RUNTIME_MODEL_VALUES.includes(value as CnRuntimeModel);
+  return typeof value === "string" && value.trim().length > 0;
 }
-

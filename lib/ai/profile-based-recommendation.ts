@@ -58,7 +58,7 @@ export async function generateProfileBasedRecommendations(
   );
 
   try {
-    const content = await callRecommendationAI(
+    const content = (await callRecommendationAI(
       [
         {
           role: 'system',
@@ -72,7 +72,7 @@ export async function generateProfileBasedRecommendations(
         },
       ],
       0.8
-    );
+    )).content;
 
     const result = JSON.parse(content);
     return Array.isArray(result) ? result : [result];
@@ -359,7 +359,7 @@ Return JSON format:
 }`;
 
   try {
-    const content = await callRecommendationAI(
+    const content = (await callRecommendationAI(
       [
         {
           role: 'system',
@@ -373,7 +373,7 @@ Return JSON format:
         },
       ],
       0.7
-    );
+    )).content;
 
     return JSON.parse(content);
   } catch (error) {

@@ -27,6 +27,20 @@ function extractKugouKeyword(linkUrl: string): string | null {
   }
 }
 
+function extractJdIntentKeyword(linkUrl: string): string | null {
+  const match = linkUrl.match(/[?&]params=([^#&]+)/i);
+  if (!match?.[1]) return null;
+
+  try {
+    const payload = JSON.parse(decodeURIComponent(match[1])) as {
+      keyWord?: string;
+    };
+    return payload.keyWord || null;
+  } catch {
+    return null;
+  }
+}
+
 function buildTravelRecommendation(candidateLink?: AIRecommendation["candidateLink"]): AIRecommendation {
   return {
     title: "中国·苏州·平江路",
@@ -204,6 +218,32 @@ describe("buildRecommendationGestureLaunchPlan", () => {
     expect(plan.firstDeepLink?.type).toBe("intent");
     expect(plan.firstDeepLink?.url).toContain("intent://category.vip.com/suggest.php?keyword=");
     expect(extractQueryParam(plan.firstDeepLink?.url || "", "keyword")).toBe(query);
+  });
+
+  it("uses JD Android openapp intent as first deep link and keeps keyword", () => {
+    const query = "无线蓝牙耳机";
+    const candidateLink = resolveCandidateLink({
+      title: query,
+      query: "   ",
+      category: "shopping",
+      locale: "zh",
+      region: "CN",
+      provider: "京东",
+      isMobile: true,
+      os: "android",
+    });
+
+    const plan = buildRecommendationGestureLaunchPlan(
+      buildShoppingRecommendation(query, "京东", candidateLink),
+      "/category/shopping",
+      "android"
+    );
+
+    expect(plan.firstDeepLink).toBeTruthy();
+    expect(plan.firstDeepLink?.type).toBe("intent");
+    expect(plan.firstDeepLink?.url).toContain("intent://virtual?params=");
+    expect(plan.firstDeepLink?.url).toContain("scheme=openapp.jdmobile");
+    expect(extractJdIntentKeyword(plan.firstDeepLink?.url || "")).toBe(query);
   });
 
   it("uses Kugou Android app scheme as first deep link and keeps keyword", () => {

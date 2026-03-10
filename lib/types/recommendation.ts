@@ -203,6 +203,19 @@ export interface AIRecommendResponse {
   recommendations: AIRecommendation[];
   source: "ai" | "fallback" | "cache";
   error?: string;
+  limitExceeded?: boolean;
+  upgradeMessage?: string;
+  upgradeUrl?: string;
+  usage?: {
+    current: number;
+    limit: number;
+    remaining: number;
+    periodType: "daily" | "monthly" | "total";
+    periodEnd?: string | null;
+    isUnlimited: boolean;
+    quotaType: "count" | "token";
+    model: string | null;
+  };
 }
 
 /**

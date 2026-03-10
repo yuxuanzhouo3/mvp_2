@@ -2,6 +2,7 @@
 import { isChinaDeployment } from "@/lib/config/deployment.config";
 import { getCnAiRuntimeModelConfig } from "@/lib/ai/runtime-model-config";
 import { type CnRuntimeModel } from "@/lib/ai/runtime-models";
+import type { AIExecutionMetadata, AIUsageMetrics } from "@/lib/ai/provider-metadata";
 import { generateFallbackCandidates } from "@/lib/recommendation/fallback-generator";
 import type { RecommendationCategory } from "@/lib/types/recommendation";
 
@@ -14,6 +15,11 @@ export type AIMessage = {
 };
 
 type AIRequestErrorKind = "qwen_free_tier_only" | "http_error" | "empty_content";
+
+type AIProviderResponse = AIExecutionMetadata & {
+  content: string;
+  provider: AIProvider;
+};
 
 class AIRequestError extends Error {
   kind: AIRequestErrorKind;
@@ -78,16 +84,20 @@ function getRecommendationProviderTimeoutMs(): number {
   );
 }
 
-async function getProviderOrder(): Promise<AIProvider[]> {
+async function getProviderOrder(modelOverride?: string): Promise<AIProvider[]> {
   if (isChinaDeployment()) {
     // CN 环境：仅使用白名单模型，其他模型因额度不足禁用
     const providers: AIProvider[] = [];
+
+    if (modelOverride?.trim()) {
+      providers.push(modelOverride.trim());
+    }
 
     if (hasValidKey(process.env.QWEN_API_KEY)) {
       providers.push((await getCnAiRuntimeModelConfig()).recommendationModel);
     }
 
-    return providers;
+    return [...new Set(providers)];
   }
 
   // INTL region: prefer Mistral first, then fall back to OpenAI
@@ -101,6 +111,22 @@ async function getProviderOrder(): Promise<AIProvider[]> {
   }
 
   return providers;
+}
+
+function normalizeUsageMetrics(raw: any): AIUsageMetrics | null {
+  const promptTokens = Number(raw?.prompt_tokens ?? raw?.promptTokens ?? 0);
+  const completionTokens = Number(raw?.completion_tokens ?? raw?.completionTokens ?? 0);
+  const totalTokens = Number(raw?.total_tokens ?? raw?.totalTokens ?? 0);
+
+  if (!Number.isFinite(totalTokens) || totalTokens <= 0) {
+    return null;
+  }
+
+  return {
+    promptTokens: Number.isFinite(promptTokens) && promptTokens >= 0 ? promptTokens : 0,
+    completionTokens: Number.isFinite(completionTokens) && completionTokens >= 0 ? completionTokens : 0,
+    totalTokens,
+  };
 }
 
 export function isAIProviderConfigured(): boolean {
@@ -119,8 +145,12 @@ export function isQwenConfigured(): boolean {
   return hasValidKey(process.env.QWEN_API_KEY);
 }
 
-async function callAIWithFallback(messages: AIMessage[], temperature = 0.8) {
-  const configuredProviders = await getProviderOrder();
+async function callAIWithFallback(
+  messages: AIMessage[],
+  temperature = 0.8,
+  modelOverride?: string
+): Promise<AIProviderResponse> {
+  const configuredProviders = await getProviderOrder(modelOverride);
   const providers = configuredProviders.filter((p) => !DISABLED_PROVIDERS.has(p));
 
   if (configuredProviders.length === 0) {
@@ -135,29 +165,21 @@ async function callAIWithFallback(messages: AIMessage[], temperature = 0.8) {
 
   for (const provider of providers) {
     try {
-      switch (provider) {
-        case "openai":
-          return {
-            content: await callOpenAI(messages, temperature),
-            provider,
-            model: DEFAULT_MODELS.openai,
-          };
-        case "mistral":
-          return {
-            content: await callMistral(messages, temperature),
-            provider,
-            model: DEFAULT_MODELS.mistral,
-          };
-        case "qwen3.5-plus":
-        case "qwen3.5-flash":
-        case "qwen3.5-flash-2026-02-23":
-        case "qwen3.5-35b-a3b":
-          return {
-            content: await callQwen(messages, temperature, provider),
-            provider,
-            model: provider,
-          };
+      if (provider === "openai") {
+        return {
+          ...(await callOpenAI(messages, temperature)),
+          provider,
+        };
       }
+
+      if (provider === "mistral") {
+        return {
+          ...(await callMistral(messages, temperature)),
+          provider,
+        };
+      }
+
+        return { ...(await callQwen(messages, temperature, provider)), provider };
     } catch (error) {
       lastError = error;
 
@@ -184,7 +206,7 @@ async function callQwen(
   messages: AIMessage[],
   temperature: number,
   model: CNQwenProvider
-) {
+): Promise<AIExecutionMetadata & { content: string }> {
   const apiKey = process.env.QWEN_API_KEY;
   if (!hasValidKey(apiKey)) {
     throw new Error("QWEN_API_KEY is not configured");
@@ -268,7 +290,11 @@ async function callQwen(
     }
 
     console.log(`[AI] ✅ Successfully called Qwen API (${model})`);
-    return content;
+    return {
+      content,
+      model,
+      usage: normalizeUsageMetrics(data?.usage),
+    };
   } catch (error) {
     clearTimeout(timeoutId);
     if ((error as any).name === 'AbortError') {
@@ -283,7 +309,10 @@ async function callQwen(
   }
 }
 
-async function callOpenAI(messages: AIMessage[], temperature: number) {
+async function callOpenAI(
+  messages: AIMessage[],
+  temperature: number
+): Promise<AIExecutionMetadata & { content: string }> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!hasValidKey(apiKey)) {
     throw new Error("OPENAI_API_KEY is not configured");
@@ -301,10 +330,17 @@ async function callOpenAI(messages: AIMessage[], temperature: number) {
   if (!content) {
     throw new Error("OpenAI returned empty content");
   }
-  return content;
+  return {
+    content,
+    model: DEFAULT_MODELS.openai,
+    usage: normalizeUsageMetrics(response.usage),
+  };
 }
 
-async function callMistral(messages: AIMessage[], temperature: number) {
+async function callMistral(
+  messages: AIMessage[],
+  temperature: number
+): Promise<AIExecutionMetadata & { content: string }> {
   const apiKey = process.env.MISTRAL_API_KEY;
   if (!hasValidKey(apiKey)) {
     throw new Error("MISTRAL_API_KEY is not configured");
@@ -335,7 +371,11 @@ async function callMistral(messages: AIMessage[], temperature: number) {
   if (!content) {
     throw new Error("Mistral returned empty content");
   }
-  return content;
+  return {
+    content,
+    model: DEFAULT_MODELS.mistral,
+    usage: normalizeUsageMetrics(data?.usage),
+  };
 }
 
 function cleanAIContent(content: string) {
@@ -523,9 +563,16 @@ function parseAIJson(content: string) {
   throw lastError || new Error("Failed to parse AI JSON output");
 }
 
-export async function callRecommendationAI(messages: AIMessage[], temperature = 0.8) {
-  const result = await callAIWithFallback(messages, temperature);
-  return cleanAIContent(result.content);
+export async function callRecommendationAI(
+  messages: AIMessage[],
+  temperature = 0.8,
+  modelOverride?: string
+): Promise<AIProviderResponse> {
+  const result = await callAIWithFallback(messages, temperature, modelOverride);
+  return {
+    ...result,
+    content: cleanAIContent(result.content),
+  };
 }
 
 interface UserHistory {
@@ -559,6 +606,8 @@ export type GenerateRecommendationsOptions = {
   client?: "app" | "web";
   geo?: { lat: number; lng: number } | null;
   avoidTitles?: string[] | null;
+  modelOverride?: string;
+  onAiMetadata?: (metadata: AIExecutionMetadata) => void;
   isMobile?: boolean;
   isAndroid?: boolean;
   signals?:
@@ -598,6 +647,87 @@ export function buildExpansionSignalPrompt(params: {
   }
 
   return `\n\n[Expansion Signals (3-part)]\n- Top tags (ranked): ${topTags.length > 0 ? topTags.join(", ") : "none"}\n- Recent positive examples (clicked/saved): ${positiveSamples.length > 0 ? JSON.stringify(positiveSamples, null, 2) : "none"}\n- Negative examples (not interested/skip/low rating; must avoid): ${negativeSamples.length > 0 ? JSON.stringify(negativeSamples, null, 2) : "none"}\n- Titles to avoid (must avoid): ${avoidTitles.length > 0 ? avoidTitles.join(", ") : "none"}\n- Generation nonce (for randomness): ${requestNonce}\n\n[Expansion Strategy (controllable)]\n- 60% exploit: expand from top tags + positive examples into long-tail subtopics.\n- 25% explore: adjacent concepts, still specific and searchable.\n- 15% fresh: add novel but still relevant items, without triggering negative examples.\n\n[Anti-Patterns]\n- Do NOT output items strongly related to negative examples.\n- No duplicates; must not repeat or paraphrase avoided titles.\n`;
+}
+
+const PROMPT_BUDGET_BYTES = 20 * 1024;
+
+function getUtf8ByteLength(value: string): number {
+  return new TextEncoder().encode(value).length;
+}
+
+function truncateUtf8(value: string, maxBytes: number): string {
+  if (maxBytes <= 0 || !value) {
+    return "";
+  }
+
+  if (getUtf8ByteLength(value) <= maxBytes) {
+    return value;
+  }
+
+  let result = value;
+  while (result.length > 0 && getUtf8ByteLength(result) > maxBytes) {
+    result = result.slice(0, Math.max(1, Math.floor(result.length * 0.8)));
+  }
+
+  return result;
+}
+
+function isPromptNoiseKey(key: string): boolean {
+  return /rawhtml|html|debug|payload|blob|markup|sourcecode/i.test(key);
+}
+
+function compactPromptValue(
+  value: unknown,
+  depth = 0,
+  maxDepth = 2
+): unknown {
+  if (value == null) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    return truncateUtf8(value, depth === 0 ? 240 : 160);
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.slice(0, depth === 0 ? 8 : 5).map((item) => compactPromptValue(item, depth + 1, maxDepth));
+  }
+
+  if (typeof value === "object") {
+    if (depth >= maxDepth) {
+      return undefined;
+    }
+
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([key, item]) => !isPromptNoiseKey(key) && item !== undefined)
+      .slice(0, depth === 0 ? 10 : 6)
+      .map(([key, item]) => [key, compactPromptValue(item, depth + 1, maxDepth)] as const)
+      .filter(([, item]) => item !== undefined && item !== "");
+
+    return Object.fromEntries(entries);
+  }
+
+  return undefined;
+}
+
+function stringifyWithinBudget(value: unknown, maxBytes: number): string {
+  const serialized = JSON.stringify(value, null, 2);
+  if (getUtf8ByteLength(serialized) <= maxBytes) {
+    return serialized;
+  }
+
+  return truncateUtf8(serialized, maxBytes);
+}
+
+function shrinkPromptWhitespace(value: string): string {
+  return value
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
 }
 
 /**
@@ -649,49 +779,60 @@ export async function generateRecommendations(
   userPreference?: UserPreferenceData | null,
   options?: GenerateRecommendationsOptions
 ): Promise<RecommendationItem[]> {
+  const typedLocale: "zh" | "en" = locale === "en" ? "en" : "zh";
   const client = options?.client ?? "web";
   const geo = options?.geo ?? null;
   const isMobile = options?.isMobile ?? false;
   const isAndroid = options?.isAndroid ?? false;
-  const isCnWeb = isChinaDeployment() && locale === "zh" && client === "web";
-  const isIntlMobile = !isChinaDeployment() && locale === "en" && isMobile;
-  const isIntlAndroidFood = !isChinaDeployment() && locale === "en" && isMobile && isAndroid && category === "food";
+  const isCnWeb = isChinaDeployment() && typedLocale === "zh" && client === "web";
+  const isIntlMobile = !isChinaDeployment() && typedLocale === "en" && isMobile;
+  const isIntlAndroidFood = !isChinaDeployment() && typedLocale === "en" && isMobile && isAndroid && category === "food";
   const avoidTitles = Array.isArray(options?.avoidTitles)
     ? options!.avoidTitles!.filter((t) => typeof t === "string" && t.trim().length > 0)
     : [];
   const signals = options?.signals ?? null;
+  const compactUserHistory = userHistory
+    .slice(0, 8)
+    .map((item) => ({
+      category: item.category,
+      title: truncateUtf8(String(item.title || ""), 120),
+      clicked: Boolean((item as any)?.clicked),
+      saved: Boolean((item as any)?.saved),
+      metadata: compactPromptValue((item as any)?.metadata, 0, 1),
+    }));
+  const compactUserPreference = compactPromptValue(userPreference, 0, 2) as Record<string, unknown> | null;
 
   // 构建用户画像提示
   let userProfilePrompt = '';
-  if (userPreference) {
+  if (compactUserPreference) {
     const profileParts: string[] = [];
 
     // 问卷偏好数据
-    if (userPreference.preferences && Object.keys(userPreference.preferences).length > 0) {
+    if (compactUserPreference.preferences && Object.keys(compactUserPreference.preferences as Record<string, unknown>).length > 0) {
       profileParts.push(locale === 'zh'
-        ? `用户问卷偏好：${JSON.stringify(userPreference.preferences)}`
-        : `User questionnaire preferences: ${JSON.stringify(userPreference.preferences)}`);
+        ? `用户问卷偏好：${stringifyWithinBudget(compactUserPreference.preferences, 1800)}`
+        : `User questionnaire preferences: ${stringifyWithinBudget(compactUserPreference.preferences, 1800)}`);
     }
 
     // AI画像摘要
-    if (userPreference.ai_profile_summary) {
+    if (compactUserPreference.ai_profile_summary) {
       profileParts.push(locale === 'zh'
-        ? `用户AI画像：${userPreference.ai_profile_summary}`
-        : `User AI profile: ${userPreference.ai_profile_summary}`);
+        ? `用户AI画像：${truncateUtf8(String(compactUserPreference.ai_profile_summary), 800)}`
+        : `User AI profile: ${truncateUtf8(String(compactUserPreference.ai_profile_summary), 800)}`);
     }
 
     // 个性标签
-    if (userPreference.personality_tags && userPreference.personality_tags.length > 0) {
+    if (Array.isArray(compactUserPreference.personality_tags) && compactUserPreference.personality_tags.length > 0) {
       profileParts.push(locale === 'zh'
-        ? `用户个性标签：${userPreference.personality_tags.join('、')}`
-        : `User personality tags: ${userPreference.personality_tags.join(', ')}`);
+        ? `用户个性标签：${(compactUserPreference.personality_tags as string[]).join('、')}`
+        : `User personality tags: ${(compactUserPreference.personality_tags as string[]).join(', ')}`);
     }
 
     // 用户标签
-    if (userPreference.tags && userPreference.tags.length > 0) {
+    if (Array.isArray(compactUserPreference.tags) && compactUserPreference.tags.length > 0) {
       profileParts.push(locale === 'zh'
-        ? `用户兴趣标签：${userPreference.tags.join('、')}`
-        : `User interest tags: ${userPreference.tags.join(', ')}`);
+        ? `用户兴趣标签：${(compactUserPreference.tags as string[]).join('、')}`
+        : `User interest tags: ${(compactUserPreference.tags as string[]).join(', ')}`);
     }
 
     if (profileParts.length > 0) {
@@ -797,23 +938,25 @@ fitnessType 必须为 nearby_place/tutorial/equipment 之一。
     Array.isArray(signals?.positiveSamples) && signals!.positiveSamples!.length > 0
       ? signals!.positiveSamples!
         .filter((s) => typeof (s as any)?.title === "string" && String((s as any).title).trim().length > 0)
-        .slice(0, 10)
+        .slice(0, 6)
         .map((s) => ({
-          title: String((s as any).title),
+          title: truncateUtf8(String((s as any).title), 100),
           tags: Array.isArray((s as any)?.tags)
-            ? ((s as any).tags as unknown[]).filter((t) => typeof t === "string" && t.trim().length > 0)
+            ? ((s as any).tags as unknown[])
+                .filter((t): t is string => typeof t === "string" && t.trim().length > 0)
+                .slice(0, 3)
             : undefined,
           searchQuery:
             typeof (s as any)?.searchQuery === "string" && String((s as any).searchQuery).trim().length > 0
-              ? String((s as any).searchQuery)
+              ? truncateUtf8(String((s as any).searchQuery), 100)
               : undefined,
         }))
       : userHistory
         .filter((h) => !!(h as any)?.clicked || !!(h as any)?.saved)
-        .slice(0, 10)
+        .slice(0, 6)
         .map((h) => ({
-          title: h.title,
-          tags: (h as any)?.metadata?.tags,
+          title: truncateUtf8(h.title, 100),
+          tags: Array.isArray((h as any)?.metadata?.tags) ? ((h as any).metadata.tags as string[]).slice(0, 3) : undefined,
         }))
         .filter((h) => typeof h.title === "string" && h.title.trim().length > 0);
 
@@ -821,17 +964,17 @@ fitnessType 必须为 nearby_place/tutorial/equipment 之一。
     Array.isArray(signals?.negativeSamples) && signals!.negativeSamples!.length > 0
       ? signals!.negativeSamples!
         .filter((s) => typeof (s as any)?.title === "string" && String((s as any).title).trim().length > 0)
-        .slice(0, 10)
+        .slice(0, 6)
         .map((s) => ({
-          title: String((s as any).title),
+          title: truncateUtf8(String((s as any).title), 100),
           tags: Array.isArray((s as any)?.tags)
             ? ((s as any).tags as unknown[]).filter(
               (t): t is string => typeof t === "string" && t.trim().length > 0
-            )
+            ).slice(0, 3)
             : undefined,
           searchQuery:
             typeof (s as any)?.searchQuery === "string" && String((s as any).searchQuery).trim().length > 0
-              ? String((s as any).searchQuery)
+              ? truncateUtf8(String((s as any).searchQuery), 100)
               : undefined,
           feedbackType: String((s as any)?.feedbackType || ""),
           rating: typeof (s as any)?.rating === "number" ? Number((s as any).rating) : undefined,
@@ -842,7 +985,8 @@ fitnessType 必须为 nearby_place/tutorial/equipment 之一。
     Array.isArray(signals?.topTags) && signals!.topTags!.length > 0
       ? signals!.topTags!
         .filter((t) => typeof t === "string" && t.trim().length > 0)
-        .slice(0, 12)
+        .slice(0, 8)
+        .map((tag) => truncateUtf8(tag, 40))
       : [];
 
   const recentShownTitles = userHistory
@@ -859,10 +1003,11 @@ fitnessType 必须为 nearby_place/tutorial/equipment 之一。
     ...negativeSamples.map((s) => s.title),
   ]
     .filter((t): t is string => typeof t === "string" && t.trim().length > 0)
-    .slice(0, 80);
+    .slice(0, 24)
+    .map((title) => truncateUtf8(title, 60));
 
   const behaviorPrompt = buildExpansionSignalPrompt({
-    locale: locale === "en" ? "en" : "zh",
+    locale: typedLocale,
     topTags,
     positiveSamples,
     negativeSamples,
@@ -893,10 +1038,10 @@ fitnessType 必须为 nearby_place/tutorial/equipment 之一。
 `
     : "";
 
-  const prompt = locale === 'zh' ? `
+  let prompt = typedLocale === 'zh' ? `
 生成 ${desiredCount} 个推荐。
 
-用户历史：${JSON.stringify(userHistory.slice(0, 10), null, 2)}
+用户历史：${stringifyWithinBudget(compactUserHistory, 5000)}
 ${userProfilePrompt}
 ${behaviorPrompt}
 分类：${category}
@@ -1033,10 +1178,60 @@ Fitness:
 De-dup: avoid ${avoidTitlesForPrompt.slice(0, 30).join(', ')}
 
 Platform choices: ${config.platforms.slice(0, 6).join(', ')}
+ No URLs`;
+
+  if (getUtf8ByteLength(prompt) > PROMPT_BUDGET_BYTES) {
+    prompt = shrinkPromptWhitespace(prompt);
+  }
+
+  if (getUtf8ByteLength(prompt) > PROMPT_BUDGET_BYTES) {
+    const overflow = getUtf8ByteLength(prompt) - PROMPT_BUDGET_BYTES;
+    const reducedHistoryBytes = Math.max(1200, 5000 - overflow - 512);
+    const compactPrompt = typedLocale === 'zh'
+      ? `
+生成 ${Math.min(desiredCount, 12)} 个推荐。
+
+用户历史：${stringifyWithinBudget(compactUserHistory.slice(0, 5), reducedHistoryBytes)}
+${userProfilePrompt}
+${buildExpansionSignalPrompt({
+  locale: typedLocale,
+  topTags: topTags.slice(0, 5),
+  positiveSamples: positiveSamples.slice(0, 3),
+  negativeSamples: negativeSamples.slice(0, 3),
+  avoidTitles: avoidTitlesForPrompt.slice(0, 12),
+  requestNonce,
+})}
+分类：${category}
+【去重】严禁与以下标题重复：${avoidTitlesForPrompt.slice(0, 12).join('、')}
+【推荐风格】${currentAngle}
+输出JSON数组，每项包含：title, description, reason, tags, searchQuery, platform${category === 'entertainment' ? ', entertainmentType' : ''}
+平台：${config.platforms.slice(0, 4).join('、')}
+勿生成URL`
+      : `
+Generate ${Math.min(desiredCount, 12)} recommendations.
+
+User history: ${stringifyWithinBudget(compactUserHistory.slice(0, 5), reducedHistoryBytes)}
+${userProfilePrompt}
+${buildExpansionSignalPrompt({
+  locale: typedLocale,
+  topTags: topTags.slice(0, 5),
+  positiveSamples: positiveSamples.slice(0, 3),
+  negativeSamples: negativeSamples.slice(0, 3),
+  avoidTitles: avoidTitlesForPrompt.slice(0, 12),
+  requestNonce,
+})}
+Category: ${category}
+De-dup: avoid ${avoidTitlesForPrompt.slice(0, 12).join(', ')}
+Style: ${currentAngle}
+Output JSON array with: title, description, reason, tags, searchQuery, platform${category === 'entertainment' ? ', entertainmentType' : ''}
+Platform choices: ${config.platforms.slice(0, 4).join(', ')}
 No URLs`;
 
+    prompt = truncateUtf8(shrinkPromptWhitespace(compactPrompt), PROMPT_BUDGET_BYTES - 64);
+  }
+
   try {
-    const aiContent = await callRecommendationAI(
+    const aiResult = await callRecommendationAI(
       [
         {
           role: 'system',
@@ -1049,8 +1244,11 @@ No URLs`;
           content: prompt
         }
       ],
-      0.92
+      0.92,
+      options?.modelOverride
     );
+    options?.onAiMetadata?.({ model: aiResult.model, usage: aiResult.usage });
+    const aiContent = aiResult.content;
 
     if (!aiContent) {
       console.error('AI 返回空内容');

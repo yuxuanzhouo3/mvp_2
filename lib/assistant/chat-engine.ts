@@ -19,6 +19,7 @@ import { buildLocationContext } from "./reverse-geocode";
 import { searchNearbyStores, type NearbySearchResult } from "./nearby-store-search";
 import { resolveCandidateLink } from "@/lib/outbound/link-resolver";
 import { buildOutboundHref } from "@/lib/outbound/outbound-url";
+import type { AIExecutionMetadata } from "@/lib/ai/provider-metadata";
 import type { AssistantResponse, ChatRequest, CandidateResult, AssistantAction } from "./types";
 import type { DeploymentRegion } from "@/lib/outbound/provider-catalog";
 
@@ -48,6 +49,8 @@ export type ChatProgressUpdate = {
 
 export type ProcessChatOptions = {
   onProgress?: (update: ChatProgressUpdate) => void;
+  runtimeModelOverride?: string;
+  onAiMetadata?: (metadata: AIExecutionMetadata) => void;
 };
 
 function reportChatProgress(
@@ -472,7 +475,9 @@ export async function processChat(
       messages,
       temperature: 0.7,
       maxTokens: aiMaxTokens,
+      modelOverride: options?.runtimeModelOverride,
     });
+    options?.onAiMetadata?.({ model: aiResponse.model, usage: aiResponse.usage ?? null });
     aiContent = aiResponse.content;
   } catch (error) {
     console.error("[ChatEngine] AI call failed:", error);

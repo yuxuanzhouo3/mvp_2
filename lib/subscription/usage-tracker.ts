@@ -8,6 +8,8 @@
 import { createClient } from "@supabase/supabase-js";
 import cloudbase from "@cloudbase/node-sdk";
 import { isChinaDeployment } from "@/lib/config/deployment.config";
+import { getCnAiFreeTierConfig } from "@/lib/ai/free-tier-config";
+import { getEffectiveRecommendationRuntimeModel } from "@/lib/ai/effective-runtime-model";
 import { PlanType } from "../payment/payment-config";
 import { PLAN_FEATURES } from "./features";
 import {
@@ -63,11 +65,13 @@ export interface UsageStats {
   planType: PlanType;
   currentPeriodUsage: number;
   periodLimit: number;
-  periodType: "daily" | "monthly";
-  periodStart: Date;
-  periodEnd: Date;
+  periodType: "daily" | "monthly" | "total";
+  periodStart: Date | null;
+  periodEnd: Date | null;
   remainingUsage: number;
   isUnlimited: boolean;
+  quotaType: "count" | "token";
+  model: string | null;
 }
 
 // ==========================================
@@ -175,6 +179,75 @@ function getPeriodBounds(periodType: "daily" | "monthly"): { start: Date; end: D
   }
 }
 
+function extractTokenUsageMetadata(
+  metadata?: Record<string, unknown>
+): {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  model: string | null;
+} | null {
+  const promptTokens = Number(metadata?.promptTokens ?? metadata?.prompt_tokens ?? 0);
+  const completionTokens = Number(metadata?.completionTokens ?? metadata?.completion_tokens ?? 0);
+  const totalTokens = Number(metadata?.totalTokens ?? metadata?.total_tokens ?? 0);
+  const model =
+    typeof metadata?.model === "string" && metadata.model.trim().length > 0
+      ? metadata.model.trim()
+      : null;
+
+  if (!Number.isFinite(totalTokens) || totalTokens <= 0) {
+    return null;
+  }
+
+  return {
+    promptTokens: Number.isFinite(promptTokens) && promptTokens >= 0 ? promptTokens : 0,
+    completionTokens: Number.isFinite(completionTokens) && completionTokens >= 0 ? completionTokens : 0,
+    totalTokens,
+    model,
+  };
+}
+
+async function getTotalTokenUsageCloudBase(userId: string): Promise<number> {
+  const db = getCloudBaseDb();
+  const batchSize = 500;
+  let skip = 0;
+  let total = 0;
+
+  try {
+    while (true) {
+      const result = await db
+        .collection("recommendation_usage")
+        .where({ user_id: userId, quota_type: "token" })
+        .skip(skip)
+        .limit(batchSize)
+        .get();
+
+      const rows = Array.isArray(result?.data) ? result.data : [];
+      if (rows.length === 0) {
+        break;
+      }
+
+      for (const row of rows) {
+        const value = Number((row as Record<string, unknown>).total_tokens ?? 0);
+        if (Number.isFinite(value) && value > 0) {
+          total += value;
+        }
+      }
+
+      if (rows.length < batchSize) {
+        break;
+      }
+
+      skip += rows.length;
+    }
+  } catch (error) {
+    console.error("[Usage Tracker] Failed to sum CN token usage:", error);
+    return 0;
+  }
+
+  return total;
+}
+
 // ==========================================
 // 获取使用统计
 // ==========================================
@@ -193,6 +266,7 @@ export async function getUserUsageStats(userId: string): Promise<UsageStats> {
 async function getUserUsageStatsSupabase(userId: string): Promise<UsageStats> {
   const supabase = getSupabaseAdmin();
   const planType = await getUserPlanSupabase(userId);
+  const runtimeModel = await getEffectiveRecommendationRuntimeModel(planType);
   const limitConfig = await getRecommendationUsageLimitConfig();
   const recommendationPolicy = resolveRecommendationLimitForPlan(planType, limitConfig);
 
@@ -226,12 +300,36 @@ async function getUserUsageStatsSupabase(userId: string): Promise<UsageStats> {
     periodEnd: end,
     remainingUsage: isUnlimited ? -1 : Math.max(0, periodLimit - currentPeriodUsage),
     isUnlimited,
+    quotaType: "count",
+    model: runtimeModel,
   };
 }
 
 async function getUserUsageStatsCloudBase(userId: string): Promise<UsageStats> {
   const db = getCloudBaseDb();
   const planType = await getUserPlanCloudBase(userId);
+
+  if (planType === "free") {
+    const freeTierConfig = await getCnAiFreeTierConfig();
+    const currentPeriodUsage = await getTotalTokenUsageCloudBase(userId);
+    const periodLimit = freeTierConfig.recommendationTokenLimit;
+
+    return {
+      userId,
+      planType,
+      currentPeriodUsage,
+      periodLimit,
+      periodType: "total",
+      periodStart: null,
+      periodEnd: null,
+      remainingUsage: Math.max(0, periodLimit - currentPeriodUsage),
+      isUnlimited: false,
+      quotaType: "token",
+      model: freeTierConfig.recommendationModel,
+    };
+  }
+
+  const runtimeModel = await getEffectiveRecommendationRuntimeModel(planType);
   const limitConfig = await getRecommendationUsageLimitConfig();
   const recommendationPolicy = resolveRecommendationLimitForPlan(planType, limitConfig);
 
@@ -270,6 +368,8 @@ async function getUserUsageStatsCloudBase(userId: string): Promise<UsageStats> {
     periodEnd: end,
     remainingUsage: isUnlimited ? -1 : Math.max(0, periodLimit - currentPeriodUsage),
     isUnlimited,
+    quotaType: "count",
+    model: runtimeModel,
   };
 }
 
@@ -292,6 +392,14 @@ export async function canUseRecommendation(userId: string): Promise<{
   }
 
   if (stats.remainingUsage <= 0) {
+    if (stats.quotaType === "token") {
+      return {
+        allowed: false,
+        reason: "token_limit_reached",
+        stats,
+      };
+    }
+
     const periodText = stats.periodType === "daily" ? "today" : "this month";
     return {
       allowed: false,
@@ -321,8 +429,14 @@ export async function recordRecommendationUsage(
     return { success: false, error: reason };
   }
 
+  const stats = await getUserUsageStats(userId);
+  const tokenUsage = extractTokenUsageMetadata(metadata);
+  if (stats.quotaType === "token" && !tokenUsage) {
+    return { success: false, error: "token_usage_required" };
+  }
+
   if (isChinaDeployment()) {
-    return recordRecommendationUsageCloudBase(userId, metadata);
+    return recordRecommendationUsageCloudBase(userId, metadata, stats);
   } else {
     return recordRecommendationUsageSupabase(userId, metadata);
   }
@@ -350,14 +464,25 @@ async function recordRecommendationUsageSupabase(
 
 async function recordRecommendationUsageCloudBase(
   userId: string,
-  metadata?: Record<string, unknown>
+  metadata: Record<string, unknown> | undefined,
+  stats: UsageStats
 ): Promise<{ success: boolean; error?: string }> {
   const db = getCloudBaseDb();
 
   try {
+    const tokenUsage = extractTokenUsageMetadata(metadata);
     await db.collection("recommendation_usage").add({
       user_id: userId,
       metadata: metadata || {},
+      ...(stats.quotaType === "token" && tokenUsage
+        ? {
+            quota_type: "token",
+            prompt_tokens: tokenUsage.promptTokens,
+            completion_tokens: tokenUsage.completionTokens,
+            total_tokens: tokenUsage.totalTokens,
+            model: tokenUsage.model ?? stats.model,
+          }
+        : {}),
       created_at: new Date().toISOString(),
     });
 

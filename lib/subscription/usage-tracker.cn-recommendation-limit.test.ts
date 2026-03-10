@@ -4,6 +4,7 @@ const mockState = {
   subscriptionRows: [] as Array<Record<string, unknown>>,
   userDoc: {} as Record<string, unknown>,
   usageCount: 0,
+  tokenUsageRows: [] as Array<Record<string, unknown>>,
 };
 
 vi.mock("@/lib/config/deployment.config", () => ({
@@ -12,6 +13,19 @@ vi.mock("@/lib/config/deployment.config", () => ({
 
 vi.mock("@supabase/supabase-js", () => ({
   createClient: vi.fn(() => ({})),
+}));
+
+vi.mock("@/lib/ai/free-tier-config", () => ({
+  DEFAULT_FREE_TIER_TOKEN_LIMIT: 100000,
+  getCnAiFreeTierConfig: vi.fn(async () => ({
+    assistantModel: "qwen3.5-plus",
+    assistantTokenLimit: 100000,
+    recommendationModel: "qwen-max-latest",
+    recommendationTokenLimit: 100000,
+    updatedAt: "2026-03-09T00:00:00.000Z",
+    source: "storage",
+  })),
+  updateCnAiFreeTierConfig: vi.fn(),
 }));
 
 vi.mock("./recommendation-limit-config", () => ({
@@ -66,8 +80,17 @@ vi.mock("@cloudbase/node-sdk", () => ({
 
           if (name === "recommendation_usage") {
             return {
-              where: vi.fn(() => ({
+              where: vi.fn((condition: Record<string, unknown>) => ({
                 count: vi.fn(async () => ({ total: mockState.usageCount })),
+                skip: vi.fn((skip: number) => ({
+                  limit: vi.fn((limit: number) => ({
+                    get: vi.fn(async () => ({
+                      data: condition.quota_type === "token"
+                        ? mockState.tokenUsageRows.slice(skip, skip + limit)
+                        : [],
+                    })),
+                  })),
+                })),
               })),
             };
           }
@@ -85,23 +108,30 @@ describe("CN recommendation usage limit config", () => {
     mockState.subscriptionRows = [];
     mockState.userDoc = {};
     mockState.usageCount = 0;
+    mockState.tokenUsageRows = [];
   });
 
   afterEach(() => {
     vi.clearAllMocks();
   });
 
-  it("uses configured free monthly shake limit", async () => {
+  it("tracks free CN recommendation quota by total tokens", async () => {
     mockState.userDoc = { pro: false };
-    mockState.usageCount = 4;
+    mockState.tokenUsageRows = [
+      { total_tokens: 12000 },
+      { total_tokens: 8000 },
+    ];
 
     const { getUserUsageStats } = await import("./usage-tracker");
     const stats = await getUserUsageStats("user-free");
 
     expect(stats.planType).toBe("free");
-    expect(stats.periodType).toBe("monthly");
-    expect(stats.periodLimit).toBe(9);
-    expect(stats.remainingUsage).toBe(5);
+    expect(stats.periodType).toBe("total");
+    expect(stats.periodLimit).toBe(100000);
+    expect(stats.currentPeriodUsage).toBe(20000);
+    expect(stats.remainingUsage).toBe(80000);
+    expect(stats.quotaType).toBe("token");
+    expect(stats.model).toBe("qwen-max-latest");
   });
 
   it("uses configured VIP daily shake limit", async () => {
@@ -117,4 +147,3 @@ describe("CN recommendation usage limit config", () => {
     expect(stats.remainingUsage).toBe(11);
   });
 });
-

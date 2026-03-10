@@ -252,7 +252,9 @@ export interface AssistantUsageStats {
   /** 剩余次数（-1 无限） */
   remaining: number;
   /** 周期类型 */
-  periodType: "daily" | "monthly";
+  periodType: "daily" | "monthly" | "total";
+  quotaType: "count" | "token";
+  model: string | null;
 }
 
 // =============================================

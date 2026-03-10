@@ -280,7 +280,7 @@ Return JSON format (strictly, no extra text):
       }
     ];
 
-    const cleanContent = await callRecommendationAI(messages, 0.8);
+    const cleanContent = (await callRecommendationAI(messages, 0.8)).content;
     if (!cleanContent) {
       throw new Error('AI 返回空内容');
     }

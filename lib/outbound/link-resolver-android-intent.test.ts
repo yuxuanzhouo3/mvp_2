@@ -6,6 +6,20 @@ function extractQueryParam(linkUrl: string, key: string): string | null {
   return match?.[1] ? decodeURIComponent(match[1]) : null;
 }
 
+function extractJdIntentKeyword(linkUrl: string): string | null {
+  const match = linkUrl.match(/[?&]params=([^#&]+)/i);
+  if (!match?.[1]) return null;
+
+  try {
+    const payload = JSON.parse(decodeURIComponent(match[1])) as {
+      keyWord?: string;
+    };
+    return payload.keyWord || null;
+  } catch {
+    return null;
+  }
+}
+
 describe("resolveCandidateLink android intent fallback", () => {
   it("adds android intent deep link when provider has package but no android scheme", () => {
     const result = resolveCandidateLink({
@@ -350,7 +364,7 @@ describe("resolveCandidateLink android intent fallback", () => {
     expect(webLink?.url).toContain(`0_${encodeURIComponent(query)}`);
   });
 
-  it("uses JD Android https intent first and avoids legacy openapp virtual intent path", () => {
+  it("uses JD Android openapp intent first and keeps keyword in virtual params", () => {
     const query = "蓝牙耳机";
     const result = resolveCandidateLink({
       title: query,
@@ -364,11 +378,10 @@ describe("resolveCandidateLink android intent fallback", () => {
     });
 
     expect(result.primary.type).toBe("intent");
-    expect(result.primary.url).toContain("intent://search.m.jd.com/search?keyword=");
-    expect(result.primary.url).toContain(`keyword=${encodeURIComponent(query)}`);
-    expect(result.primary.url).toContain("scheme=https");
+    expect(result.primary.url).toContain("intent://virtual?params=");
+    expect(result.primary.url).toContain("scheme=openapp.jdmobile");
     expect(result.primary.url).toContain("package=com.jingdong.app.mall");
-    expect(result.primary.url).not.toContain("intent://virtual?params=");
+    expect(extractJdIntentKeyword(result.primary.url)).toBe(query);
 
     const webLink = result.fallbacks.find(
       (link) => link.type === "web" && link.url.includes("search.jd.com/Search")

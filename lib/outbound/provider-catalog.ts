@@ -197,6 +197,23 @@ function jdMobileSearchUrl(keyword: string): string {
   return `https://search.m.jd.com/search?keyword=${encodeURIComponent(keyword)}`;
 }
 
+function jdSearchParams(keyword: string) {
+  return {
+    category: "jump",
+    des: "productList",
+    keyWord: keyword,
+    from: "search",
+  };
+}
+
+function jdIosSearchDeepLink(keyword: string): string {
+  return `openapp.jdmobile://virtual?params=${encodeURIComponent(JSON.stringify(jdSearchParams(keyword)))}`;
+}
+
+function jdAndroidSearchIntent(keyword: string, webUrl: string): string {
+  return `intent://virtual?params=${encodeURIComponent(JSON.stringify(jdSearchParams(keyword)))}#Intent;scheme=openapp.jdmobile;package=com.jingdong.app.mall;S.browser_fallback_url=${encodeURIComponent(webUrl)};end`;
+}
+
 function dianpingMobileSearchUrl(keyword: string): string {
   return `https://m.dianping.com/search/keyword/1/0_${encodeURIComponent(keyword)}`;
 }
@@ -722,18 +739,11 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       disableAndroidPackageIntentFallback: true,
       universalLink: ({ query, title }) => jdMobileSearchUrl(resolveSearchKeyword({ query, title })),
       webLink: ({ query }) => `https://search.jd.com/Search?keyword=${encodeURIComponent(query)}`,
-      iosScheme: ({ query }) => {
-        const params = {
-          category: "jump",
-          des: "productList",
-          keyWord: query,
-          from: "search",
-        };
-        return `openapp.jdmobile://virtual?params=${encodeURIComponent(JSON.stringify(params))}`;
-      },
+      iosScheme: ({ query, title }) => jdIosSearchDeepLink(resolveSearchKeyword({ query, title })),
       androidScheme: ({ query, title }) => {
-        const web = jdMobileSearchUrl(resolveSearchKeyword({ query, title }));
-        return buildAndroidHttpsIntentUrl(web, "com.jingdong.app.mall");
+        const keyword = resolveSearchKeyword({ query, title });
+        const web = jdMobileSearchUrl(keyword);
+        return jdAndroidSearchIntent(keyword, web);
       },
     },
     "拼多多": {
@@ -888,24 +898,10 @@ export function getProviderCatalog(): Record<ProviderId, ProviderDefinition> {
       androidPackageId: "com.jingdong.app.mall",
       webLink: ({ query }) =>
         `https://daojia.jd.com/html/index.html?keyword=${encodeURIComponent(query)}`,
-      iosScheme: ({ query }) => {
-        const params = {
-          category: "jump",
-          des: "productList",
-          keyWord: query,
-          from: "search",
-        };
-        return `openapp.jdmobile://virtual?params=${encodeURIComponent(JSON.stringify(params))}`;
-      },
+      iosScheme: ({ query }) => jdIosSearchDeepLink(query),
       androidScheme: ({ query }) => {
-        const params = {
-          category: "jump",
-          des: "productList",
-          keyWord: query,
-          from: "search",
-        };
         const web = `https://daojia.jd.com/html/index.html?keyword=${encodeURIComponent(query)}`;
-        return `intent://virtual?params=${encodeURIComponent(JSON.stringify(params))}#Intent;scheme=openapp.jdmobile;package=com.jingdong.app.mall;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+        return jdAndroidSearchIntent(query, web);
       },
     },
     淘宝闪购: {

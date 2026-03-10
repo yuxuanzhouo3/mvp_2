@@ -7,6 +7,7 @@ const cloudbaseState = {
   usersByDocId: new Map<string, Record<string, unknown>>(),
   usersByUserId: [] as Array<Record<string, unknown>>,
   assistantUsageCount: 0,
+  assistantTokenUsageRows: [] as Array<Record<string, unknown>>,
 };
 
 function createCloudbaseCollection(name: string) {
@@ -41,6 +42,10 @@ function createCloudbaseCollection(name: string) {
       };
     },
     async get() {
+      if (name === "assistant_usage" && state.whereCondition.quota_type === "token") {
+        return { data: cloudbaseState.assistantTokenUsageRows };
+      }
+
       if (name === "user_subscriptions") {
         const userId = state.whereCondition.user_id;
         const status = state.whereCondition.status;
@@ -86,6 +91,19 @@ vi.mock("@/lib/config/deployment.config", () => ({
   isChinaDeployment: isChinaDeploymentMock,
 }));
 
+vi.mock("@/lib/ai/free-tier-config", () => ({
+  DEFAULT_FREE_TIER_TOKEN_LIMIT: 100000,
+  getCnAiFreeTierConfig: vi.fn(async () => ({
+    assistantModel: "qwen-plus-latest",
+    assistantTokenLimit: 100000,
+    recommendationModel: "qwen-max-latest",
+    recommendationTokenLimit: 100000,
+    updatedAt: "2026-03-09T00:00:00.000Z",
+    source: "storage",
+  })),
+  updateCnAiFreeTierConfig: vi.fn(),
+}));
+
 vi.mock("@cloudbase/node-sdk", () => ({
   default: {
     init: vi.fn(() => ({
@@ -102,6 +120,7 @@ describe("assistant usage limiter (CN)", () => {
     cloudbaseState.usersByDocId = new Map();
     cloudbaseState.usersByUserId = [];
     cloudbaseState.assistantUsageCount = 0;
+    cloudbaseState.assistantTokenUsageRows = [];
 
     cloudbaseDatabaseMock.collection.mockClear();
     cloudbaseDatabaseMock.command.gte.mockClear();
@@ -147,5 +166,48 @@ describe("assistant usage limiter (CN)", () => {
     expect(stats.limit).toBe(-1);
     expect(stats.remaining).toBe(-1);
   });
-});
 
+  it("tracks free CN assistant quota by total tokens", async () => {
+    const userId = "cn-free-token-user";
+    cloudbaseState.userSubscriptions = [];
+    cloudbaseState.usersByDocId.set(userId, {
+      _id: userId,
+      pro: false,
+    });
+    cloudbaseState.assistantTokenUsageRows = [
+      { total_tokens: 15000 },
+      { total_tokens: 5000 },
+    ];
+
+    const { getAssistantUsageStats, canUseAssistant } = await import("./usage-limiter");
+    const stats = await getAssistantUsageStats(userId);
+    const result = await canUseAssistant(userId);
+
+    expect(stats.planType).toBe("free");
+    expect(stats.periodType).toBe("total");
+    expect(stats.quotaType).toBe("token");
+    expect(stats.model).toBe("qwen-plus-latest");
+    expect(stats.used).toBe(20000);
+    expect(stats.limit).toBe(100000);
+    expect(stats.remaining).toBe(80000);
+    expect(result.allowed).toBe(true);
+  });
+
+  it("blocks free CN assistant when token quota is exhausted", async () => {
+    const userId = "cn-free-token-limit-user";
+    cloudbaseState.userSubscriptions = [];
+    cloudbaseState.usersByDocId.set(userId, {
+      _id: userId,
+      pro: false,
+    });
+    cloudbaseState.assistantTokenUsageRows = [{ total_tokens: 100000 }];
+
+    const { canUseAssistant } = await import("./usage-limiter");
+    const result = await canUseAssistant(userId);
+
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toBe("token_limit_reached");
+    expect(result.stats.periodType).toBe("total");
+    expect(result.stats.quotaType).toBe("token");
+  });
+});

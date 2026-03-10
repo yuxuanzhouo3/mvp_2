@@ -2,6 +2,20 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import type { CandidateLink } from "@/lib/types/recommendation";
 
+function extractJdIntentKeyword(linkUrl: string): string | null {
+  const match = linkUrl.match(/[?&]params=([^#&]+)/i);
+  if (!match?.[1]) return null;
+
+  try {
+    const payload = JSON.parse(decodeURIComponent(match[1])) as {
+      keyWord?: string;
+    };
+    return payload.keyWord || null;
+  } catch {
+    return null;
+  }
+}
+
 vi.mock("@/lib/ai/zhipu-recommendation", () => ({
   isAIProviderConfigured: vi.fn(() => false),
   generateRecommendations: vi.fn(),
@@ -102,12 +116,14 @@ describe("recommend shopping CN mobile outbound e2e", () => {
     expect(first?.candidateLink?.primary.type).toBe("intent");
     expect(second?.candidateLink?.primary.type).toBe("intent");
 
-    const firstKeyword = encodeURIComponent(String(first?.metadata?.searchQuery || first?.title || ""));
     const secondKeyword = encodeURIComponent(String(second?.metadata?.searchQuery || second?.title || ""));
 
-    expect(first?.candidateLink?.primary.url).toContain(firstKeyword);
+    expect(extractJdIntentKeyword(first?.candidateLink?.primary.url || "")).toBe(
+      String(first?.metadata?.searchQuery || first?.title || "")
+    );
     expect(second?.candidateLink?.primary.url).toContain(secondKeyword);
     expect(first?.candidateLink?.primary.url).toContain("package=com.jingdong.app.mall");
+    expect(first?.candidateLink?.primary.url).toContain("scheme=openapp.jdmobile");
     expect(second?.candidateLink?.primary.url).toContain("package=com.xunmeng.pinduoduo");
   }, TEST_TIMEOUT);
 });

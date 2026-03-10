@@ -22,6 +22,7 @@ import {
 } from "@/lib/assistant/usage-limiter";
 import { saveConversationMessage } from "@/lib/assistant/conversation-store";
 import type { AssistantUsageStats, ChatRequest } from "@/lib/assistant/types";
+import type { AIExecutionMetadata } from "@/lib/ai/provider-metadata";
 
 const ASSISTANT_CHAT_DEBUG =
   String(process.env.ASSISTANT_CHAT_DEBUG || "").toLowerCase() === "true";
@@ -36,18 +37,45 @@ function logApiChatDebug(message: string, payload: Record<string, unknown>): voi
 
 function applyUsageConsumption(
   usage: AssistantUsageStats,
-  shouldConsume: boolean
+  consumedUsage: number
 ): AssistantUsageStats {
-  if (!shouldConsume || usage.remaining === -1 || usage.limit === -1) {
+  if (consumedUsage <= 0 || usage.remaining === -1 || usage.limit === -1) {
     return usage;
   }
 
-  const used = Math.min(usage.limit, usage.used + 1);
+  const used =
+    usage.quotaType === "token"
+      ? usage.used + consumedUsage
+      : Math.min(usage.limit, usage.used + consumedUsage);
+
   return {
     ...usage,
     used,
     remaining: Math.max(0, usage.limit - used),
   };
+}
+
+type RetryableAssistantError = Error & {
+  status?: number;
+};
+
+function createRetryableAssistantError(
+  message: string,
+  status = 503
+): RetryableAssistantError {
+  const error = new Error(message) as RetryableAssistantError;
+  error.status = status;
+  return error;
+}
+
+function isRetryableAssistantError(error: unknown): error is RetryableAssistantError {
+  return error instanceof Error && typeof (error as RetryableAssistantError).status === "number";
+}
+
+function getMissingUsageMessage(locale: "zh" | "en"): string {
+  return locale === "zh"
+    ? "本次请求暂时无法计量 token，请稍后重试"
+    : "Token usage is temporarily unavailable for this request. Please retry.";
 }
 
 function encodeNdjsonLine(payload: unknown): Uint8Array {
@@ -122,37 +150,69 @@ export async function POST(request: NextRequest) {
     const runChat = async (
       onProgress?: (progress: { stage: string; message: string; thinkingStep?: string }) => void
     ) => {
+      const requestLocale = locale || "zh";
+      const runtimeModelOverride = usageCheck.stats.model ?? undefined;
+      const requiresTokenUsage = usageCheck.stats.quotaType === "token";
+      const aiMetadataState: { value: AIExecutionMetadata | null } = { value: null };
+
       const response = await processChat(
         {
           message: message.trim(),
           history: history || [],
           location,
-          locale: locale || "zh",
+          locale: requestLocale,
           region: effectiveRegion,
           client,
           isMobile,
           isAndroid,
         },
         userId,
-        { onProgress }
+        {
+          onProgress,
+          runtimeModelOverride,
+          onAiMetadata: (metadata) => {
+            aiMetadataState.value = metadata;
+          },
+        }
       );
 
       const shouldConsumeUsage = response.type !== "clarify" && response.type !== "error";
-      let consumedUsage = false;
+      let consumedUsage = 0;
+      const aiMetadata = aiMetadataState.value;
+      const aiUsage = aiMetadata?.usage ?? null;
+      const aiModel = aiMetadata?.model ?? usageCheck.stats.model;
+
       if (shouldConsumeUsage) {
+        if (requiresTokenUsage && !aiUsage) {
+          throw createRetryableAssistantError(getMissingUsageMessage(requestLocale));
+        }
+
         const usageRecord = await recordAssistantUsage(userId, {
           intent: response.intent,
           type: response.type,
           candidateCount: response.candidates?.length || 0,
+          promptTokens: aiUsage?.promptTokens,
+          completionTokens: aiUsage?.completionTokens,
+          totalTokens: aiUsage?.totalTokens,
+          model: aiModel,
         });
 
         if (usageRecord?.success) {
-          consumedUsage = true;
+          consumedUsage = requiresTokenUsage ? aiUsage?.totalTokens || 0 : 1;
         } else if (usageRecord) {
+          if (usageRecord.error === "token_usage_required") {
+            throw createRetryableAssistantError(getMissingUsageMessage(requestLocale));
+          }
           console.error("[API /assistant/chat] Failed to record usage:", usageRecord?.error);
         }
       }
-      const usage = applyUsageConsumption(usageCheck.stats, consumedUsage);
+      const usage = applyUsageConsumption(
+        {
+          ...usageCheck.stats,
+          model: aiModel,
+        },
+        consumedUsage
+      );
 
       const userCreatedAt = new Date().toISOString();
       const assistantCreatedAt = new Date(Date.now() + 1).toISOString();
@@ -176,6 +236,8 @@ export async function POST(request: NextRequest) {
         intent: response.intent,
         candidateCount: response.candidates?.length || 0,
         consumedUsage,
+        model: aiModel,
+        totalTokens: aiUsage?.totalTokens ?? null,
       });
 
       return { response, usage };
@@ -217,7 +279,12 @@ export async function POST(request: NextRequest) {
               elapsedMs: Date.now() - startedAt,
               error: error instanceof Error ? error.message : String(error),
             });
-            push("error", { success: false, error: "Internal server error" });
+            push("error", {
+              success: false,
+              error: isRetryableAssistantError(error)
+                ? error.message
+                : "Internal server error",
+            });
           } finally {
             controller.close();
           }
@@ -245,6 +312,14 @@ export async function POST(request: NextRequest) {
       elapsedMs: Date.now() - startedAt,
       error: error instanceof Error ? error.message : String(error),
     });
+
+    if (isRetryableAssistantError(error)) {
+      return NextResponse.json(
+        { success: false, error: error.message },
+        { status: error.status || 503 }
+      );
+    }
+
     return NextResponse.json(
       { success: false, error: "Internal server error" },
       { status: 500 }

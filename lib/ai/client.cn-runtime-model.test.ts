@@ -65,4 +65,33 @@ describe("callAI CN runtime model config", () => {
       content: "ok",
     });
   });
+
+  it("passes through a custom assistant runtime model from storage in CN", async () => {
+    const fetchMock = global.fetch as ReturnType<typeof vi.fn>;
+    const { getCnAiRuntimeModelConfig } = await import("@/lib/ai/runtime-model-config");
+    vi.mocked(getCnAiRuntimeModelConfig).mockResolvedValueOnce({
+      assistantModel: "qwen-plus-latest",
+      recommendationModel: "qwen3.5-plus",
+      updatedAt: "2026-03-09T00:00:00.000Z",
+      source: "storage",
+    });
+
+    const { callAI } = await import("./client");
+
+    const response = await callAI({
+      messages: [{ role: "user", content: "测试自定义模型" }],
+      maxTokens: 200,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    const [, init] = fetchMock.mock.calls[0] as [RequestInfo | URL, RequestInit | undefined];
+    const requestBody = JSON.parse(String(init?.body || "{}"));
+
+    expect(requestBody.model).toBe("qwen-plus-latest");
+    expect(response).toMatchObject({
+      model: "qwen-plus-latest",
+      content: "ok",
+    });
+  });
 });
