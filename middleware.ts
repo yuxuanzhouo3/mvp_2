@@ -293,19 +293,16 @@ export async function middleware(request: NextRequest) {
       });
 
       if (!clientIP) {
-        console.warn("Unable to resolve client IP, fallback to default geo detection");
+        logGeoDebug("[GeoMiddleware] Client IP unavailable, using fallback geo detection", {
+          pathname,
+          headers: buildIpHeaderSnapshot(request),
+        });
         // Empty IP lets geoRouter apply its default behavior.
         geoResult = await geoRouter.detect("");
       } else {
         geoResult = await geoRouter.detect(clientIP);
       }
     }
-
-    console.log(
-      `[GeoMiddleware] Geo detection result - Country: ${geoResult.countryCode}, Region: ${geoResult.region}${
-        debugParam && isDevelopment ? " (debug override)" : ""
-      }`
-    );
     logGeoDebug("[GeoMiddleware] Geo detect result", {
       pathname,
       region: geoResult.region,

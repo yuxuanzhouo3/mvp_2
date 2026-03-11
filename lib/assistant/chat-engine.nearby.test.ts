@@ -999,7 +999,7 @@ describe("processChat INTL nearby flow", () => {
           category: "local_life",
           distance: "1.2km",
           rating: 4.5,
-          platform: "楂樺痉鍦板浘",
+          platform: "高德地图",
           searchQuery: "Ocean Car Wash",
         },
       ],

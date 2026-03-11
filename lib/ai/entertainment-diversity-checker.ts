@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 娱乐推荐多样性检查器
  * 确保推荐的娱乐内容涵盖多种类型
  */
@@ -6,6 +6,84 @@
 import { callRecommendationAI, type AIMessage, type RecommendationItem } from './zhipu-recommendation';
 
 export type EntertainmentType = 'video' | 'game' | 'music' | 'review';
+
+const SUPPLEMENT_HISTORY_BUDGET_BYTES = 1600;
+const SUPPLEMENT_PROMPT_BUDGET_BYTES = 6 * 1024;
+
+function getUtf8ByteLength(value: string): number {
+  return new TextEncoder().encode(value).length;
+}
+
+function truncateUtf8(value: string, maxBytes: number): string {
+  if (!value || maxBytes <= 0) {
+    return '';
+  }
+
+  if (getUtf8ByteLength(value) <= maxBytes) {
+    return value;
+  }
+
+  let result = value;
+  while (result.length > 0 && getUtf8ByteLength(result) > maxBytes) {
+    result = result.slice(0, Math.max(1, Math.floor(result.length * 0.8)));
+  }
+
+  return result;
+}
+
+function shrinkPromptWhitespace(value: string): string {
+  return value
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
+}
+
+function stringifyWithinBudget(value: unknown, maxBytes: number): string {
+  const serialized = JSON.stringify(value, null, 2);
+  if (getUtf8ByteLength(serialized) <= maxBytes) {
+    return serialized;
+  }
+
+  return truncateUtf8(serialized, maxBytes);
+}
+
+function compactSupplementHistory(userHistory: any[]): Array<Record<string, unknown>> {
+  return (Array.isArray(userHistory) ? userHistory : [])
+    .slice(0, 6)
+    .map((item) => {
+      const metadata = item && typeof item.metadata === 'object' && item.metadata
+        ? {
+            tags: Array.isArray(item.metadata.tags)
+              ? item.metadata.tags
+                  .filter((tag: unknown): tag is string => typeof tag === 'string' && tag.trim().length > 0)
+                  .slice(0, 3)
+                  .map((tag: string) => truncateUtf8(tag, 24))
+              : undefined,
+            searchQuery:
+              typeof item.metadata.searchQuery === 'string' && item.metadata.searchQuery.trim().length > 0
+                ? truncateUtf8(item.metadata.searchQuery, 60)
+                : undefined,
+            platform:
+              typeof item.metadata.platform === 'string' && item.metadata.platform.trim().length > 0
+                ? truncateUtf8(item.metadata.platform, 24)
+                : undefined,
+            entertainmentType:
+              typeof item.metadata.entertainmentType === 'string' && item.metadata.entertainmentType.trim().length > 0
+                ? item.metadata.entertainmentType
+                : undefined,
+          }
+        : undefined;
+
+      return {
+        category: typeof item?.category === 'string' ? item.category : undefined,
+        title: truncateUtf8(String(item?.title || ''), 80),
+        clicked: Boolean(item?.clicked),
+        saved: Boolean(item?.saved),
+        metadata,
+      };
+    })
+    .filter((item) => typeof item.title === 'string' && item.title.trim().length > 0);
+}
 
 /**
  * 分析推荐中的娱乐类型分布
@@ -33,7 +111,7 @@ export function analyzeEntertainmentDiversity(recommendations: RecommendationIte
     }
   });
 
-  const isDiverse = types.size >= 3; // 至少涵盖3种类型
+  const isDiverse = types.size >= 3; // 至少覆盖 3 种类型
   const allTypes: EntertainmentType[] = ['video', 'game', 'music', 'review'];
   const missingTypes = allTypes.filter(type => !types.has(type));
 
@@ -55,7 +133,7 @@ export function inferEntertainmentType(rec: RecommendationItem): EntertainmentTy
 
   // 视频类关键词
   const videoKeywords = [
-    '电影', '电视剧', '综艺', '动漫', '纪录片', '剧集', '观看', '在线看',
+    '电影', '电视剧', '综艺', '动漫', '纪录片', '剧集', '观看', '在线播放',
     'movie', 'tv', 'show', 'series', 'anime', 'documentary', 'watch', 'stream',
     'season', 'episode', 'film'
   ];
@@ -210,68 +288,85 @@ async function generateTypeSpecificRecommendation(
   locale: string = 'zh'
 ): Promise<RecommendationItem | null> {
   try {
-    // 生成特定类型的推荐
-    const prompt = locale === 'zh' ? `
-你是一个专业的推荐系统分析师。
+    const compactHistory = compactSupplementHistory(userHistory);
+    const historyPayload = stringifyWithinBudget(compactHistory, SUPPLEMENT_HISTORY_BUDGET_BYTES);
 
-任务：为用户生成 1 个 ${getTypeLabel(type, 'zh')} 类型的推荐。
+    console.log('[AI][EntertainmentSupplement] Build context:', {
+      type,
+      locale,
+      historyCount: Array.isArray(userHistory) ? userHistory.length : 0,
+      compactHistoryCount: compactHistory.length,
+      historyPayloadBytes: getUtf8ByteLength(historyPayload),
+      promptBudgetBytes: SUPPLEMENT_PROMPT_BUDGET_BYTES,
+    });
 
-用户历史记录：
-${JSON.stringify(userHistory.slice(0, 10), null, 2)}
+    let promptMode: 'full' | 'minimal' = 'full';
+    let prompt = locale === 'zh'
+      ? `
+为用户生成 1 个 ${getTypeLabel(type, 'zh')} 类型推荐。
 
-要求类型：${type} (${getTypeLabel(type, 'zh')})
+用户历史摘要：
+${historyPayload}
 
-具体要求：
-- 必须生成 ${getTypeLabel(type, 'zh')} 类型的内容
-- 推荐内容必须是真实存在的作品或内容
-- 标题要具体，不能模糊
-- 搜索关键词要精确匹配作品名称
+要求：
+- 必须是 ${getTypeLabel(type, 'zh')} 类型
+- 标题必须具体且真实存在
+- searchQuery 必须可直接搜索
+- 只返回单个 JSON 对象
 
 ${getTypeSpecificRequirements(type, 'zh')}
 
-返回 JSON 格式（严格遵守，不要有任何额外文字）：
-{
-  "title": "具体推荐名称",
-  "description": "简短描述",
-  "reason": "推荐理由（不超过50字）",
-  "tags": ["标签1", "标签2", "标签3"],
-  "searchQuery": "用于搜索的关键词",
-  "platform": "平台名称",
-  "entertainmentType": "${type}"
-}` : `
-You are a professional recommendation system analyst.
+返回字段：title, description, reason, tags, searchQuery, platform, entertainmentType。
+entertainmentType 必须为 ${type}。`
+      : `
+Generate 1 ${getTypeLabel(type, 'en')} recommendation.
 
-Task: Generate 1 ${type} type recommendation for the user.
-
-User history:
-${JSON.stringify(userHistory.slice(0, 10), null, 2)}
-
-Required type: ${type} (${getTypeLabel(type, 'en')})
+User history summary:
+${historyPayload}
 
 Requirements:
-- Must generate ${getTypeLabel(type, 'en')} type content
-- Recommended content must be real existing works
-- Title should be specific, not vague
-- Search keywords must precisely match work titles
+- Must be ${getTypeLabel(type, 'en')} content
+- Title must be specific and real
+- searchQuery must be directly searchable
+- Return a single JSON object only
 
 ${getTypeSpecificRequirements(type, 'en')}
 
-Return JSON format (strictly, no extra text):
-{
-  "title": "Specific recommendation name",
-  "description": "Brief description",
-  "reason": "Why recommend to this user",
-  "tags": ["tag1", "tag2", "tag3"],
-  "searchQuery": "Search keywords",
-  "platform": "Platform name",
-  "entertainmentType": "${type}"
-}`;
+Return fields: title, description, reason, tags, searchQuery, platform, entertainmentType.
+entertainmentType must be ${type}.`;
+
+    if (getUtf8ByteLength(prompt) > SUPPLEMENT_PROMPT_BUDGET_BYTES) {
+      promptMode = 'minimal';
+      const minimalHistoryPayload = stringifyWithinBudget(compactHistory.slice(0, 3), 800);
+      prompt = locale === 'zh'
+        ? `
+为用户生成 1 个 ${getTypeLabel(type, 'zh')} 类型推荐。
+历史摘要：${minimalHistoryPayload}
+只返回单个 JSON 对象，字段：title, description, reason, tags, searchQuery, platform, entertainmentType。
+entertainmentType 必须为 ${type}，不要链接，不要 Markdown。`
+        : `
+Generate 1 ${getTypeLabel(type, 'en')} recommendation.
+History summary: ${minimalHistoryPayload}
+Return a single JSON object with: title, description, reason, tags, searchQuery, platform, entertainmentType.
+entertainmentType must be ${type}, no links, no markdown.`;
+    }
+
+    prompt = truncateUtf8(shrinkPromptWhitespace(prompt), SUPPLEMENT_PROMPT_BUDGET_BYTES - 64);
+
+    console.log('[AI][EntertainmentSupplement] Prompt ready:', {
+      type,
+      locale,
+      promptMode,
+      promptBytes: getUtf8ByteLength(prompt),
+      promptBudgetBytes: SUPPLEMENT_PROMPT_BUDGET_BYTES,
+      compactHistoryCount: compactHistory.length,
+    });
 
     const messages: AIMessage[] = [
       {
         role: 'system',
         content: locale === 'zh'
-          ? '你是推荐分析师。只返回 JSON 对象，不要生成链接，不要有markdown标记。'
+          ? '你是推荐分析师。只返回 JSON 对象，不要链接，不要 markdown。'
           : 'You are a recommendation analyst. Only return JSON object, no links, no markdown.'
       },
       {
@@ -285,15 +380,15 @@ Return JSON format (strictly, no extra text):
       throw new Error('AI 返回空内容');
     }
 
-    // 增强JSON解析，处理可能的格式问题
+    // 增强 JSON 解析，处理可能的格式问题
     let result;
     try {
-      // 清理可能的markdown标记
+      // 清理可能的 markdown 标记
       const cleaned = cleanContent.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
       result = JSON.parse(cleaned);
     } catch (parseError) {
-      console.error('JSON解析失败，使用fallback:', parseError);
-      throw new Error('JSON解析失败');
+      console.error('JSON 解析失败，使用 fallback:', parseError);
+      throw new Error('JSON 解析失败');
     }
 
     // 确保返回的是单个推荐对象
@@ -317,13 +412,13 @@ Return JSON format (strictly, no extra text):
   } catch (error) {
     console.error(`Failed to generate ${type} recommendation:`, error);
 
-    // 如果AI调用失败，返回示例数据
+    // 如果 AI 调用失败，返回示例数据
     const examples: Record<string, Record<EntertainmentType, RecommendationItem>> = {
       zh: {
         video: {
           title: '流浪地球2',
-          description: '中国科幻巨制，展现人类文明危机',
-          reason: '基于您对科幻题材的偏好',
+          description: '国产科幻电影，节奏紧凑，适合喜欢宏大叙事的用户。',
+          reason: '基于你对科幻题材和高完成度作品的偏好。',
           tags: ['科幻', '电影', '冒险'],
           searchQuery: '流浪地球2',
           platform: '腾讯视频',
@@ -331,8 +426,8 @@ Return JSON format (strictly, no extra text):
         },
         game: {
           title: '原神',
-          description: '开放世界冒险RPG游戏',
-          reason: '精美的画风和丰富的游戏内容',
+          description: '开放世界冒险 RPG，内容丰富，探索感强。',
+          reason: '适合喜欢持续探索和角色养成的用户。',
           tags: ['RPG', '开放世界', '冒险'],
           searchQuery: '原神',
           platform: 'TapTap',
@@ -340,17 +435,17 @@ Return JSON format (strictly, no extra text):
         },
         music: {
           title: '周杰伦最新专辑',
-          description: '华语流行音乐天王的最新作品',
-          reason: '融合多种音乐风格的创新之作',
+          description: '华语流行作品，旋律性强，适合日常循环收听。',
+          reason: '适合偏好旋律感和熟悉歌手作品的用户。',
           tags: ['流行', '华语', '专辑'],
-          searchQuery: '周杰伦 新专辑 2024',
+          searchQuery: '周杰伦 最新专辑 2024',
           platform: '酷狗音乐',
           entertainmentType: 'music'
         },
         review: {
           title: '诡秘之主',
-          description: '克苏鲁风格的神秘奇幻长篇',
-          reason: '世界观宏大，节奏紧凑，适合沉浸式阅读',
+          description: '设定完整、世界观宏大的长篇小说。',
+          reason: '适合喜欢沉浸式阅读和长线剧情推进的用户。',
           tags: ['小说', '奇幻', '长篇'],
           searchQuery: '诡秘之主',
           platform: '笔趣阁',
@@ -433,50 +528,53 @@ function getTypeLabel(type: EntertainmentType, locale: 'zh' | 'en'): string {
 function getTypeSpecificRequirements(type: EntertainmentType, locale: 'zh' | 'en'): string {
   const requirements: Record<EntertainmentType, Record<'zh' | 'en', string>> = {
     video: {
-      zh: `视频类要求：
-- 可以推荐电影、电视剧、综艺、动画、纪录片等
-- 示例：电影《满江红》、电视剧《狂飙》、综艺《向往的生活》
-- 搜索词格式："作品名 + 关键词"（如：满江红），不要包含“豆瓣/评分/影评/解析/在线观看”等词`,
+      zh: `视频要求：
+- 可推荐电影、电视剧、综艺、动漫、纪录片
+- 示例："流浪地球2"、"狂飙"、"脱口秀大会"
+- searchQuery 只保留作品名或核心关键词，不要加链接或平台后缀`,
       en: `
 Video requirements:
 - Can recommend movies, TV shows, variety shows, anime, documentaries
 - Examples: "Inception", "Breaking Bad", "The Tonight Show"
-- Search format: "Title platform" (e.g., "Inception IMDb rating")`
+- Search format: use the title or core keyword only, without links or noisy suffixes.`
     },
     game: {
-      zh: `游戏类要求：
-- 可以推荐PC游戏、手机游戏、主机游戏等
-- 示例：《艾尔登法环》《原神》《塞尔达传说》
-- 搜索词格式："游戏名"（如：艾尔登法环），不要包含“Steam/TapTap/中文版/下载/攻略”等后缀`,
+      zh: `游戏要求：
+- 可推荐 PC、主机、手机游戏
+- 示例："艾尔登法环"、"原神"、"塞尔达传说"
+- searchQuery 只保留游戏名，不要附带下载、平台或攻略字样`,
       en: `
 Game requirements:
 - Can recommend PC games, mobile games, console games
 - Examples: "Elden Ring", "Genshin Impact", "The Legend of Zelda"
-- Search format: "Game name download platform" (e.g., "Elden Ring Steam")`
+- Search format: use the game name only, without download or platform suffixes.`
     },
     music: {
-      zh: `音乐类要求：
-- 可以推荐歌曲、专辑、演唱会等
-- 示例：周杰伦新专辑、林俊杰演唱会、泰勒·斯威夫特单曲
-- 搜索词格式："歌名/歌手/专辑名"（如：周杰伦 稻香），不要包含平台名`,
+      zh: `音乐要求：
+- 可推荐歌曲、专辑、演唱会
+- 示例："周杰伦 新专辑"、"林俊杰 演唱会"、"Taylor Swift 单曲"
+- searchQuery 建议为歌手 + 歌名或专辑名，不要附带平台后缀`,
       en: `
 Music requirements:
 - Can recommend songs, albums, concerts
 - Examples: "Taylor Swift new album", "Ed Sheeran concert", "Billie Eilish single"
-- Search format: "Artist/work platform" (e.g., "Taylor Swift new album Spotify")`
+- Search format: use artist + song/album title, without platform suffixes.`
     },
     review: {
-      zh: `小说/网文类要求：
-- 推荐具体小说名或系列，不要输出榜单/盘点
-- 示例：《诡秘之主》《庆余年》《凡人修仙传》
-- 搜索词格式："小说名（可带作者）"（如：诡秘之主），不要包含“笔趣阁/TXT/下载/全文”等词`,
+      zh: `图文/小说要求：
+- 推荐具体小说、文章或评论内容，不要只给泛泛榜单
+- 示例："诡秘之主"、"庆余年"、"年度高分影评"
+- searchQuery 只保留标题或标题 + 作者，不要附带 TXT、下载、全文 等后缀`,
       en: `
 Review/News requirements:
-- Can recommend movie reviews, entertainment news, celebrity updates, rankings
+- Can recommend reviews, entertainment news, commentary, and articles
 - Examples: "Oscars 2024 predictions", "Best movies of the year", "Celebrity news"
-- Search format: "Keyword review/ranking" (e.g., "best movies 2024 Rotten Tomatoes")`
+- Search format: use the title or keyword only, without noisy suffixes.`
     }
   };
 
   return requirements[type][locale];
 }
+
+
+

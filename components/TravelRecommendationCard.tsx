@@ -18,7 +18,7 @@ import {
   launchRecommendationViaGestureOrOutbound,
 } from "@/lib/outbound/client-gesture-launch";
 
-// 鍥炬爣缁勪欢
+// 图标组件
 const ExternalLinkIcon = () => (
   <svg
     className="w-4 h-4"

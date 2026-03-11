@@ -118,10 +118,13 @@ function generateConfig(region: DeploymentRegion): DeploymentConfig {
 const DEPLOYMENT_REGION: DeploymentRegion =
   process.env.NEXT_PUBLIC_DEPLOYMENT_REGION === "CN" ? "CN" : "INTL";
 
+const DEPLOYMENT_DEBUG =
+  String(process.env.DEPLOYMENT_DEBUG || "").toLowerCase() === "true";
+
 // 在运行时验证区域设置
-if (typeof window === "undefined") {
+if (typeof window === "undefined" && DEPLOYMENT_DEBUG && process.env.NODE_ENV !== "test") {
   // 只在服务器端打印
-  console.log(
+  console.info(
     `[Deploy] Region: ${DEPLOYMENT_REGION} (${
       DEPLOYMENT_REGION === "INTL" ? "Supabase" : "CloudBase"
     })`

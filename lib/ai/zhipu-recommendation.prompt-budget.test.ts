@@ -125,7 +125,9 @@ describe("generateRecommendations prompt budget", () => {
     const prompt = String(requestBody?.messages?.[1]?.content || "");
     const promptBytes = new TextEncoder().encode(prompt).length;
 
-    expect(promptBytes).toBeLessThan(20 * 1024);
+    expect(promptBytes).toBeLessThan(12 * 1024);
+    expect(prompt).toContain("title");
+    expect(prompt).toContain("searchQuery");
     expect(prompt).not.toContain(hugeProfileTail);
     expect(prompt).not.toContain(hugePreferenceTail);
     expect(prompt).not.toContain(hugeHtmlTail);

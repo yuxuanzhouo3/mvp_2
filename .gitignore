@@ -54,3 +54,5 @@ Claude.md
 
 # 或者只忽略特定路径的 __tests__
 # lib/search/__tests__/
+
+.tmp

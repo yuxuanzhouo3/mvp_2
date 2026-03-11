@@ -66,6 +66,17 @@ const VALID_CATEGORIES: RecommendationCategory[] = [
   "fitness",
 ];
 
+const RECOMMENDATION_DEBUG =
+  String(process.env.RECOMMENDATION_DEBUG || process.env.RECOMMEND_DEBUG || "").toLowerCase() === "true";
+
+function logRecommendationRouteDebug(message: string, payload: Record<string, unknown>): void {
+  if (!RECOMMENDATION_DEBUG || process.env.NODE_ENV === "test") {
+    return;
+  }
+
+  console.info(message, payload);
+}
+
 type RecommendationUsageSnapshot = Awaited<ReturnType<typeof getUserUsageStats>>;
 
 type RetryableRecommendationError = Error & {
@@ -1865,6 +1876,19 @@ export async function GET(request: NextRequest, { params }: { params: { category
 
       const computeValidatedRecommendations = async () => {
         const candidateCount = Math.min(12, Math.max(count * 2, 8));
+        logRecommendationRouteDebug("[Recommend][Route] Start validation pipeline", {
+          category,
+          locale,
+          requestedCount: count,
+          candidateCount,
+          historyCount: Array.isArray(userHistory) ? userHistory.length : 0,
+          excludeTitlesCount: excludeTitles.length,
+          hasSignals: Boolean(recommendationSignals),
+          isMobile,
+          isAndroid,
+          client,
+        });
+
         const aiRecommendations = await generateRecommendations(userHistory || [], category, locale, candidateCount, userPreference, {
           client,
           geo,
@@ -1874,6 +1898,15 @@ export async function GET(request: NextRequest, { params }: { params: { category
           isAndroid,
           modelOverride: runtimeModelOverride,
           onAiMetadata,
+        });
+
+        logRecommendationRouteDebug("[Recommend][Route] First pass generated", {
+          category,
+          locale,
+          candidateCount,
+          aiRecommendationsCount: aiRecommendations.length,
+          aiModel: aiMetadataState.model,
+          aiUsage: aiMetadataState.usage ?? null,
         });
 
         const shouldEnsureEntertainmentTypes = shouldEnsureCnEntertainmentTypes({
@@ -1924,6 +1957,13 @@ export async function GET(request: NextRequest, { params }: { params: { category
           mode: "strict",
         });
 
+        logRecommendationRouteDebug("[Recommend][Route] After first dedupe", {
+          category,
+          locale,
+          requestedCount: count,
+          processedCount: processedRecommendations.length,
+        });
+
         if (processedRecommendations.length < count) {
           const missing = count - processedRecommendations.length;
           const topUpCandidateCount = Math.min(12, Math.max(missing * 3, 6));
@@ -1934,6 +1974,16 @@ export async function GET(request: NextRequest, { params }: { params: { category
           ]
             .filter((t): t is string => typeof t === "string" && t.trim().length > 0)
             .slice(0, 120);
+
+          logRecommendationRouteDebug("[Recommend][Route] Top-up triggered", {
+            category,
+            locale,
+            requestedCount: count,
+            currentCount: processedRecommendations.length,
+            missing,
+            topUpCandidateCount,
+            avoidTitlesForTopUpCount: avoidTitlesForTopUp.length,
+          });
 
           const topUps = await generateRecommendations(userHistory || [], category, locale, topUpCandidateCount, userPreference, {
             client,
@@ -1951,6 +2001,14 @@ export async function GET(request: NextRequest, { params }: { params: { category
             userHistory: userHistory as any,
             excludeTitles: avoidTitlesForTopUp,
             mode: "strict",
+          });
+
+          logRecommendationRouteDebug("[Recommend][Route] After top-up dedupe", {
+            category,
+            locale,
+            topUpsCount: topUps.length,
+            processedCount: processedRecommendations.length,
+            requestedCount: count,
           });
         }
 
@@ -2549,6 +2607,15 @@ export async function GET(request: NextRequest, { params }: { params: { category
         });
 
         const validatedRecommendations = validateAndFixPlatforms(finalRecommendations, locale);
+        logRecommendationRouteDebug("[Recommend][Route] Final validated recommendations", {
+          category,
+          locale,
+          requestedCount: count,
+          finalCount: validatedRecommendations.length,
+          aiModel: aiMetadataState.model,
+          aiUsage: aiMetadataState.usage ?? null,
+          missingUsage: aiMetadataState.missingUsage,
+        });
         return validatedRecommendations;
       };
 

@@ -14,12 +14,16 @@ function buildRecommendation(overrides: Partial<AIRecommendation>): AIRecommenda
     ...overrides,
   };
 }
+function toLegacyMojibake(value: string): string {
+  return new TextDecoder("gb18030").decode(new TextEncoder().encode(value));
+}
+
 
 describe("normalizeLegacyEntertainmentRecommendation", () => {
   it("repairs legacy zh entertainment fallback records", () => {
     const normalized = normalizeLegacyEntertainmentRecommendation(
       buildRecommendation({
-        title: "鐜勫够闀跨瘒 legacy sample",
+        title: `${toLegacyMojibake("玄幻长篇")} legacy sample`,
         description: "legacy zh description",
         reason: "legacy zh reason",
         platform: "legacy-platform",
@@ -30,7 +34,7 @@ describe("normalizeLegacyEntertainmentRecommendation", () => {
         },
         candidateLink: {
           provider: "legacy-platform",
-          title: "鐜勫够闀跨瘒 legacy sample",
+          title: `${toLegacyMojibake("玄幻长篇")} legacy sample`,
           primary: { type: "web", url: "https://example.com" },
           fallbacks: [],
         },
@@ -52,7 +56,7 @@ describe("normalizeLegacyEntertainmentRecommendation", () => {
   it("repairs legacy en entertainment fallback records", () => {
     const normalized = normalizeLegacyEntertainmentRecommendation(
       buildRecommendation({
-        title: "Underrated Sci鈥慒i Movies legacy sample",
+        title: `${toLegacyMojibake("Underrated Sci‑Fi Movies")} legacy sample`,
         description: "legacy en description",
         reason: "Hidden gems with cult followings worth discovering",
         platform: "IMDb",

@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import { isChinaDeployment } from "@/lib/config/deployment.config";
 import { getCnAiRuntimeModelConfig } from "@/lib/ai/runtime-model-config";
-import { CN_RUNTIME_MODEL_VALUES, type CnRuntimeModel } from "@/lib/ai/runtime-models";
+import { CN_RUNTIME_MODEL_VALUES, isCnRuntimeModel, type CnRuntimeModel } from "@/lib/ai/runtime-models";
 import type { AIUsageMetrics } from "@/lib/ai/provider-metadata";
 
 interface AIRequest {
@@ -602,9 +602,15 @@ async function callAIInternal(request: AIRequest, config: AIExecutionConfig): Pr
   const startedAt = Date.now();
 
   if (isChinaDeployment()) {
-    const requestedModel = request.modelOverride?.trim();
-    const modelOrder = requestedModel
-      ? dedupeCnQwenOrder([requestedModel as CNQwenModel, ...config.cnQwenOrder])
+    const requestedModel = request.modelOverride?.trim().toLowerCase();
+    const safeRequestedModel = requestedModel && isCnRuntimeModel(requestedModel) ? requestedModel : null;
+    if (requestedModel && !safeRequestedModel) {
+      logAIDebug("[AIClient] Ignore invalid CN model override", {
+        requestedModel,
+      });
+    }
+    const modelOrder = safeRequestedModel
+      ? dedupeCnQwenOrder([safeRequestedModel as CNQwenModel, ...config.cnQwenOrder])
       : config.cnQwenOrder;
 
     if (isQwenConfigured()) {

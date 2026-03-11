@@ -1,7 +1,7 @@
 ﻿import OpenAI from "openai";
 import { isChinaDeployment } from "@/lib/config/deployment.config";
 import { getCnAiRuntimeModelConfig } from "@/lib/ai/runtime-model-config";
-import { type CnRuntimeModel } from "@/lib/ai/runtime-models";
+import { isCnRuntimeModel, type CnRuntimeModel } from "@/lib/ai/runtime-models";
 import type { AIExecutionMetadata, AIUsageMetrics } from "@/lib/ai/provider-metadata";
 import { generateFallbackCandidates } from "@/lib/recommendation/fallback-generator";
 import type { RecommendationCategory } from "@/lib/types/recommendation";
@@ -56,6 +56,21 @@ const DEFAULT_MODELS = {
 // 通义千问 API 端点
 const QWEN_API_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
 const DEFAULT_RECOMMENDATION_AI_PROVIDER_TIMEOUT_MS = 45_000;
+const RECOMMENDATION_DEBUG =
+  String(process.env.RECOMMENDATION_DEBUG || process.env.RECOMMEND_DEBUG || "").toLowerCase() === "true";
+
+function logRecommendationDebug(message: string, payload?: Record<string, unknown>): void {
+  if (!RECOMMENDATION_DEBUG || process.env.NODE_ENV === "test") {
+    return;
+  }
+
+  if (payload) {
+    console.info(message, payload);
+    return;
+  }
+
+  console.info(message);
+}
 
 function hasValidKey(value?: string | null): value is string {
   return Boolean(value && value.trim() && !value.includes("your_"));
@@ -89,8 +104,13 @@ async function getProviderOrder(modelOverride?: string): Promise<AIProvider[]> {
     // CN 环境：仅使用白名单模型，其他模型因额度不足禁用
     const providers: AIProvider[] = [];
 
-    if (modelOverride?.trim()) {
-      providers.push(modelOverride.trim());
+    const requestedModel = modelOverride?.trim().toLowerCase();
+    if (requestedModel) {
+      if (isCnRuntimeModel(requestedModel)) {
+        providers.push(requestedModel);
+      } else {
+        console.warn(`[AI] Ignore invalid CN recommendation model override: ${requestedModel}`);
+      }
     }
 
     if (hasValidKey(process.env.QWEN_API_KEY)) {
@@ -127,6 +147,100 @@ function normalizeUsageMetrics(raw: any): AIUsageMetrics | null {
     completionTokens: Number.isFinite(completionTokens) && completionTokens >= 0 ? completionTokens : 0,
     totalTokens,
   };
+}
+
+function isDashScopeGlmModel(model: string): boolean {
+  return /^glm[\w.-]*$/i.test(model);
+}
+
+async function readDashScopeStreamedContent(
+  response: Response,
+  model: string
+): Promise<{ content: string; usage: AIUsageMetrics | null }> {
+  if (!response.body) {
+    throw new AIRequestError({
+      message: `DashScope (${model}) returned no stream body`,
+      kind: "empty_content",
+      provider: model,
+    });
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let content = "";
+  let usage: AIUsageMetrics | null = null;
+
+  const flushEvent = (raw: string) => {
+    const dataLines = raw
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice(5).trim());
+
+    const dataRaw = dataLines.join("\n").trim();
+    if (!dataRaw || dataRaw === "[DONE]") {
+      return;
+    }
+
+    let payload: any;
+    try {
+      payload = JSON.parse(dataRaw);
+    } catch {
+      return;
+    }
+
+    const delta = payload?.choices?.[0]?.delta;
+    if (typeof delta?.content === "string") {
+      content += delta.content;
+    }
+
+    if (payload?.usage) {
+      usage = normalizeUsageMetrics(payload.usage) ?? usage;
+    }
+  };
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) {
+        buffer += decoder.decode();
+      } else {
+        buffer += decoder.decode(value, { stream: true });
+      }
+
+      let idx = buffer.indexOf("\n\n");
+      while (idx !== -1) {
+        flushEvent(buffer.slice(0, idx));
+        buffer = buffer.slice(idx + 2);
+        idx = buffer.indexOf("\n\n");
+      }
+
+      if (done) {
+        break;
+      }
+    }
+
+    if (buffer.trim()) {
+      flushEvent(buffer);
+    }
+  } finally {
+    try {
+      reader.releaseLock();
+    } catch {
+      // noop
+    }
+  }
+
+  if (!content) {
+    throw new AIRequestError({
+      message: `DashScope (${model}) returned empty streamed content`,
+      kind: "empty_content",
+      provider: model,
+    });
+  }
+
+  return { content, usage };
 }
 
 export function isAIProviderConfigured(): boolean {
@@ -213,15 +327,27 @@ async function callQwen(
   }
 
   const timeoutMs = getRecommendationProviderTimeoutMs();
+  const useStream = isDashScopeGlmModel(model);
+  const disableThinking = model === "qwen3.5-plus" || useStream;
   const requestBody = {
     model,
     messages,
     temperature,
     max_tokens: 600,
-    ...(model === "qwen3.5-plus" ? { enable_thinking: false } : {}),
+    ...(disableThinking ? { enable_thinking: false } : {}),
+    ...(useStream ? { stream: true, stream_options: { include_usage: true } } : {}),
   };
+  const promptBytes = messages.reduce((total, message) => total + getUtf8ByteLength(message.content), 0);
+  const requestBytes = getUtf8ByteLength(JSON.stringify(requestBody));
 
-  console.log(`[AI] Calling Qwen API with model: ${model} (timeout=${timeoutMs}ms)...`);
+  logRecommendationDebug("[AI] Calling DashScope API", {
+    model,
+    timeoutMs,
+    promptBytes,
+    requestBytes,
+    stream: useStream,
+    thinking: !disableThinking,
+  });
 
   // 添加30秒超时控制，避免长时间等待
   const controller = new AbortController();
@@ -279,21 +405,21 @@ async function callQwen(
       });
     }
 
-    const data = await response.json();
-    const content = data?.choices?.[0]?.message?.content;
+    const data = useStream ? await readDashScopeStreamedContent(response, model) : await response.json();
+    const content = useStream ? data.content : data?.choices?.[0]?.message?.content;
     if (!content) {
       throw new AIRequestError({
-        message: `Qwen (${model}) returned empty content`,
+        message: `DashScope (${model}) returned empty content`,
         kind: "empty_content",
         provider: model,
       });
     }
 
-    console.log(`[AI] ✅ Successfully called Qwen API (${model})`);
+    logRecommendationDebug("[AI] DashScope API call succeeded", { model });
     return {
       content,
       model,
-      usage: normalizeUsageMetrics(data?.usage),
+      usage: useStream ? data.usage : normalizeUsageMetrics(data?.usage),
     };
   } catch (error) {
     clearTimeout(timeoutId);
@@ -554,7 +680,9 @@ function parseAIJson(content: string) {
     try {
       const validItems = extractValidItemsFromPartialArray(candidate);
       if (validItems && validItems.length > 0) {
-        console.log(`[JSON Repair] Extracted ${validItems.length} valid items from partial array`);
+        logRecommendationDebug("[JSON Repair] Extracted valid items from partial array", {
+          count: validItems.length,
+        });
         return validItems;
       }
     } catch { /* continue */ }
@@ -649,7 +777,12 @@ export function buildExpansionSignalPrompt(params: {
   return `\n\n[Expansion Signals (3-part)]\n- Top tags (ranked): ${topTags.length > 0 ? topTags.join(", ") : "none"}\n- Recent positive examples (clicked/saved): ${positiveSamples.length > 0 ? JSON.stringify(positiveSamples, null, 2) : "none"}\n- Negative examples (not interested/skip/low rating; must avoid): ${negativeSamples.length > 0 ? JSON.stringify(negativeSamples, null, 2) : "none"}\n- Titles to avoid (must avoid): ${avoidTitles.length > 0 ? avoidTitles.join(", ") : "none"}\n- Generation nonce (for randomness): ${requestNonce}\n\n[Expansion Strategy (controllable)]\n- 60% exploit: expand from top tags + positive examples into long-tail subtopics.\n- 25% explore: adjacent concepts, still specific and searchable.\n- 15% fresh: add novel but still relevant items, without triggering negative examples.\n\n[Anti-Patterns]\n- Do NOT output items strongly related to negative examples.\n- No duplicates; must not repeat or paraphrase avoided titles.\n`;
 }
 
-const PROMPT_BUDGET_BYTES = 20 * 1024;
+const DEFAULT_PROMPT_BUDGET_BYTES = 20 * 1024;
+const CN_PROMPT_BUDGET_BYTES = 12 * 1024;
+
+function getRecommendationPromptBudgetBytes(): number {
+  return isChinaDeployment() ? CN_PROMPT_BUDGET_BYTES : DEFAULT_PROMPT_BUDGET_BYTES;
+}
 
 function getUtf8ByteLength(value: string): number {
   return new TextEncoder().encode(value).length;
@@ -728,6 +861,47 @@ function shrinkPromptWhitespace(value: string): string {
     .replace(/\n{3,}/g, "\n\n")
     .replace(/[ \t]{2,}/g, " ")
     .trim();
+}
+
+function buildMinimalUserProfilePrompt(
+  locale: "zh" | "en",
+  compactUserPreference: Record<string, unknown> | null
+): string {
+  if (!compactUserPreference) {
+    return "";
+  }
+
+  const tags = Array.isArray(compactUserPreference.tags)
+    ? compactUserPreference.tags
+      .filter((tag): tag is string => typeof tag === "string" && tag.trim().length > 0)
+      .slice(0, 6)
+    : [];
+  const personalityTags = Array.isArray(compactUserPreference.personality_tags)
+    ? compactUserPreference.personality_tags
+      .filter((tag): tag is string => typeof tag === "string" && tag.trim().length > 0)
+      .slice(0, 4)
+    : [];
+  const aiProfileSummary =
+    typeof compactUserPreference.ai_profile_summary === "string" && compactUserPreference.ai_profile_summary.trim().length > 0
+      ? truncateUtf8(compactUserPreference.ai_profile_summary.trim(), 220)
+      : "";
+
+  const parts: string[] = [];
+  if (tags.length > 0) {
+    parts.push(locale === "zh" ? `兴趣：${tags.join("、")}` : `Interests: ${tags.join(", ")}`);
+  }
+  if (personalityTags.length > 0) {
+    parts.push(locale === "zh" ? `个性：${personalityTags.join("、")}` : `Personality: ${personalityTags.join(", ")}`);
+  }
+  if (aiProfileSummary) {
+    parts.push(locale === "zh" ? `画像摘要：${aiProfileSummary}` : `Profile summary: ${aiProfileSummary}`);
+  }
+
+  if (parts.length === 0) {
+    return "";
+  }
+
+  return locale === "zh" ? `用户画像：${parts.join("；")}` : `User profile: ${parts.join("; ")}`;
 }
 
 /**
@@ -933,6 +1107,7 @@ fitnessType 必须为 nearby_place/tutorial/equipment 之一。
   const config = categoryConfig[category as keyof typeof categoryConfig] || categoryConfig.entertainment;
 
   const desiredCount = Math.max(5, Math.min(20, count));
+  const promptBudgetBytes = getRecommendationPromptBudgetBytes();
 
   const positiveSamples =
     Array.isArray(signals?.positiveSamples) && signals!.positiveSamples!.length > 0
@@ -1013,6 +1188,29 @@ fitnessType 必须为 nearby_place/tutorial/equipment 之一。
     negativeSamples,
     avoidTitles: avoidTitlesForPrompt,
     requestNonce,
+  });
+
+  logRecommendationDebug("[AI][Recommend] Build context", {
+    category,
+    locale: typedLocale,
+    deployment: isChinaDeployment() ? "CN" : "INTL",
+    requestedCount: count,
+    desiredCount,
+    client,
+    isMobile,
+    isAndroid,
+    hasGeo: Boolean(geo),
+    historyCount: userHistory.length,
+    compactHistoryCount: compactUserHistory.length,
+    avoidTitlesCount: avoidTitles.length,
+    dedupeTitleCount: avoidTitlesForPrompt.length,
+    topTagsCount: topTags.length,
+    positiveSamplesCount: positiveSamples.length,
+    negativeSamplesCount: negativeSamples.length,
+    profileBytes: getUtf8ByteLength(userProfilePrompt),
+    behaviorBytes: getUtf8ByteLength(behaviorPrompt),
+    promptBudgetBytes,
+    modelOverride: options?.modelOverride?.trim() || null,
   });
 
   // 随机选择推荐风格倾向，增加多样性
@@ -1180,12 +1378,18 @@ De-dup: avoid ${avoidTitlesForPrompt.slice(0, 30).join(', ')}
 Platform choices: ${config.platforms.slice(0, 6).join(', ')}
  No URLs`;
 
-  if (getUtf8ByteLength(prompt) > PROMPT_BUDGET_BYTES) {
+  let promptMode: "full" | "whitespace" | "compact" | "minimal" = "full";
+
+  if (getUtf8ByteLength(prompt) > promptBudgetBytes) {
+    console.warn(
+      `[AI] Recommendation prompt oversized (${getUtf8ByteLength(prompt)}B > ${promptBudgetBytes}B), shrinking whitespace`
+    );
     prompt = shrinkPromptWhitespace(prompt);
+    promptMode = "whitespace";
   }
 
-  if (getUtf8ByteLength(prompt) > PROMPT_BUDGET_BYTES) {
-    const overflow = getUtf8ByteLength(prompt) - PROMPT_BUDGET_BYTES;
+  if (getUtf8ByteLength(prompt) > promptBudgetBytes) {
+    const overflow = getUtf8ByteLength(prompt) - promptBudgetBytes;
     const reducedHistoryBytes = Math.max(1200, 5000 - overflow - 512);
     const compactPrompt = typedLocale === 'zh'
       ? `
@@ -1227,8 +1431,58 @@ Output JSON array with: title, description, reason, tags, searchQuery, platform$
 Platform choices: ${config.platforms.slice(0, 4).join(', ')}
 No URLs`;
 
-    prompt = truncateUtf8(shrinkPromptWhitespace(compactPrompt), PROMPT_BUDGET_BYTES - 64);
+    const normalizedCompactPrompt = shrinkPromptWhitespace(compactPrompt);
+
+    if (getUtf8ByteLength(normalizedCompactPrompt) > promptBudgetBytes) {
+      console.warn(
+        `[AI] Recommendation prompt still oversized after compact mode (${getUtf8ByteLength(normalizedCompactPrompt)}B > ${promptBudgetBytes}B), switching to minimal mode`
+      );
+
+      const minimalHistory = compactUserHistory.slice(0, 3).map((item) => ({
+        title: item.title,
+        clicked: item.clicked,
+        saved: item.saved,
+        category: item.category,
+      }));
+      const minimalUserProfilePrompt = buildMinimalUserProfilePrompt(typedLocale, compactUserPreference);
+      const minimalPrompt = typedLocale === 'zh'
+        ? `
+生成 ${Math.min(desiredCount, 10)} 个${category}推荐。
+历史：${stringifyWithinBudget(minimalHistory, 1200)}
+${minimalUserProfilePrompt}
+避开标题：${avoidTitlesForPrompt.slice(0, 8).join('、') || '无'}
+推荐风格：${currentAngle}
+只返回 JSON 数组；字段：title, description, reason, tags, searchQuery, platform${category === 'entertainment' ? ', entertainmentType' : ''}
+优先平台：${config.platforms.slice(0, 3).join('、')}
+不要 URL，不要 Markdown。`
+        : `
+Generate ${Math.min(desiredCount, 10)} ${category} recommendations.
+History: ${stringifyWithinBudget(minimalHistory, 1200)}
+${minimalUserProfilePrompt}
+Avoid titles: ${avoidTitlesForPrompt.slice(0, 8).join(', ') || 'none'}
+Style: ${currentAngle}
+Return JSON array only with: title, description, reason, tags, searchQuery, platform${category === 'entertainment' ? ', entertainmentType' : ''}
+Preferred platforms: ${config.platforms.slice(0, 3).join(', ')}
+No URLs, no markdown.`;
+
+      prompt = truncateUtf8(shrinkPromptWhitespace(minimalPrompt), promptBudgetBytes - 64);
+      promptMode = "minimal";
+    } else {
+      prompt = truncateUtf8(normalizedCompactPrompt, promptBudgetBytes - 64);
+      promptMode = "compact";
+    }
   }
+
+  const finalPromptBytes = getUtf8ByteLength(prompt);
+  logRecommendationDebug("[AI][Recommend] Prompt ready", {
+    category,
+    locale: typedLocale,
+    promptMode,
+    finalPromptBytes,
+    promptBudgetBytes,
+    desiredCount,
+    platformCount: config.platforms.slice(0, 6).length,
+  });
 
   try {
     const aiResult = await callRecommendationAI(
@@ -1251,15 +1505,39 @@ No URLs`;
     const aiContent = aiResult.content;
 
     if (!aiContent) {
-      console.error('AI 返回空内容');
+      console.error("[AI][Recommend] Empty content returned:", {
+        category,
+        locale: typedLocale,
+        promptMode,
+        finalPromptBytes,
+        model: aiResult.model,
+      });
       return getFallbackRecommendations(category, locale);
     }
 
     const result = parseAIJson(aiContent);
-    return Array.isArray(result) ? result : [result];
+    const normalizedResult = Array.isArray(result) ? result : [result];
+    logRecommendationDebug("[AI][Recommend] Parsed result", {
+      category,
+      locale: typedLocale,
+      promptMode,
+      finalPromptBytes,
+      resultCount: normalizedResult.length,
+      model: aiResult.model,
+      usage: aiResult.usage ?? null,
+    });
+    return normalizedResult;
 
   } catch (error) {
-    console.error('AI 推荐生成失败:', error);
+    console.error("[AI][Recommend] Generation failed:", {
+      category,
+      locale: typedLocale,
+      promptMode,
+      finalPromptBytes,
+      requestedCount: count,
+      desiredCount,
+      error,
+    });
     return getFallbackRecommendations(category, locale);
   }
 }

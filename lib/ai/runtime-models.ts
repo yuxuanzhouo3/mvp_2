@@ -18,8 +18,23 @@ export const CN_RUNTIME_MODEL_OPTIONS: ReadonlyArray<{
   { value: "qwen3.5-flash", label: "Qwen 3.5 Flash" },
   { value: "qwen3.5-flash-2026-02-23", label: "Qwen 3.5 Flash (2026-02-23)" },
   { value: "qwen3.5-35b-a3b", label: "Qwen 3.5 35B A3B" },
+  { value: "glm-4.7", label: "GLM 4.7" },
 ];
 
 export function isCnRuntimeModel(value: unknown): value is CnRuntimeModel {
-  return typeof value === "string" && value.trim().length > 0;
+  if (typeof value !== "string") {
+    return false;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  return (
+    CN_RUNTIME_MODEL_VALUES.includes(normalized as (typeof CN_RUNTIME_MODEL_VALUES)[number]) ||
+    /^qwen[\w.-]*$/i.test(normalized) ||
+    /^qwq[\w.-]*$/i.test(normalized) ||
+    /^glm[\w.-]*$/i.test(normalized)
+  );
 }
